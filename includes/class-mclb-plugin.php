@@ -24,11 +24,21 @@ class MCLB_Plugin {
     }
 
     private function __construct() {
+        // Bring the DB schema up to date on load too (not only on activation) —
+        // covers a symlinked dev install that was activated before Phase 1's
+        // tables existed, and future migrations when MCLB_DB_VERSION bumps.
+        MCLB_Activator::maybe_install();
+
         add_action('init', [$this, 'load_textdomain']);
         add_action('admin_init', ['MCLB_Settings', 'register']);
 
+        // Data subsystems.
+        MCLB_Lane::init();
+        MCLB_Bookings::init();
+
         if (is_admin()) {
             new MCLB_Admin();
+            new MCLB_Closures_Admin();
         }
 
         add_action('wp_head', [$this, 'output_css_tokens'], 20);

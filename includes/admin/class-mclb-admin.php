@@ -86,6 +86,13 @@ class MCLB_Admin {
         $this->textarea_field($g, 'mclb_booking', 'resource_types', __('Resource types', 'mclb-lane-booking'), __('One per line (e.g. Net, Bowling Machine). Admin-defined — not a fixed list.', 'mclb-lane-booking'));
         $this->price_field($g, 'mclb_booking', 'price_per_hour', __('Price per hour', 'mclb-lane-booking'));
         $this->increment_field($g, 'mclb_booking', 'booking_increment', __('Booking increment', 'mclb-lane-booking'));
+        $this->number_field($g, 'mclb_booking', 'hold_minutes', __('Hold window', 'mclb-lane-booking'), __('minutes', 'mclb-lane-booking'), 1, 240);
+
+        // General → coach requests
+        add_settings_section('mclb_coach', __('Coach requests', 'mclb-lane-booking'), function () {
+            echo '<p>' . esc_html__('Cricketers-Club-specific add-on. When on, the booking flow offers a “Request a coach” option (admin assigns the coach later). Leave off for installs that don’t do coaching.', 'mclb-lane-booking') . '</p>';
+        }, $g);
+        $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mclb-lane-booking'), __('Show the “Request a coach” option on lane bookings', 'mclb-lane-booking'));
 
         // General → hours
         add_settings_section('mclb_hours', __('Default opening hours', 'mclb-lane-booking'), function () {
@@ -152,6 +159,37 @@ class MCLB_Admin {
                 esc_attr($this->name($key)),
                 esc_attr($this->val($key)),
                 esc_html__('per hour', 'mclb-lane-booking')
+            );
+        }, $page, $section);
+    }
+
+    private function number_field($page, $section, $key, $label, $suffix = '', $min = 0, $max = null) {
+        add_settings_field($key, $label, function () use ($key, $suffix, $min, $max) {
+            printf(
+                '<input type="number" step="1" min="%s"%s name="%s" value="%s"> <span class="description">%s</span>',
+                esc_attr($min),
+                $max !== null ? ' max="' . esc_attr($max) . '"' : '',
+                esc_attr($this->name($key)),
+                esc_attr($this->val($key)),
+                esc_html($suffix)
+            );
+        }, $page, $section);
+    }
+
+    /**
+     * Checkbox with a hidden value="0" companion posted FIRST, so an unchecked
+     * box reliably records 0. Required because the per-tab sanitiser merges from
+     * stored values and only overwrites posted keys — without the hidden field an
+     * unchecked box would post nothing and get stuck on its previous value.
+     */
+    private function checkbox_field($page, $section, $key, $label, $desc = '') {
+        add_settings_field($key, $label, function () use ($key, $desc) {
+            printf('<input type="hidden" name="%s" value="0">', esc_attr($this->name($key)));
+            printf(
+                '<label><input type="checkbox" name="%s" value="1" %s> %s</label>',
+                esc_attr($this->name($key)),
+                checked((int) $this->val($key), 1, false),
+                esc_html($desc)
             );
         }, $page, $section);
     }

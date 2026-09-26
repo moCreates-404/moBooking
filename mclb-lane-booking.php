@@ -27,6 +27,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('MCLB_VERSION', '0.1.0');
+define('MCLB_DB_VERSION', '1'); // bump to trigger dbDelta migrations (see MCLB_Activator).
 define('MCLB_FILE', __FILE__);
 define('MCLB_DIR', plugin_dir_path(__FILE__));
 define('MCLB_URL', plugin_dir_url(__FILE__));
@@ -38,7 +39,11 @@ define('MCLB_OPTION', 'mclb_settings');
 // installable with zero build step. Phases 1+ add their classes to this list.
 require_once MCLB_DIR . 'includes/class-mclb-settings.php';
 require_once MCLB_DIR . 'includes/class-mclb-license.php';
+require_once MCLB_DIR . 'includes/class-mclb-lane.php';
+require_once MCLB_DIR . 'includes/class-mclb-closures.php';
+require_once MCLB_DIR . 'includes/class-mclb-bookings.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-admin.php';
+require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';
 require_once MCLB_DIR . 'includes/class-mclb-activator.php';
 require_once MCLB_DIR . 'includes/class-mclb-deactivator.php';
 require_once MCLB_DIR . 'includes/class-mclb-plugin.php';

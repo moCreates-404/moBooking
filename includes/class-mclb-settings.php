@@ -42,6 +42,8 @@ class MCLB_Settings {
             'resource_types'          => "Net\nBowling Machine",
             'price_per_hour'          => '35',
             'booking_increment'       => 60, // minutes
+            'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
+            'enable_coach_requests'   => 0,  // gates the Phase 3 "Request a coach" UI; off by default
             'hours'                   => [
                 1 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
                 2 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
@@ -109,6 +111,16 @@ class MCLB_Settings {
         if (isset($in['booking_increment'])) {
             $out['booking_increment'] = self::sanitize_increment($in['booking_increment']);
         }
+        if (isset($in['hold_minutes'])) {
+            $v = absint($in['hold_minutes']);
+            $out['hold_minutes'] = ($v >= 1 && $v <= 240) ? $v : 15;
+        }
+        // Checkbox: the General tab always posts a hidden value="0" companion (see
+        // MCLB_Admin::checkbox_field), so an unchecked box reliably records 0 rather
+        // than sticking on the previous value through this per-tab merge.
+        if (isset($in['enable_coach_requests'])) {
+            $out['enable_coach_requests'] = empty($in['enable_coach_requests']) ? 0 : 1;
+        }
         if (isset($in['hours']) && is_array($in['hours'])) {
             $out['hours'] = self::sanitize_hours($in['hours']);
         }
@@ -125,7 +137,10 @@ class MCLB_Settings {
         return $out;
     }
 
-    private static function sanitize_price($v) {
+    // Public so per-lane overrides (MCLB_Lane) reuse the same rules rather than
+    // duplicating them — a lane's price/hours are sanitised exactly like the site
+    // defaults.
+    public static function sanitize_price($v) {
         $v = preg_replace('/[^0-9.]/', '', (string) $v);
         return $v === '' ? '0' : (string) round((float) $v, 2);
     }
@@ -135,11 +150,11 @@ class MCLB_Settings {
         return in_array($v, [15, 30, 60, 120], true) ? $v : 60;
     }
 
-    private static function sanitize_time($v) {
+    public static function sanitize_time($v) {
         return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', (string) $v) ? $v : '';
     }
 
-    private static function sanitize_hours($hours) {
+    public static function sanitize_hours($hours) {
         $d   = self::defaults()['hours'];
         $out = [];
         foreach (self::weekdays() as $i => $label) {

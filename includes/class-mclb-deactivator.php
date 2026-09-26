@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 class MCLB_Deactivator {
 
     public static function deactivate() {
-        // Intentionally empty for Phase 0.
+        MCLB_Bookings::clear_cron();
+        flush_rewrite_rules();
     }
 }
