@@ -99,6 +99,26 @@ class MCLB_Closures {
     }
 
     /**
+     * Batch sibling of for_lane() for the grid — one query covering many lanes
+     * plus the site-wide (lane_id = 0) rows. Rows carry lane_id so the caller
+     * groups them (and fans site-wide rows out to every lane) in PHP.
+     *
+     * @param int[] $lane_ids
+     * @return array
+     */
+    public static function for_lanes(array $lane_ids) {
+        global $wpdb;
+        $lane_ids = array_values(array_filter(array_map('intval', $lane_ids)));
+        if (empty($lane_ids)) {
+            return $wpdb->get_results('SELECT * FROM ' . self::table() . ' WHERE lane_id = 0');
+        }
+        $in = implode(',', array_fill(0, count($lane_ids), '%d'));
+        return $wpdb->get_results(
+            $wpdb->prepare('SELECT * FROM ' . self::table() . " WHERE lane_id = 0 OR lane_id IN ($in)", $lane_ids)
+        );
+    }
+
+    /**
      * Normalise/sanitise an input row down to just the columns that matter for
      * its kind, so a one-off never carries stray recurring fields and vice versa.
      */

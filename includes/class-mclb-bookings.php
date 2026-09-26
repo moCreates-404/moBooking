@@ -85,19 +85,47 @@ class MCLB_Bookings {
      *
      * @return array
      */
-    public static function active_for_lane($lane_id) {
+    public static function active_for_lane($lane_id, $day_start = null, $day_end = null) {
         global $wpdb;
-        return $wpdb->get_results(
-            $wpdb->prepare(
-                'SELECT * FROM ' . self::table() . "
+        $sql = 'SELECT * FROM ' . self::table() . '
                   WHERE lane_id = %d
-                    AND (status = %s OR (status = %s AND hold_expires_at > %s))",
-                (int) $lane_id,
-                self::STATUS_CONFIRMED,
-                self::STATUS_HELD,
-                current_time('mysql')
-            )
+                    AND (status = %s OR (status = %s AND hold_expires_at > %s))';
+        $params = [(int) $lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, current_time('mysql')];
+
+        // Optional day-range scope: overlaps [day_start, day_end).
+        if ($day_start && $day_end) {
+            $sql     .= ' AND starts_at < %s AND ends_at > %s';
+            $params[] = $day_end;
+            $params[] = $day_start;
+        }
+
+        return $wpdb->get_results($wpdb->prepare($sql, $params));
+    }
+
+    /**
+     * Batch sibling of active_for_lane() for the grid — one query for many lanes,
+     * always day-scoped so it pulls only that day's rows, not full history.
+     * Rows carry lane_id so the caller groups them in PHP.
+     *
+     * @param int[]  $lane_ids
+     * @return array
+     */
+    public static function active_for_lanes(array $lane_ids, $day_start, $day_end) {
+        global $wpdb;
+        $lane_ids = array_values(array_filter(array_map('intval', $lane_ids)));
+        if (empty($lane_ids)) {
+            return [];
+        }
+        $in     = implode(',', array_fill(0, count($lane_ids), '%d'));
+        $sql    = 'SELECT * FROM ' . self::table() . "
+                  WHERE lane_id IN ($in)
+                    AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                    AND starts_at < %s AND ends_at > %s";
+        $params = array_merge(
+            $lane_ids,
+            [self::STATUS_CONFIRMED, self::STATUS_HELD, current_time('mysql'), $day_end, $day_start]
         );
+        return $wpdb->get_results($wpdb->prepare($sql, $params));
     }
 
     /**
