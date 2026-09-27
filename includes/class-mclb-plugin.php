@@ -36,6 +36,9 @@ class MCLB_Plugin {
         MCLB_Lane::init();
         MCLB_Bookings::init();
 
+        // Front-end grid (shortcode + REST + assets).
+        MCLB_Grid::init();
+
         if (is_admin()) {
             new MCLB_Admin();
             new MCLB_Closures_Admin();
@@ -67,9 +70,18 @@ class MCLB_Plugin {
             '--mclb-closed'     => $s['state_closed'],
         ];
 
+        // Font handling: 'inherit' (default) lets the grid pick up the active
+        // theme's fonts; 'override' emits the plugin's own stack. Grid CSS reads
+        // font-family: var(--mclb-font, inherit), so this is the only wiring needed.
+        $vars['--mclb-font'] = ($s['font_mode'] === 'override')
+            ? 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+            : 'inherit';
+
         $css = ':root{';
         foreach ($vars as $k => $v) {
-            $css .= $k . ':' . esc_attr($v) . ';';
+            // The font stack is a value list, not a single token sanitised on save,
+            // so escape it as a CSS-ish string rather than esc_attr'ing commas away.
+            $css .= $k . ':' . ($k === '--mclb-font' ? wp_strip_all_tags($v) : esc_attr($v)) . ';';
         }
         $css .= '}';
 

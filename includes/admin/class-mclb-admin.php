@@ -16,19 +16,24 @@ class MCLB_Admin {
 
     const PAGE = 'mclb-settings';
 
-    /** @var array<string,string> tab slug => label */
-    private $tabs;
-
     public function __construct() {
-        $this->tabs = [
+        add_action('admin_menu', [$this, 'menu']);
+        add_action('admin_init', [$this, 'register_fields']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue']);
+    }
+
+    /**
+     * Tab slug => label. Built on demand (never in the constructor) so no
+     * translation function runs before `init` — WP 6.7+ warns about that.
+     *
+     * @return array<string,string>
+     */
+    private function tabs() {
+        return [
             'general'    => __('General', 'mclb-lane-booking'),
             'appearance' => __('Appearance', 'mclb-lane-booking'),
             'license'    => __('License', 'mclb-lane-booking'),
         ];
-
-        add_action('admin_menu', [$this, 'menu']);
-        add_action('admin_init', [$this, 'register_fields']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue']);
     }
 
     public function menu() {
@@ -59,7 +64,7 @@ class MCLB_Admin {
 
     private function current_tab() {
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only tab switch.
-        return array_key_exists($tab, $this->tabs) ? $tab : 'general';
+        return array_key_exists($tab, $this->tabs()) ? $tab : 'general';
     }
 
     /** One "page" slug per tab so do_settings_sections renders just that tab. */
@@ -265,7 +270,7 @@ class MCLB_Admin {
 
         echo '<div class="wrap"><h1>moBooking</h1>';
         echo '<h2 class="nav-tab-wrapper">';
-        foreach ($this->tabs as $slug => $label) {
+        foreach ($this->tabs() as $slug => $label) {
             printf(
                 '<a href="%s" class="nav-tab %s">%s</a>',
                 esc_url(admin_url('admin.php?page=' . self::PAGE . '&tab=' . $slug)),

@@ -1,0 +1,180 @@
+/*
+ * moBooking front-end grid.
+ * Colours render from the live --mclb-* custom properties emitted by
+ * MCLB_Plugin::output_css_tokens(); the hex fallbacks here are CCWA's sampled
+ * palette (defaults only, never the source of truth). Fonts follow --mclb-font
+ * (inherit by default, the plugin stack when the admin picks "override").
+ */
+
+.mclb-grid-wrap {
+  font-family: var(--mclb-font, inherit);
+  --mclb-time-col: 76px;
+  --mclb-cell-h: 40px;
+  max-width: 100%;
+  margin: 0 0 1.5rem;
+  color: inherit;
+}
+
+/* Toolbar / date nav */
+.mclb-grid__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mclb-nav {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: #fff;
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mclb-nav[disabled] { opacity: 0.4; cursor: default; }
+.mclb-grid__date {
+  padding: 7px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font: inherit;
+}
+
+/* Grid shell — horizontal scroll on narrow screens, sticky time gutter */
+.mclb-grid { overflow-x: auto; }
+.mclb-grid__inner { min-width: max-content; }
+
+.mclb-grid__head,
+.mclb-grid__row {
+  display: grid;
+  grid-template-columns: var(--mclb-time-col) repeat(var(--mclb-cols), minmax(90px, 1fr));
+}
+
+.mclb-grid__corner,
+.mclb-grid__time {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+.mclb-grid__lane-head {
+  padding: 8px 6px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.12);
+}
+.mclb-grid__corner { border-bottom: 2px solid rgba(0, 0, 0, 0.12); }
+
+.mclb-grid__time {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.6);
+  height: var(--mclb-cell-h);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* Cells */
+.mclb-cell {
+  height: var(--mclb-cell-h);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-top-width: 0;
+  border-left-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  text-align: center;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mclb-cell--available {
+  background: var(--mclb-available, #ffffff);
+  cursor: pointer;
+}
+.mclb-cell--available:hover { box-shadow: inset 0 0 0 2px var(--mclb-accent, #f4c430); }
+.mclb-cell--booked {
+  background: var(--mclb-booked, #c94a55);
+  color: #fff;
+  cursor: not-allowed;
+}
+.mclb-cell--closed {
+  background: var(--mclb-closed, #85c9c2);
+  color: rgba(0, 0, 0, 0.65);
+  cursor: not-allowed;
+}
+.mclb-cell--na {
+  background: repeating-linear-gradient(45deg, #f3f3f3, #f3f3f3 6px, #ececec 6px, #ececec 12px);
+  cursor: default;
+}
+
+/* Selection states (client-side only) */
+.mclb-cell--selecting { background: var(--mclb-unfinished, #fce588); }
+.mclb-cell--selected {
+  background: var(--mclb-accent, #f4c430);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+}
+.mclb-cell--available:focus-visible { outline: 2px solid var(--mclb-accent, #f4c430); outline-offset: -2px; }
+
+.mclb-grid__empty { padding: 1rem; opacity: 0.7; }
+
+/* Legend */
+.mclb-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 12px 0;
+  font-size: 0.82rem;
+}
+.mclb-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.mclb-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.15); }
+.mclb-swatch--available { background: var(--mclb-available, #ffffff); }
+.mclb-swatch--booked { background: var(--mclb-booked, #c94a55); }
+.mclb-swatch--closed { background: var(--mclb-closed, #85c9c2); }
+
+/* Selection summary */
+.mclb-selection {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.mclb-selection__title { margin: 0 0 10px; font-size: 1rem; }
+.mclb-selection__list { list-style: none; margin: 0 0 10px; padding: 0; }
+.mclb-selection__list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.9rem;
+}
+.mclb-selection__remove {
+  border: 0;
+  background: transparent;
+  color: var(--mclb-booked, #c94a55);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.mclb-selection__total { font-weight: 700; margin: 8px 0; }
+.mclb-coach { display: block; margin: 8px 0; }
+.mclb-coach__note { width: 100%; margin: 6px 0; font: inherit; }
+.mclb-add-to-cart {
+  background: var(--mclb-accent, #f4c430);
+  color: #1a1a1a;
+  border: 0;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mclb-add-to-cart[disabled] { opacity: 0.5; cursor: default; }
+.mclb-selection__msg { margin: 8px 0 0; font-size: 0.85rem; min-height: 1em; }
+.mclb-selection__msg--ok { color: #1a7f37; }
+.mclb-selection__msg--err { color: var(--mclb-booked, #c94a55); }

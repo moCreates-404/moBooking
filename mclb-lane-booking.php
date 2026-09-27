@@ -43,6 +43,7 @@ require_once MCLB_DIR . 'includes/class-mclb-lane.php';
 require_once MCLB_DIR . 'includes/class-mclb-closures.php';
 require_once MCLB_DIR . 'includes/class-mclb-bookings.php';
 require_once MCLB_DIR . 'includes/class-mclb-availability.php';
+require_once MCLB_DIR . 'includes/class-mclb-grid.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';
 require_once MCLB_DIR . 'includes/class-mclb-activator.php';
