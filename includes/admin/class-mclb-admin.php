@@ -46,6 +46,26 @@ class MCLB_Admin {
             'dashicons-calendar-alt',
             56
         );
+
+        // Register the Settings page as an explicit submenu of its own top-level
+        // slug, at position 0. add_menu_page() alone does NOT add a submenu entry
+        // for its page — WordPress normally auto-duplicates the parent as the
+        // first submenu item, but only when $submenu[parent] isn't already set.
+        // The mclb_lane CPT (show_in_menu => self::PAGE) is processed in core's
+        // wp-admin/menu.php *before* this admin_menu hook, so it populates
+        // $submenu['mclb-settings'] first, suppressing that auto-duplicate and
+        // leaving Settings with no menu entry. Adding it explicitly (position 0)
+        // restores it and makes the top-level open Settings. Menu order becomes
+        // Settings → Lanes → Closures.
+        add_submenu_page(
+            self::PAGE,
+            'moBooking Settings',
+            __('Settings', 'mclb-lane-booking'),
+            'manage_options',
+            self::PAGE,
+            [$this, 'render_page'],
+            0
+        );
     }
 
     public function enqueue($hook) {
