@@ -4,15 +4,36 @@
  * MCLB_Plugin::output_css_tokens(); the hex fallbacks here are CCWA's sampled
  * palette (defaults only, never the source of truth). Fonts follow --mclb-font
  * (inherit by default, the plugin stack when the admin picks "override").
+ *
+ * The widget paints its OWN surface + text colours (the --mclb-surface / -ink /
+ * -ink-muted / -line tokens below) rather than inheriting them, so it stays
+ * legible in any container — a plain page or, e.g., the theme's dark booking
+ * drawer. Surface is a flush background fill only (no border/radius/extra
+ * padding), so on a light page it's visually identical to sitting on the page.
  */
 
 .mclb-grid-wrap {
   font-family: var(--mclb-font, inherit);
+
+  /* Grid-scoped surface/ink tokens (same --mclb-* system as the palette;
+     can graduate to settings-emitted tokens later with no CSS change). */
+  --mclb-surface: #ffffff;
+  --mclb-ink: #1a1a1a;
+  --mclb-ink-muted: rgba(0, 0, 0, 0.6);
+  --mclb-line: rgba(0, 0, 0, 0.14);
+
   --mclb-time-col: 76px;
   --mclb-cell-h: 40px;
+  --mclb-col-min: 90px;
+
   max-width: 100%;
   margin: 0 0 1.5rem;
-  color: inherit;
+  /* Inner padding so the card's contents aren't jammed to its edge — gives it
+     breathing room inside a container like the drawer. Invisible on a white
+     page (white padding on white), since the surface is #fff. */
+  padding: 16px;
+  background: var(--mclb-surface);
+  color: var(--mclb-ink);
 }
 
 /* Toolbar / date nav */
@@ -23,8 +44,9 @@
   margin-bottom: 12px;
 }
 .mclb-nav {
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  background: #fff;
+  border: 1px solid var(--mclb-line);
+  background: var(--mclb-surface);
+  color: var(--mclb-ink);
   border-radius: 6px;
   width: 36px;
   height: 36px;
@@ -35,19 +57,22 @@
 .mclb-nav[disabled] { opacity: 0.4; cursor: default; }
 .mclb-grid__date {
   padding: 7px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--mclb-line);
+  background: var(--mclb-surface);
+  color: var(--mclb-ink);
   border-radius: 6px;
   font: inherit;
 }
 
-/* Grid shell — horizontal scroll on narrow screens, sticky time gutter */
+/* Grid shell — fits the container; horizontal scroll only when the per-column
+   floors genuinely can't fit (many lanes), with a sticky time gutter. */
 .mclb-grid { overflow-x: auto; }
-.mclb-grid__inner { min-width: max-content; }
+.mclb-grid__inner { min-width: 100%; }
 
 .mclb-grid__head,
 .mclb-grid__row {
   display: grid;
-  grid-template-columns: var(--mclb-time-col) repeat(var(--mclb-cols), minmax(90px, 1fr));
+  grid-template-columns: var(--mclb-time-col) repeat(var(--mclb-cols), minmax(var(--mclb-col-min), 1fr));
 }
 
 .mclb-grid__corner,
@@ -55,16 +80,19 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  background: #fff;
+  background: var(--mclb-surface);
 }
 
 .mclb-grid__lane-head {
   padding: 8px 6px;
   font-weight: 600;
   text-align: center;
-  border-bottom: 2px solid rgba(0, 0, 0, 0.12);
+  color: var(--mclb-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-bottom: 2px solid var(--mclb-line);
 }
-.mclb-grid__corner { border-bottom: 2px solid rgba(0, 0, 0, 0.12); }
+.mclb-grid__corner { border-bottom: 2px solid var(--mclb-line); }
 
 .mclb-grid__time {
   display: flex;
@@ -72,7 +100,7 @@
   justify-content: flex-end;
   padding-right: 8px;
   font-size: 0.8rem;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--mclb-ink-muted);
   height: var(--mclb-cell-h);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -120,7 +148,7 @@
 }
 .mclb-cell--available:focus-visible { outline: 2px solid var(--mclb-accent, #f4c430); outline-offset: -2px; }
 
-.mclb-grid__empty { padding: 1rem; opacity: 0.7; }
+.mclb-grid__empty { padding: 1rem; color: var(--mclb-ink-muted); }
 
 /* Legend */
 .mclb-legend {
@@ -129,9 +157,10 @@
   gap: 16px;
   margin: 12px 0;
   font-size: 0.82rem;
+  color: var(--mclb-ink);
 }
 .mclb-legend__item { display: inline-flex; align-items: center; gap: 6px; }
-.mclb-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.15); }
+.mclb-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--mclb-line); }
 .mclb-swatch--available { background: var(--mclb-available, #ffffff); }
 .mclb-swatch--booked { background: var(--mclb-booked, #c94a55); }
 .mclb-swatch--closed { background: var(--mclb-closed, #85c9c2); }
@@ -140,9 +169,10 @@
 .mclb-selection {
   margin-top: 16px;
   padding: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--mclb-line);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.02);
+  color: var(--mclb-ink);
 }
 .mclb-selection__title { margin: 0 0 10px; font-size: 1rem; }
 .mclb-selection__list { list-style: none; margin: 0 0 10px; padding: 0; }
@@ -178,3 +208,17 @@
 .mclb-selection__msg { margin: 8px 0 0; font-size: 0.85rem; min-height: 1em; }
 .mclb-selection__msg--ok { color: #1a7f37; }
 .mclb-selection__msg--err { color: var(--mclb-booked, #c94a55); }
+
+/* Narrow viewports: shrink the column floor + gutter and tighten label type so
+   realistic lane counts (CCWA: 5 nets / 4 machines) fit without horizontal
+   scroll; genuinely many lanes (e.g. a combined 9) still scroll by design. */
+@media (max-width: 600px) {
+  .mclb-grid-wrap {
+    --mclb-col-min: 48px;
+    --mclb-time-col: 48px;
+    padding: 12px;
+  }
+  .mclb-grid__lane-head { font-size: 0.72rem; padding: 6px 2px; }
+  .mclb-grid__time { font-size: 0.66rem; padding-right: 4px; }
+  .mclb-cell { font-size: 0.62rem; }
+}
