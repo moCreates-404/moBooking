@@ -128,6 +128,10 @@ class MCLB_Cart {
         }
         $res = MCLB_Bookings::insert_holds_locked($holds_in);
         if (empty($res['ok'])) {
+            if (!empty($res['lock_error'])) {
+                // Transient DB contention that survived the retries — ask to retry.
+                return new WP_Error('mclb_busy', __('The booking system is busy right now — please try again in a moment.', 'mclb-lane-booking'), ['status' => 503]);
+            }
             $ci   = isset($res['conflict']) ? (int) $res['conflict'] : 0;
             $lane = $validated[$ci]['lane_name'] ?? '';
             /* translators: %s: resource name. */

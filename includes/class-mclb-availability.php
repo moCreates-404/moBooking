@@ -88,6 +88,14 @@ class MCLB_Availability {
         $closed_intervals = self::closed_intervals($closures, $date, $weekday, $midnight, $tz);
         $booked_intervals = self::booked_intervals($bookings, $midnight, $tz);
 
+        // Elapsed slots on today's date are unavailable — a slot whose start is in
+        // the past can't be booked. Marking them here (server-side) means the grid
+        // greys them out and the REST availability reflects it, so a customer is
+        // blocked at selection, not bounced at add-to-cart. -1 = not today.
+        $now      = new DateTimeImmutable('now', $tz);
+        $today    = $now->format('Y-m-d');
+        $past_cut = ($date === $today) ? ((int) $now->format('G') * 60 + (int) $now->format('i')) : -1;
+
         // 4. Slice the window into increment slots and tag each.
         $slots = [];
         for ($s = $open_min; $s + $increment <= $close_min; $s += $increment) {
@@ -95,6 +103,12 @@ class MCLB_Availability {
             $state = 'available';
             $label = null;
             $bid   = null;
+
+            // Past on today's date → closed, overriding any other state.
+            if ($past_cut >= 0 && $s < $past_cut) {
+                $slots[] = self::slot($midnight, $s, $e, 'closed', null, null);
+                continue;
+            }
 
             foreach ($closed_intervals as $ci) {
                 if (self::overlaps($s, $e, $ci['start'], $ci['end'])) {

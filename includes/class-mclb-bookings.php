@@ -36,6 +36,9 @@ class MCLB_Bookings {
     const CRON_HOOK     = 'mclb_sweep_expired_holds';
     const CRON_SCHEDULE = 'mclb_fifteen_minutes';
 
+    /** How many times to retry a transient InnoDB lock failure before giving up. */
+    const MAX_LOCK_RETRIES = 3;
+
     public static function init() {
         add_filter('cron_schedules', [__CLASS__, 'cron_schedule']);
         add_action(self::CRON_HOOK, [__CLASS__, 'sweep_expired_holds']);
@@ -209,6 +212,22 @@ class MCLB_Bookings {
      * @return array{ok:bool,ids?:int[],conflict?:int}
      */
     public static function insert_holds_locked(array $selections) {
+        // Retry only the engine-level lock failures (deadlock / lock-wait timeout),
+        // which InnoDB may raise transiently under contention; a real slot conflict
+        // is deterministic and returns immediately. Small randomised backoff.
+        for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
+            $r = self::attempt_holds($selections);
+            if ($r['ok'] || empty($r['lock_error'])) {
+                return $r; // committed, or a genuine conflict — done either way
+            }
+            usleep(mt_rand(40, 120) * 1000);
+        }
+        // Persistent lock contention: fail safe (no double-sell) and tell the caller.
+        return ['ok' => false, 'lock_error' => true];
+    }
+
+    /** One transactional attempt. Distinguishes a real conflict from a lock error. */
+    private static function attempt_holds(array $selections) {
         global $wpdb;
         $now = current_time('mysql');
 
@@ -230,12 +249,22 @@ class MCLB_Bookings {
                     $sel['starts_at']
                 )
             );
+            // A deadlock on the SELECT returns null with an error set — must NOT be
+            // mistaken for "no conflict". Check the error before trusting the value.
+            if (self::is_lock_error($wpdb->last_error)) {
+                $wpdb->query('ROLLBACK');
+                return ['ok' => false, 'lock_error' => true];
+            }
             if ($conflict) {
                 $wpdb->query('ROLLBACK');
                 return ['ok' => false, 'conflict' => $i];
             }
             $id = self::insert_hold($sel);
             if (!$id) {
+                if (self::is_lock_error($wpdb->last_error)) {
+                    $wpdb->query('ROLLBACK');
+                    return ['ok' => false, 'lock_error' => true];
+                }
                 $wpdb->query('ROLLBACK');
                 return ['ok' => false, 'conflict' => $i];
             }
@@ -243,6 +272,15 @@ class MCLB_Bookings {
         }
         $wpdb->query('COMMIT');
         return ['ok' => true, 'ids' => $ids];
+    }
+
+    /** True for InnoDB deadlock (1213) / lock-wait timeout (1205) messages. */
+    private static function is_lock_error($err) {
+        if (!$err) {
+            return false;
+        }
+        $e = strtolower($err);
+        return strpos($e, 'deadlock') !== false || strpos($e, 'lock wait timeout') !== false;
     }
 
     /** Stamp the WC order + line item onto a held row (status stays 'held'). */
