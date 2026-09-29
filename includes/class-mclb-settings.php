@@ -44,6 +44,8 @@ class MCLB_Settings {
             'booking_increment'       => 60, // minutes
             'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
             'enable_coach_requests'   => 0,  // gates the Phase 3 "Request a coach" UI; off by default
+            'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
+            'self_cancel_hours'       => 24, // logged-in self-cancel-for-credit cutoff before booking start
             'hours'                   => [
                 1 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
                 2 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
@@ -114,6 +116,12 @@ class MCLB_Settings {
         if (isset($in['hold_minutes'])) {
             $v = absint($in['hold_minutes']);
             $out['hold_minutes'] = ($v >= 1 && $v <= 240) ? $v : 15;
+        }
+        if (isset($in['wc_product_id'])) {
+            $out['wc_product_id'] = absint($in['wc_product_id']);
+        }
+        if (isset($in['self_cancel_hours'])) {
+            $out['self_cancel_hours'] = absint($in['self_cancel_hours']);
         }
         // Checkbox: the General tab always posts a hidden value="0" companion (see
         // MCLB_Admin::checkbox_field), so an unchecked box reliably records 0 rather

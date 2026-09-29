@@ -119,6 +119,13 @@ class MCLB_Admin {
         }, $g);
         $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mclb-lane-booking'), __('Show the “Request a coach” option on lane bookings', 'mclb-lane-booking'));
 
+        // General → WooCommerce
+        add_settings_section('mclb_wc', __('WooCommerce', 'mclb-lane-booking'), function () {
+            echo '<p>' . esc_html__('Cart items hang on a hidden virtual “anchor” product. Leave the ID blank to auto-create one on first checkout.', 'mclb-lane-booking') . '</p>';
+        }, $g);
+        $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mclb-lane-booking'), __('WooCommerce product ID', 'mclb-lane-booking'), 0);
+        $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
+
         // General → hours
         add_settings_section('mclb_hours', __('Default opening hours', 'mclb-lane-booking'), function () {
             echo '<p>' . esc_html__('Seeded onto new resources as their default weekly hours. Per-resource overrides come in a later phase.', 'mclb-lane-booking') . '</p>';

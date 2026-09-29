@@ -44,6 +44,8 @@ require_once MCLB_DIR . 'includes/class-mclb-closures.php';
 require_once MCLB_DIR . 'includes/class-mclb-bookings.php';
 require_once MCLB_DIR . 'includes/class-mclb-availability.php';
 require_once MCLB_DIR . 'includes/class-mclb-grid.php';
+require_once MCLB_DIR . 'includes/class-mclb-cart.php';
+require_once MCLB_DIR . 'includes/class-mclb-order.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';
 require_once MCLB_DIR . 'includes/class-mclb-activator.php';
@@ -52,6 +54,14 @@ require_once MCLB_DIR . 'includes/class-mclb-plugin.php';
 
 register_activation_hook(__FILE__, ['MCLB_Activator', 'activate']);
 register_deactivation_hook(__FILE__, ['MCLB_Deactivator', 'deactivate']);
+
+// Declare HPOS (custom order tables) compatibility — the plugin only touches
+// orders via WC CRUD, so it is compatible with either order-storage backend.
+add_action('before_woocommerce_init', function () {
+    if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', MCLB_FILE, true);
+    }
+});
 
 // Boot once all plugins are loaded.
 add_action('plugins_loaded', ['MCLB_Plugin', 'instance']);

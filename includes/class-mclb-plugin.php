@@ -39,6 +39,10 @@ class MCLB_Plugin {
         // Front-end grid (shortcode + REST + assets).
         MCLB_Grid::init();
 
+        // WooCommerce cart + order lifecycle (hooks are inert until WC fires them).
+        MCLB_Cart::init();
+        MCLB_Order::init();
+
         if (is_admin()) {
             new MCLB_Admin();
             new MCLB_Closures_Admin();

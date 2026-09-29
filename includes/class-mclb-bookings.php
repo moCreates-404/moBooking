@@ -191,6 +191,88 @@ class MCLB_Bookings {
         );
     }
 
+    public static function get($id) {
+        global $wpdb;
+        return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE id = %d', (int) $id));
+    }
+
+    /**
+     * Write holds for a whole selection atomically, preventing double-sell.
+     *
+     * One transaction covers the batch: for each selection a `SELECT … FOR UPDATE`
+     * range scan on the lane_range index takes InnoDB next-key/gap locks over the
+     * requested window, so a concurrent add can't slip a second hold into the same
+     * gap. If ANY selection conflicts, the whole batch rolls back (all-or-nothing,
+     * per Phase 3's one-order resolution) and the conflicting index is returned.
+     *
+     * @param array $selections rows shaped for insert_hold().
+     * @return array{ok:bool,ids?:int[],conflict?:int}
+     */
+    public static function insert_holds_locked(array $selections) {
+        global $wpdb;
+        $now = current_time('mysql');
+
+        $wpdb->query('START TRANSACTION');
+        $ids = [];
+        foreach ($selections as $i => $sel) {
+            $conflict = $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT id FROM ' . self::table() . '
+                       WHERE lane_id = %d
+                         AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                         AND starts_at < %s AND ends_at > %s
+                       LIMIT 1 FOR UPDATE',
+                    (int) $sel['lane_id'],
+                    self::STATUS_CONFIRMED,
+                    self::STATUS_HELD,
+                    $now,
+                    $sel['ends_at'],
+                    $sel['starts_at']
+                )
+            );
+            if ($conflict) {
+                $wpdb->query('ROLLBACK');
+                return ['ok' => false, 'conflict' => $i];
+            }
+            $id = self::insert_hold($sel);
+            if (!$id) {
+                $wpdb->query('ROLLBACK');
+                return ['ok' => false, 'conflict' => $i];
+            }
+            $ids[] = $id;
+        }
+        $wpdb->query('COMMIT');
+        return ['ok' => true, 'ids' => $ids];
+    }
+
+    /** Stamp the WC order + line item onto a held row (status stays 'held'). */
+    public static function attach_order($hold_id, $order_id, $order_item_id) {
+        global $wpdb;
+        return $wpdb->update(
+            self::table(),
+            ['order_id' => (int) $order_id, 'order_item_id' => (int) $order_item_id, 'updated_at' => current_time('mysql')],
+            ['id' => (int) $hold_id],
+            ['%d', '%d', '%s'],
+            ['%d']
+        );
+    }
+
+    /** Release every held/confirmed row for an order (cancel/refund). */
+    public static function cancel_by_order($order_id) {
+        global $wpdb;
+        return $wpdb->query(
+            $wpdb->prepare(
+                'UPDATE ' . self::table() . ' SET status = %s, updated_at = %s
+                  WHERE order_id = %d AND status IN (%s, %s)',
+                self::STATUS_CANCELLED,
+                current_time('mysql'),
+                (int) $order_id,
+                self::STATUS_HELD,
+                self::STATUS_CONFIRMED
+            )
+        );
+    }
+
     // ── Cron: housekeeping sweep (not the source of truth — see class docblock) ──
 
     public static function cron_schedule($schedules) {
