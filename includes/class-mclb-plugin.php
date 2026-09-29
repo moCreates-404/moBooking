@@ -42,6 +42,7 @@ class MCLB_Plugin {
         // WooCommerce cart + order lifecycle (hooks are inert until WC fires them).
         MCLB_Cart::init();
         MCLB_Order::init();
+        MCLB_Account::init();
 
         if (is_admin()) {
             new MCLB_Admin();

@@ -199,6 +199,23 @@ class MCLB_Bookings {
         return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE id = %d', (int) $id));
     }
 
+    /** A logged-in customer's bookings (for the My Account list), newest first. */
+    public static function for_user($user_id, array $statuses = ['confirmed', 'cancelled']) {
+        global $wpdb;
+        $user_id = (int) $user_id;
+        if (!$user_id || empty($statuses)) {
+            return [];
+        }
+        $in     = implode(',', array_fill(0, count($statuses), '%s'));
+        $params = array_merge([$user_id], $statuses);
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT * FROM ' . self::table() . " WHERE customer_id = %d AND status IN ($in) ORDER BY starts_at DESC",
+                $params
+            )
+        );
+    }
+
     /**
      * Write holds for a whole selection atomically, preventing double-sell.
      *
