@@ -27,7 +27,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('MCLB_VERSION', '0.1.0');
-define('MCLB_DB_VERSION', '1'); // bump to trigger dbDelta migrations (see MCLB_Activator).
+define('MCLB_DB_VERSION', '2'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note column.
 define('MCLB_FILE', __FILE__);
 define('MCLB_DIR', plugin_dir_path(__FILE__));
 define('MCLB_URL', plugin_dir_url(__FILE__));

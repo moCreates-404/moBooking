@@ -210,6 +210,38 @@ class MCLB_Availability {
         return $result;
     }
 
+    /**
+     * Is the exact [starts_at, ends_at] range on a lane fully available (opening
+     * hours − closures − bookings − past)? Increment-aligned. Used by manual
+     * admin entry to warn when a slot is outside hours/closed (override-able) —
+     * the authoritative double-book guard is the FOR-UPDATE insert, this is the
+     * availability check on top of it.
+     */
+    public static function is_range_available($lane_id, $starts_at, $ends_at) {
+        $date = substr((string) $starts_at, 0, 10);
+        $av   = self::for_lane((int) $lane_id, $date);
+        if (empty($av['is_open'])) {
+            return false;
+        }
+        $by = [];
+        foreach ($av['slots'] as $s) {
+            $by[$s['start']] = $s;
+        }
+        $cursor = (string) $starts_at;
+        $guard  = 0;
+        while ($cursor !== (string) $ends_at) {
+            if (++$guard > 48 || !isset($by[$cursor])) {
+                return false;
+            }
+            $slot = $by[$cursor];
+            if ($slot['state'] !== 'available' || $slot['end'] > $ends_at) {
+                return false;
+            }
+            $cursor = $slot['end'];
+        }
+        return true;
+    }
+
     // ── Interval helpers ────────────────────────────────────────────────────
 
     /** @return array<int,array{start:int,end:int,label:?string}> */

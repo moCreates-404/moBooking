@@ -14,12 +14,14 @@ if (!defined('ABSPATH')) {
 
 class MCLB_Bookings_Admin {
 
-    const SLUG = 'mclb-bookings-view';
+    const SLUG     = 'mclb-bookings-view';
+    const ADD_SLUG = 'mclb-add-booking';
 
     public function __construct() {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_mclb_admin_cancel', [$this, 'handle_cancel']);
         add_action('admin_post_mclb_assign_coach', [$this, 'handle_assign_coach']);
+        add_action('admin_post_mclb_add_booking', [$this, 'handle_add']);
     }
 
     public function menu() {
@@ -31,6 +33,15 @@ class MCLB_Bookings_Admin {
             self::SLUG,
             [$this, 'render'],
             1 // just under Settings
+        );
+        add_submenu_page(
+            MCLB_Admin::PAGE,
+            __('Add booking', 'mclb-lane-booking'),
+            __('Add booking', 'mclb-lane-booking'),
+            'manage_options',
+            self::ADD_SLUG,
+            [$this, 'render_add'],
+            2
         );
     }
 
@@ -66,6 +77,98 @@ class MCLB_Bookings_Admin {
         MCLB_Bookings::set_coach($id, $coach_id);
         wp_safe_redirect(add_query_arg('mclb_msg', 'coach', $this->base_url()));
         exit;
+    }
+
+    // ── Manual booking entry ─────────────────────────────────────────────────
+
+    public function handle_add() {
+        if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_add_booking')) {
+            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+        }
+        $add_url = admin_url('admin.php?page=' . self::ADD_SLUG);
+
+        $lane_id  = isset($_POST['lane_id']) ? absint($_POST['lane_id']) : 0;
+        $date     = isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '';
+        $start    = isset($_POST['start_time']) ? sanitize_text_field(wp_unslash($_POST['start_time'])) : '';
+        $end      = isset($_POST['end_time']) ? sanitize_text_field(wp_unslash($_POST['end_time'])) : '';
+        $override = !empty($_POST['override']);
+        $name     = isset($_POST['customer_name']) ? sanitize_text_field(wp_unslash($_POST['customer_name'])) : '';
+        $email    = isset($_POST['customer_email']) ? sanitize_email(wp_unslash($_POST['customer_email'])) : '';
+        $note     = isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '';
+
+        $lane = get_post($lane_id);
+        $re   = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        if (!$lane || $lane->post_type !== 'mclb_lane' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !preg_match($re, $start) || !preg_match($re, $end)) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'add_invalid', $add_url));
+            exit;
+        }
+        $starts_at = "$date $start:00";
+        $ends_at   = "$date $end:00";
+        if ($ends_at <= $starts_at) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'add_invalid', $add_url));
+            exit;
+        }
+
+        // Availability (hours/closures/past) is override-able; a real double-book is not.
+        if (!$override && !MCLB_Availability::is_range_available($lane_id, $starts_at, $ends_at)) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'add_unavailable', $add_url));
+            exit;
+        }
+
+        $tz       = wp_timezone();
+        $hours    = (new DateTimeImmutable($ends_at, $tz))->getTimestamp() - (new DateTimeImmutable($starts_at, $tz))->getTimestamp();
+        $duration = $hours / 3600;
+        $price    = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
+
+        $res = MCLB_Bookings::insert_confirmed_locked([
+            'lane_id'        => $lane_id,
+            'lane_name'      => get_the_title($lane_id),
+            'starts_at'      => $starts_at,
+            'ends_at'        => $ends_at,
+            'price'          => $price,
+            'customer_name'  => $name,
+            'customer_email' => $email,
+            'admin_note'     => $note,
+        ]);
+
+        if (!empty($res['ok'])) {
+            $msg = 'add_ok';
+        } elseif (!empty($res['lock_error'])) {
+            $msg = 'add_busy';
+        } else {
+            $msg = 'add_conflict'; // real double-book, blocked even with override
+        }
+        wp_safe_redirect(add_query_arg('mclb_msg', $msg, $add_url));
+        exit;
+    }
+
+    public function render_add() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        echo '<div class="wrap"><h1>' . esc_html__('Add booking', 'mclb-lane-booking') . '</h1>';
+        $this->notice();
+        echo '<p>' . esc_html__('Writes a confirmed booking directly (no cart or payment). A real double-booking is always blocked; tick “override” to book outside normal hours or a closure.', 'mclb-lane-booking') . '</p>';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="mclb_add_booking">';
+        wp_nonce_field('mclb_add_booking');
+        echo '<table class="form-table" role="presentation"><tbody>';
+
+        echo '<tr><th scope="row">' . esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking')) . '</th><td><select name="lane_id" required>';
+        foreach (MCLB_Lane::all_bookable() as $lane) {
+            printf('<option value="%d">%s</option>', (int) $lane->ID, esc_html(get_the_title($lane)));
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Date', 'mclb-lane-booking') . '</th><td><input type="date" name="date" required></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Time', 'mclb-lane-booking') . '</th><td><input type="time" name="start_time" required> &ndash; <input type="time" name="end_time" required></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Customer', 'mclb-lane-booking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mclb-lane-booking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mclb-lane-booking') . '"></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Note', 'mclb-lane-booking') . '</th><td><textarea name="admin_note" rows="2" class="large-text"></textarea></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Override', 'mclb-lane-booking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mclb-lane-booking') . '</label></td></tr>';
+
+        echo '</tbody></table>';
+        submit_button(__('Add booking', 'mclb-lane-booking'));
+        echo '</form></div>';
     }
 
     // ── Screen ─────────────────────────────────────────────────────────────────
@@ -207,16 +310,20 @@ class MCLB_Bookings_Admin {
             return;
         }
         $map = [
-            'refunded'           => __('Booking cancelled and refunded.', 'mclb-lane-booking'),
-            'cancelled'          => __('Booking cancelled.', 'mclb-lane-booking'),
-            'cancelled_norefund' => __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mclb-lane-booking'),
-            'coach'              => __('Coach updated.', 'mclb-lane-booking'),
-            'nochange'           => __('No change — the booking was not in a cancellable state.', 'mclb-lane-booking'),
+            'refunded'           => ['success', __('Booking cancelled and refunded.', 'mclb-lane-booking')],
+            'cancelled'          => ['success', __('Booking cancelled.', 'mclb-lane-booking')],
+            'cancelled_norefund' => ['warning', __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mclb-lane-booking')],
+            'coach'              => ['success', __('Coach updated.', 'mclb-lane-booking')],
+            'nochange'           => ['warning', __('No change — the booking was not in a cancellable state.', 'mclb-lane-booking')],
+            'add_ok'             => ['success', __('Booking added.', 'mclb-lane-booking')],
+            'add_conflict'       => ['error', __('That lane is already booked for part of that time — not added.', 'mclb-lane-booking')],
+            'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mclb-lane-booking')],
+            'add_busy'           => ['error', __('The system was busy — please try again.', 'mclb-lane-booking')],
+            'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mclb-lane-booking')],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($map[$key])) {
-            $class = $key === 'nochange' ? 'notice-warning' : 'notice-success';
-            printf('<div class="notice %s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($map[$key]));
+            printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($map[$key][0]), esc_html($map[$key][1]));
         }
     }
 }

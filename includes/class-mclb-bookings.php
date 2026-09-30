@@ -71,6 +71,7 @@ class MCLB_Bookings {
   coach_requested tinyint(1) NOT NULL DEFAULT 0,
   coach_request_note text,
   assigned_coach_id bigint(20) unsigned DEFAULT NULL,
+  admin_note text,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -343,6 +344,81 @@ class MCLB_Bookings {
         }
         $e = strtolower($err);
         return strpos($e, 'deadlock') !== false || strpos($e, 'lock wait timeout') !== false;
+    }
+
+    /**
+     * Insert a CONFIRMED booking directly (admin manual entry — no cart/hold/
+     * payment), through the same FOR-UPDATE overlap guard + lock-retry as holds
+     * so staff can't double-book a lane either. Returns the new id or a conflict.
+     *
+     * @return array{ok:bool,id?:int,conflict?:bool,lock_error?:bool}
+     */
+    public static function insert_confirmed_locked(array $data) {
+        for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
+            $r = self::attempt_confirmed($data);
+            if ($r['ok'] || empty($r['lock_error'])) {
+                return $r;
+            }
+            usleep(mt_rand(40, 120) * 1000);
+        }
+        return ['ok' => false, 'lock_error' => true];
+    }
+
+    private static function attempt_confirmed(array $data) {
+        global $wpdb;
+        $now = current_time('mysql');
+
+        $wpdb->query('START TRANSACTION');
+        $conflict = $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT id FROM ' . self::table() . '
+                   WHERE lane_id = %d
+                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                     AND starts_at < %s AND ends_at > %s
+                   LIMIT 1 FOR UPDATE',
+                (int) $data['lane_id'],
+                self::STATUS_CONFIRMED,
+                self::STATUS_HELD,
+                $now,
+                $data['ends_at'],
+                $data['starts_at']
+            )
+        );
+        if (self::is_lock_error($wpdb->last_error)) {
+            $wpdb->query('ROLLBACK');
+            return ['ok' => false, 'lock_error' => true];
+        }
+        if ($conflict) {
+            $wpdb->query('ROLLBACK');
+            return ['ok' => false, 'conflict' => true];
+        }
+        $row = [
+            'lane_id'        => absint($data['lane_id']),
+            'lane_name'      => sanitize_text_field($data['lane_name'] ?? ''),
+            'starts_at'      => $data['starts_at'],
+            'ends_at'        => $data['ends_at'],
+            'status'         => self::STATUS_CONFIRMED,
+            'hold_expires_at' => null,
+            'customer_id'    => isset($data['customer_id']) ? absint($data['customer_id']) : null,
+            'customer_email' => isset($data['customer_email']) ? sanitize_email($data['customer_email']) : null,
+            'customer_name'  => isset($data['customer_name']) ? sanitize_text_field($data['customer_name']) : null,
+            'price'          => isset($data['price']) ? (float) $data['price'] : null,
+            'admin_note'     => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
+            'created_at'     => $now,
+            'updated_at'     => $now,
+        ];
+        $ok = $wpdb->insert(self::table(), $row);
+        if (!$ok) {
+            if (self::is_lock_error($wpdb->last_error)) {
+                $wpdb->query('ROLLBACK');
+                return ['ok' => false, 'lock_error' => true];
+            }
+            $wpdb->query('ROLLBACK');
+            return ['ok' => false, 'conflict' => true];
+        }
+        $id = (int) $wpdb->insert_id;
+        $wpdb->query('COMMIT');
+        return ['ok' => true, 'id' => $id];
     }
 
     /** Stamp the WC order + line item onto a held row (status stays 'held'). */
