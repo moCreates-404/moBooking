@@ -48,6 +48,7 @@ class MCLB_Grid {
             'cartUrl'      => esc_url_raw(rest_url(self::REST_NS . '/cart')), // Phase 4 implements the handler
             'nonce'        => wp_create_nonce('wp_rest'),
             'coachEnabled' => (int) MCLB_Settings::get('enable_coach_requests') === 1,
+            'canBook'      => MCLB_License::can_book(),
             'currency'     => $symbol,
             'labels'       => [
                 'singular' => MCLB_Settings::get('resource_label_singular') ?: 'Lane',
@@ -61,6 +62,7 @@ class MCLB_Grid {
                 'coachNote' => __('Anything the coach should know? (optional)', 'mclb-lane-booking'),
                 'selectHint'=> __('Select an available time to begin.', 'mclb-lane-booking'),
                 'cartSoon'  => __('Booking checkout is not available yet.', 'mclb-lane-booking'),
+                'demo'      => MCLB_License::demo_message(),
             ],
         ]);
     }
@@ -80,7 +82,10 @@ class MCLB_Grid {
 
         ob_start();
         ?>
-        <div class="mclb-grid-wrap" data-type="<?php echo esc_attr($type); ?>" data-date="<?php echo esc_attr($today); ?>">
+        <div class="mclb-grid-wrap" data-type="<?php echo esc_attr($type); ?>" data-date="<?php echo esc_attr($today); ?>"<?php echo MCLB_License::can_book() ? '' : ' data-readonly="1"'; ?>>
+          <?php if (!MCLB_License::can_book()) : ?>
+            <p class="mclb-demo-notice" role="status"><?php echo esc_html(MCLB_License::demo_message()); ?></p>
+          <?php endif; ?>
           <div class="mclb-grid__toolbar">
             <button type="button" class="mclb-nav mclb-nav--prev" aria-label="<?php esc_attr_e('Previous day', 'mclb-lane-booking'); ?>">&#8249;</button>
             <input type="date" class="mclb-grid__date" value="<?php echo esc_attr($today); ?>" min="<?php echo esc_attr($today); ?>">

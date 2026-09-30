@@ -87,6 +87,11 @@ class MCLB_Bookings_Admin {
         }
         $add_url = admin_url('admin.php?page=' . self::ADD_SLUG);
 
+        if (!MCLB_License::can_book()) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'demo', $add_url));
+            exit;
+        }
+
         $lane_id  = isset($_POST['lane_id']) ? absint($_POST['lane_id']) : 0;
         $date     = isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '';
         $start    = isset($_POST['start_time']) ? sanitize_text_field(wp_unslash($_POST['start_time'])) : '';
@@ -146,8 +151,13 @@ class MCLB_Bookings_Admin {
         if (!current_user_can('manage_options')) {
             return;
         }
+        $can_book = MCLB_License::can_book();
+
         echo '<div class="wrap"><h1>' . esc_html__('Add booking', 'mclb-lane-booking') . '</h1>';
         $this->notice();
+        if (!$can_book) {
+            printf('<div class="notice notice-warning"><p>%s</p></div>', esc_html(MCLB_License::demo_message()));
+        }
         echo '<p>' . esc_html__('Writes a confirmed booking directly (no cart or payment). A real double-booking is always blocked; tick “override” to book outside normal hours or a closure.', 'mclb-lane-booking') . '</p>';
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -167,7 +177,7 @@ class MCLB_Bookings_Admin {
         echo '<tr><th scope="row">' . esc_html__('Override', 'mclb-lane-booking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mclb-lane-booking') . '</label></td></tr>';
 
         echo '</tbody></table>';
-        submit_button(__('Add booking', 'mclb-lane-booking'));
+        submit_button(__('Add booking', 'mclb-lane-booking'), 'primary', 'submit', true, $can_book ? [] : ['disabled' => 'disabled']);
         echo '</form></div>';
     }
 
@@ -320,6 +330,7 @@ class MCLB_Bookings_Admin {
             'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mclb-lane-booking')],
             'add_busy'           => ['error', __('The system was busy — please try again.', 'mclb-lane-booking')],
             'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mclb-lane-booking')],
+            'demo'               => ['error', MCLB_License::demo_message()],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($map[$key])) {

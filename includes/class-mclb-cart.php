@@ -63,6 +63,9 @@ class MCLB_Cart {
         if (!class_exists('WooCommerce') || !function_exists('WC')) {
             return new WP_Error('mclb_no_wc', __('Bookings are temporarily unavailable.', 'mclb-lane-booking'), ['status' => 503]);
         }
+        if (!MCLB_License::can_book()) {
+            return new WP_Error('mclb_demo', MCLB_License::demo_message(), ['status' => 403]);
+        }
         if (self::rate_limited()) {
             return new WP_Error('mclb_rate', __('Too many requests — please wait a moment and try again.', 'mclb-lane-booking'), ['status' => 429]);
         }

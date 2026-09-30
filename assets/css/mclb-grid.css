@@ -150,6 +150,18 @@
 
 .mclb-grid__empty { padding: 1rem; color: var(--mclb-ink-muted); }
 
+/* Demo / read-only mode banner (shown when the licence gate is closed). */
+.mclb-demo-notice {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--mclb-line);
+  border-left: 4px solid var(--mclb-booked, #c94a55);
+  border-radius: 6px;
+  background: var(--mclb-surface);
+  color: var(--mclb-ink);
+  font-size: 0.9em;
+}
+
 /* Legend */
 .mclb-legend {
   display: flex;

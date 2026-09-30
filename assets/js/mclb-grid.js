@@ -301,8 +301,11 @@
     var has = this.selections.length > 0;
     this.selectionBox.hidden = !has;
     this.totalEl.textContent = has ? ((CFG.i18n && CFG.i18n.total || 'Total') + ': ' + fmtMoney(grand)) : '';
-    if (this.addBtn) { this.addBtn.disabled = !has; }
+    if (this.addBtn) { this.addBtn.disabled = !has || CFG.canBook === false; }
     if (this.msg) { this.msg.textContent = ''; this.msg.className = 'mclb-selection__msg'; }
+    if (has && CFG.canBook === false) {
+      this.setMsg((CFG.i18n && CFG.i18n.demo) || 'Bookings are unavailable in demo mode.', false);
+    }
   };
 
   // ── Date navigation ─────────────────────────────────────────────────────────
@@ -347,6 +350,10 @@
   MclbGrid.prototype.addToCart = function () {
     var self = this;
     if (!this.selections.length) { return; }
+    if (CFG.canBook === false) {
+      this.setMsg((CFG.i18n && CFG.i18n.demo) || 'Bookings are unavailable in demo mode.', false);
+      return;
+    }
 
     var coachToggle = this.wrap.querySelector('.mclb-coach__toggle');
     var coachNote = this.wrap.querySelector('.mclb-coach__note');
@@ -372,7 +379,7 @@
       .then(function (res) {
         if (res.ok && res.body && res.body.redirect) { window.location = res.body.redirect; return; }
         if (res.ok) { self.setMsg((res.body && res.body.message) || 'Added.', true); }
-        else { self.setMsg((CFG.i18n && CFG.i18n.cartSoon) || 'Checkout not available yet.', false); self.addBtn.disabled = false; }
+        else { self.setMsg((res.body && res.body.message) || (CFG.i18n && CFG.i18n.cartSoon) || 'Checkout not available yet.', false); self.addBtn.disabled = false; }
       })
       .catch(function () {
         self.setMsg((CFG.i18n && CFG.i18n.cartSoon) || 'Checkout not available yet.', false);

@@ -43,4 +43,25 @@ class MCLB_License {
     public static function is_valid() {
         return self::status()['valid'];
     }
+
+    /**
+     * The single write-gate. When this is false the plugin runs in read-only /
+     * demo mode: the grid still renders availability, but no booking can be
+     * committed — the REST cart endpoint and the admin "Add booking" screen both
+     * refuse. Everything that takes a slot funnels through here so the gating
+     * lives in one place (the remote validation swap lands in status() only).
+     *
+     * Escape hatches for self-hosted / development installs:
+     *   - define('MCLB_LICENSE_UNLOCK', true) in wp-config.php, or
+     *   - add_filter('mclb_can_book', '__return_true')
+     */
+    public static function can_book() {
+        $can = (defined('MCLB_LICENSE_UNLOCK') && MCLB_LICENSE_UNLOCK) ? true : self::is_valid();
+        return (bool) apply_filters('mclb_can_book', $can);
+    }
+
+    /** Customer-/staff-facing explanation shown when writes are blocked. */
+    public static function demo_message() {
+        return __('This booking system is running in demo mode — bookings can’t be completed until the site’s licence is activated.', 'mclb-lane-booking');
+    }
 }
