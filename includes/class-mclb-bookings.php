@@ -199,6 +199,51 @@ class MCLB_Bookings {
         return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE id = %d', (int) $id));
     }
 
+    /** Filtered query for the admin booking view. */
+    public static function query(array $args = []) {
+        global $wpdb;
+        $where  = ['1=1'];
+        $params = [];
+        if (!empty($args['status'])) {
+            $where[]  = 'status = %s';
+            $params[] = $args['status'];
+        }
+        if (!empty($args['lane_id'])) {
+            $where[]  = 'lane_id = %d';
+            $params[] = (int) $args['lane_id'];
+        }
+        if (!empty($args['date_from'])) {
+            $where[]  = 'starts_at >= %s';
+            $params[] = $args['date_from'] . ' 00:00:00';
+        }
+        if (!empty($args['date_to'])) {
+            $where[]  = 'starts_at <= %s';
+            $params[] = $args['date_to'] . ' 23:59:59';
+        }
+        if (!empty($args['search'])) {
+            $like     = '%' . $wpdb->esc_like($args['search']) . '%';
+            $where[]  = '(customer_name LIKE %s OR customer_email LIKE %s OR lane_name LIKE %s)';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+        $limit = isset($args['limit']) ? max(1, (int) $args['limit']) : 200;
+        $sql   = 'SELECT * FROM ' . self::table() . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY starts_at DESC LIMIT ' . $limit;
+        return $params ? $wpdb->get_results($wpdb->prepare($sql, $params)) : $wpdb->get_results($sql);
+    }
+
+    /** Admin-only: assign (or clear) the coach on a booking. */
+    public static function set_coach($id, $coach_id) {
+        global $wpdb;
+        return $wpdb->update(
+            self::table(),
+            ['assigned_coach_id' => $coach_id ? (int) $coach_id : null, 'updated_at' => current_time('mysql')],
+            ['id' => (int) $id],
+            [$coach_id ? '%d' : '%s', '%s'],
+            ['%d']
+        );
+    }
+
     /** A logged-in customer's bookings (for the My Account list), newest first. */
     public static function for_user($user_id, array $statuses = ['confirmed', 'cancelled']) {
         global $wpdb;

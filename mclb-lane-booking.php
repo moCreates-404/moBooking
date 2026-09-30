@@ -50,6 +50,7 @@ require_once MCLB_DIR . 'includes/class-mclb-refunds.php';
 require_once MCLB_DIR . 'includes/class-mclb-account.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';
+require_once MCLB_DIR . 'includes/admin/class-mclb-bookings-admin.php';
 require_once MCLB_DIR . 'includes/class-mclb-activator.php';
 require_once MCLB_DIR . 'includes/class-mclb-deactivator.php';
 require_once MCLB_DIR . 'includes/class-mclb-plugin.php';

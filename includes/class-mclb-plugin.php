@@ -47,6 +47,7 @@ class MCLB_Plugin {
         if (is_admin()) {
             new MCLB_Admin();
             new MCLB_Closures_Admin();
+            new MCLB_Bookings_Admin();
         }
 
         add_action('wp_head', [$this, 'output_css_tokens'], 20);
