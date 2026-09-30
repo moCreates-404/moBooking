@@ -284,4 +284,22 @@ class MCLB_Lane {
         }
         return get_posts($args);
     }
+
+    /**
+     * Distinct non-empty lane types across published lanes, sorted. Drives the
+     * type filter on admin screens.
+     *
+     * @return string[]
+     */
+    public static function types() {
+        $out = [];
+        foreach (self::all_bookable() as $lane) {
+            $t = self::get_type($lane->ID);
+            if ($t !== '' && !in_array($t, $out, true)) {
+                $out[] = $t;
+            }
+        }
+        sort($out);
+        return $out;
+    }
 }

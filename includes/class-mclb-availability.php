@@ -92,9 +92,14 @@ class MCLB_Availability {
         // the past can't be booked. Marking them here (server-side) means the grid
         // greys them out and the REST availability reflects it, so a customer is
         // blocked at selection, not bounced at add-to-cart. -1 = not today.
+        // Reports pass include_past to measure a lane's full capacity regardless
+        // of when "now" is (otherwise today's elapsed slots read as closed and
+        // understate utilisation).
         $now      = new DateTimeImmutable('now', $tz);
         $today    = $now->format('Y-m-d');
-        $past_cut = ($date === $today) ? ((int) $now->format('G') * 60 + (int) $now->format('i')) : -1;
+        $past_cut = (!empty($args['include_past']) || $date !== $today)
+            ? -1
+            : ((int) $now->format('G') * 60 + (int) $now->format('i'));
 
         // 4. Slice the window into increment slots and tag each.
         $slots = [];
@@ -190,9 +195,10 @@ class MCLB_Availability {
         foreach ($lanes as $lane) {
             $id    = (int) $lane->ID;
             $avail = self::for_lane($id, $date, [
-                'increment' => $increment,
-                'closures'  => array_merge($site_closures, $closures_by[$id] ?? []),
-                'bookings'  => $bookings_by[$id] ?? [],
+                'increment'    => $increment,
+                'closures'     => array_merge($site_closures, $closures_by[$id] ?? []),
+                'bookings'     => $bookings_by[$id] ?? [],
+                'include_past' => !empty($args['include_past']),
             ]);
             $result['lanes'][$id] = $avail;
 
