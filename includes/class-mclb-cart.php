@@ -254,8 +254,9 @@ class MCLB_Cart {
                 return $id;
             }
         }
+        $label = MCLB_Settings::get('resource_label_singular') ?: 'Lane';
         $p = new WC_Product_Simple();
-        $p->set_name('Lane Booking');
+        $p->set_name(sprintf(_x('%s Booking', 'auto-provisioned anchor product name', 'mclb-lane-booking'), $label));
         $p->set_status('publish');
         $p->set_catalog_visibility('hidden');
         $p->set_virtual(true);
@@ -335,7 +336,8 @@ class MCLB_Cart {
             $item->add_meta_data('_mclb_coach_note', $m['coach_note'], true);
         }
         // Visible meta (shows on the order + emails):
-        $item->add_meta_data(__('Lane', 'mclb-lane-booking'), $m['lane_name'], true);
+        $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking');
+        $item->add_meta_data($res_label, $m['lane_name'], true);
         $item->add_meta_data(__('When', 'mclb-lane-booking'), self::format_when($m), true);
         if (!empty($m['coach_requested'])) {
             $item->add_meta_data(__('Coach requested', 'mclb-lane-booking'), __('Yes', 'mclb-lane-booking'), true);
