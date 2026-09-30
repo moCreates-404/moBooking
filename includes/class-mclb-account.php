@@ -123,9 +123,11 @@ class MCLB_Account {
             return;
         }
         $map = [
-            'cancelled' => ['success', __('Booking cancelled. Your store credit has been emailed to you and can be applied at checkout.', 'mclb-lane-booking')],
-            'toolate'   => ['error', __('Sorry, this booking is too close to its start time to self-cancel. Please contact us.', 'mclb-lane-booking')],
-            'invalid'   => ['error', __('That booking could not be cancelled.', 'mclb-lane-booking')],
+            'cancelled'      => ['success', __('Booking cancelled. Your store credit has been emailed to you and can be applied at checkout.', 'mclb-lane-booking')],
+            'refunded'       => ['success', __('Booking cancelled and refunded to your original payment method.', 'mclb-lane-booking')],
+            'refund_pending' => ['success', __('Booking cancelled. Your refund is being processed — please allow a little time for it to appear.', 'mclb-lane-booking')],
+            'toolate'        => ['error', __('Sorry, this booking is too close to its start time to self-cancel. Please contact us.', 'mclb-lane-booking')],
+            'invalid'        => ['error', __('That booking could not be cancelled.', 'mclb-lane-booking')],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg']));
         if (isset($map[$key])) {
@@ -150,25 +152,49 @@ class MCLB_Account {
             exit;
         }
 
+        // Tiered cancellation policy (decision #4, finalised 30 Sep):
+        //   < cutoff before start                       → nothing (also UI-gated)
+        //   placed ≤ refund_window ago AND > cutoff out  → automatic real refund
+        //   otherwise (> cutoff out, placed longer ago)  → store-credit coupon
         $tz        = wp_timezone();
-        $hours_out = ((new DateTimeImmutable($b->starts_at, $tz))->getTimestamp() - (new DateTimeImmutable('now', $tz))->getTimestamp()) / 3600;
-        if ($hours_out < (int) MCLB_Settings::get('self_cancel_hours')) {
+        $now       = new DateTimeImmutable('now', $tz);
+        $hours_out = ((new DateTimeImmutable($b->starts_at, $tz))->getTimestamp() - $now->getTimestamp()) / 3600;
+        $cutoff    = (int) MCLB_Settings::get('self_cancel_hours');
+
+        if ($hours_out < $cutoff) {
             wp_safe_redirect(add_query_arg('mclb_msg', 'toolate', $redirect));
             exit;
         }
 
-        MCLB_Bookings::cancel($booking_id); // release the slot
-        $code = self::issue_credit_coupon($b);
+        $hours_since_placed = ($now->getTimestamp() - (new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) / 3600;
+        $refund_window      = (int) MCLB_Settings::get('refund_window_hours');
 
-        if ($b->order_id) {
-            $order = wc_get_order((int) $b->order_id);
-            if ($order) {
-                /* translators: 1: booking id, 2: coupon code. */
-                $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mclb-lane-booking'), (int) $b->id, $code));
+        if ($hours_since_placed <= $refund_window) {
+            // Real refund tier. The atomic guard lives inside cancel_and_refund().
+            $res = MCLB_Refunds::cancel_and_refund((int) $b->id, __('Customer self-cancel (within refund window)', 'mclb-lane-booking'));
+            if (empty($res['ok'])) {
+                wp_safe_redirect(add_query_arg('mclb_msg', 'invalid', $redirect));
+                exit;
             }
+            $msg = !empty($res['refunded']) ? 'refunded' : 'refund_pending';
+        } else {
+            // Store-credit tier. claim_cancel() is the same idempotency guard.
+            if (!MCLB_Bookings::claim_cancel((int) $b->id)) {
+                wp_safe_redirect(add_query_arg('mclb_msg', 'invalid', $redirect));
+                exit;
+            }
+            $code = self::issue_credit_coupon($b);
+            if ($b->order_id) {
+                $order = wc_get_order((int) $b->order_id);
+                if ($order) {
+                    /* translators: 1: booking id, 2: coupon code. */
+                    $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mclb-lane-booking'), (int) $b->id, $code));
+                }
+            }
+            $msg = 'cancelled';
         }
 
-        wp_safe_redirect(add_query_arg('mclb_msg', 'cancelled', $redirect));
+        wp_safe_redirect(add_query_arg('mclb_msg', $msg, $redirect));
         exit;
     }
 

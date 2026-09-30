@@ -312,6 +312,27 @@ class MCLB_Bookings {
         );
     }
 
+    /**
+     * Atomically claim a confirmed booking for cancellation: flip it to
+     * 'cancelled' only if it is currently 'confirmed', in a single UPDATE.
+     * Returns true only to the ONE caller that won the flip — the idempotency
+     * guard shared by the account self-cancel flow and the admin cancel/refund
+     * action, so neither can double-release or double-refund the same booking.
+     */
+    public static function claim_cancel($id) {
+        global $wpdb;
+        $rows = $wpdb->query(
+            $wpdb->prepare(
+                'UPDATE ' . self::table() . ' SET status = %s, updated_at = %s WHERE id = %d AND status = %s',
+                self::STATUS_CANCELLED,
+                current_time('mysql'),
+                (int) $id,
+                self::STATUS_CONFIRMED
+            )
+        );
+        return (int) $rows === 1;
+    }
+
     /** Release every held/confirmed row for an order (cancel/refund). */
     public static function cancel_by_order($order_id) {
         global $wpdb;

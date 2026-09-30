@@ -46,6 +46,7 @@ require_once MCLB_DIR . 'includes/class-mclb-availability.php';
 require_once MCLB_DIR . 'includes/class-mclb-grid.php';
 require_once MCLB_DIR . 'includes/class-mclb-cart.php';
 require_once MCLB_DIR . 'includes/class-mclb-order.php';
+require_once MCLB_DIR . 'includes/class-mclb-refunds.php';
 require_once MCLB_DIR . 'includes/class-mclb-account.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';

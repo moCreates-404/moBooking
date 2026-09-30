@@ -125,6 +125,7 @@ class MCLB_Admin {
         }, $g);
         $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mclb-lane-booking'), __('WooCommerce product ID', 'mclb-lane-booking'), 0);
         $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
+        $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mclb-lane-booking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mclb-lane-booking'), 0, 720);
 
         // General → hours
         add_settings_section('mclb_hours', __('Default opening hours', 'mclb-lane-booking'), function () {
