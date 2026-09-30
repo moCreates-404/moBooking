@@ -1,8 +1,9 @@
 <?php
 /**
- * Closures admin screen — a submenu of moBooking. Phase 1 ships a usable
- * list + add/edit form (clear date/time/lane fields for non-technical staff);
- * the drag-on-a-calendar editor is deferred to Phase 5 by design.
+ * Closures admin screen — a submenu of moBooking. A usable list + add/edit
+ * form (clear date/time/lane fields for non-technical staff), with validation
+ * and a human-ordered list (ongoing + upcoming first, elapsed one-offs dimmed
+ * at the bottom). The drag-on-a-calendar editor remains deferred by design.
  *
  * @package moBooking
  */
@@ -52,6 +53,32 @@ class MCLB_Closures_Admin {
         $id   = isset($_POST['closure_id']) ? absint($_POST['closure_id']) : 0;
         $kind = (isset($_POST['kind']) && $_POST['kind'] === 'recurring') ? 'recurring' : 'oneoff';
 
+        // Raw inputs (a date + start/end time is friendlier than raw datetimes).
+        $date    = isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '';
+        $start   = isset($_POST['start_time']) ? sanitize_text_field(wp_unslash($_POST['start_time'])) : '';
+        $end     = isset($_POST['end_time']) ? sanitize_text_field(wp_unslash($_POST['end_time'])) : '';
+        $weekday = isset($_POST['weekday']) ? absint($_POST['weekday']) : 0;
+        $a_from  = isset($_POST['active_from']) ? sanitize_text_field(wp_unslash($_POST['active_from'])) : '';
+        $a_until = isset($_POST['active_until']) ? sanitize_text_field(wp_unslash($_POST['active_until'])) : '';
+
+        // Validate before writing, so bad input is rejected with a clear message
+        // instead of prepare() quietly nulling it into a no-op closure.
+        $hm  = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        $err = '';
+        if (!preg_match($hm, $start) || !preg_match($hm, $end) || $end <= $start) {
+            $err = 'err_time';
+        } elseif ($kind === 'oneoff' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $err = 'err_date';
+        } elseif ($kind === 'recurring' && ($weekday < 1 || $weekday > 7)) {
+            $err = 'err_weekday';
+        } elseif ($kind === 'recurring' && $a_from && $a_until && $a_until < $a_from) {
+            $err = 'err_range';
+        }
+        if ($err) {
+            wp_safe_redirect(add_query_arg(['page' => self::SLUG, 'mclb_notice' => $err], admin_url('admin.php')));
+            exit;
+        }
+
         $data = [
             'lane_id' => isset($_POST['lane_id']) ? absint($_POST['lane_id']) : 0,
             'kind'    => $kind,
@@ -59,18 +86,14 @@ class MCLB_Closures_Admin {
         ];
 
         if ($kind === 'oneoff') {
-            // Compose from a date + start/end time — friendlier than raw datetimes.
-            $date  = isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '';
-            $start = isset($_POST['start_time']) ? sanitize_text_field(wp_unslash($_POST['start_time'])) : '';
-            $end   = isset($_POST['end_time']) ? sanitize_text_field(wp_unslash($_POST['end_time'])) : '';
-            $data['starts_at'] = ($date && $start) ? "{$date} {$start}" : '';
-            $data['ends_at']   = ($date && $end) ? "{$date} {$end}" : '';
+            $data['starts_at'] = "{$date} {$start}";
+            $data['ends_at']   = "{$date} {$end}";
         } else {
-            $data['weekday']      = isset($_POST['weekday']) ? absint($_POST['weekday']) : 0;
-            $data['start_time']   = isset($_POST['start_time']) ? sanitize_text_field(wp_unslash($_POST['start_time'])) : '';
-            $data['end_time']     = isset($_POST['end_time']) ? sanitize_text_field(wp_unslash($_POST['end_time'])) : '';
-            $data['active_from']  = isset($_POST['active_from']) ? sanitize_text_field(wp_unslash($_POST['active_from'])) : '';
-            $data['active_until'] = isset($_POST['active_until']) ? sanitize_text_field(wp_unslash($_POST['active_until'])) : '';
+            $data['weekday']      = $weekday;
+            $data['start_time']   = $start;
+            $data['end_time']     = $end;
+            $data['active_from']  = $a_from;
+            $data['active_until'] = $a_until;
         }
 
         if ($id) {
@@ -112,13 +135,17 @@ class MCLB_Closures_Admin {
 
         if (isset($_GET['mclb_notice'])) {
             $map = [
-                'added'   => __('Closure added.', 'mclb-lane-booking'),
-                'updated' => __('Closure updated.', 'mclb-lane-booking'),
-                'deleted' => __('Closure deleted.', 'mclb-lane-booking'),
+                'added'       => ['success', __('Closure added.', 'mclb-lane-booking')],
+                'updated'     => ['success', __('Closure updated.', 'mclb-lane-booking')],
+                'deleted'     => ['success', __('Closure deleted.', 'mclb-lane-booking')],
+                'err_time'    => ['error', __('Please enter a start and end time, with the end after the start.', 'mclb-lane-booking')],
+                'err_date'    => ['error', __('Please choose a date for a one-off closure.', 'mclb-lane-booking')],
+                'err_weekday' => ['error', __('Please choose a weekday for a recurring closure.', 'mclb-lane-booking')],
+                'err_range'   => ['error', __('“Active until” can’t be before “active from”.', 'mclb-lane-booking')],
             ];
             $key = sanitize_key(wp_unslash($_GET['mclb_notice']));
             if (isset($map[$key])) {
-                printf('<div class="notice notice-success is-dismissible"><p>%s</p></div>', esc_html($map[$key]));
+                printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($map[$key][0]), esc_html($map[$key][1]));
             }
         }
 
@@ -241,6 +268,25 @@ class MCLB_Closures_Admin {
             return;
         }
 
+        // Order for humans: ongoing (recurring) and upcoming one-offs first, then
+        // elapsed one-offs last (dimmed) so staff can spot what's prunable.
+        $today = wp_date('Y-m-d');
+        foreach ($rows as $r) {
+            $r->_is_past = ($r->kind !== 'recurring' && $r->starts_at && substr($r->starts_at, 0, 10) < $today);
+            $r->_datekey = ($r->kind === 'recurring') ? '' : substr((string) $r->starts_at, 0, 10);
+        }
+        usort($rows, function ($a, $b) {
+            if ($a->_is_past !== $b->_is_past) {
+                return $a->_is_past ? 1 : -1; // past sinks to the bottom
+            }
+            if ($a->kind !== $b->kind) {
+                return $a->kind === 'recurring' ? -1 : 1; // recurring above one-offs
+            }
+            // Upcoming: soonest first; past: most-recent first.
+            $cmp = strcmp($a->_datekey, $b->_datekey);
+            return $a->_is_past ? -$cmp : $cmp;
+        });
+
         $weekdays = MCLB_Settings::weekdays();
         echo '<table class="widefat striped"><thead><tr>';
         printf(
@@ -267,6 +313,9 @@ class MCLB_Closures_Admin {
             } else {
                 $when = $r->starts_at ? substr($r->starts_at, 0, 10) : '—';
                 $time = substr((string) $r->starts_at, 11, 5) . ' – ' . substr((string) $r->ends_at, 11, 5);
+                if (!empty($r->_is_past)) {
+                    $when .= ' ' . __('(past)', 'mclb-lane-booking');
+                }
             }
 
             $edit_url   = add_query_arg(['page' => self::SLUG, 'closure_id' => (int) $r->id], admin_url('admin.php'));
@@ -275,7 +324,7 @@ class MCLB_Closures_Admin {
                 'mclb_delete_closure_' . (int) $r->id
             );
 
-            echo '<tr>';
+            echo '<tr' . (!empty($r->_is_past) ? ' style="opacity:.55"' : '') . '>';
             printf('<td>%s</td>', esc_html($lane_name));
             printf('<td>%s</td>', esc_html($r->kind === 'recurring' ? __('Recurring', 'mclb-lane-booking') : __('One-off', 'mclb-lane-booking')));
             printf('<td>%s</td>', esc_html($when));
