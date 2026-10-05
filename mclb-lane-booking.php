@@ -27,7 +27,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('MCLB_VERSION', '0.1.0');
-define('MCLB_DB_VERSION', '2'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note column.
+define('MCLB_DB_VERSION', '3'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note. v3: bookings coach-fee/counter/source columns + coach_range index, source backfill, closures.event_type.
 define('MCLB_FILE', __FILE__);
 define('MCLB_DIR', plugin_dir_path(__FILE__));
 define('MCLB_URL', plugin_dir_url(__FILE__));
@@ -38,6 +38,7 @@ define('MCLB_OPTION', 'mclb_settings');
 // A plain require map, not Composer/PSR-4, so the plugin stays drop-in
 // installable with zero build step. Phases 1+ add their classes to this list.
 require_once MCLB_DIR . 'includes/class-mclb-settings.php';
+require_once MCLB_DIR . 'includes/class-mclb-event-types.php';
 require_once MCLB_DIR . 'includes/class-mclb-license.php';
 require_once MCLB_DIR . 'includes/class-mclb-lane.php';
 require_once MCLB_DIR . 'includes/class-mclb-closures.php';

@@ -32,6 +32,7 @@ class MCLB_Admin {
         return [
             'general'    => __('General', 'mclb-lane-booking'),
             'appearance' => __('Appearance', 'mclb-lane-booking'),
+            'events'     => __('Events', 'mclb-lane-booking'),
             'license'    => __('License', 'mclb-lane-booking'),
         ];
     }
@@ -97,6 +98,7 @@ class MCLB_Admin {
     public function register_fields() {
         $g = $this->tab_page('general');
         $a = $this->tab_page('appearance');
+        $e = $this->tab_page('events');
         $l = $this->tab_page('license');
 
         // General → wording
@@ -146,6 +148,12 @@ class MCLB_Admin {
         // Appearance → fonts
         add_settings_section('mclb_fonts', __('Fonts', 'mclb-lane-booking'), '__return_false', $a);
         add_settings_field('font_mode', __('Fonts', 'mclb-lane-booking'), [$this, 'render_font_mode'], $a, 'mclb_fonts');
+
+        // Events → blockout types
+        add_settings_section('mclb_event_types', __('Event types', 'mclb-lane-booking'), function () {
+            echo '<p>' . esc_html__('Categories for blockouts (e.g. Academy, Maintenance). Each has a colour for the admin calendar and a toggle for whether its name is shown to customers — otherwise a blockout simply reads “Unavailable”.', 'mclb-lane-booking') . '</p>';
+        }, $e);
+        add_settings_field('mclb_event_types_rows', __('Types', 'mclb-lane-booking'), [$this, 'render_event_types'], $e, 'mclb_event_types');
 
         // License
         add_settings_section('mclb_license', __('License', 'mclb-lane-booking'), function () {
@@ -286,6 +294,69 @@ class MCLB_Admin {
             );
         }
         echo '</tbody></table>';
+    }
+
+    /**
+     * Repeatable event-type editor (Events tab). Each row carries a hidden stable
+     * slug so renaming a label never orphans the closures pointing at it. A
+     * hidden "submitted" marker lets the sanitiser tell "all rows removed" apart
+     * from "another tab was saved". New rows are cloned client-side from the
+     * <script> template below (index __i__).
+     */
+    public function render_event_types() {
+        $types = (array) $this->val('event_types');
+
+        printf('<input type="hidden" name="%s" value="1">', esc_attr(MCLB_OPTION . '[event_types_submitted]'));
+
+        echo '<table class="widefat striped mclb-event-types" style="max-width:640px"><thead><tr>';
+        printf(
+            '<th>%s</th><th>%s</th><th style="text-align:center">%s</th><th></th>',
+            esc_html__('Label', 'mclb-lane-booking'),
+            esc_html__('Colour', 'mclb-lane-booking'),
+            esc_html__('Show name publicly', 'mclb-lane-booking')
+        );
+        echo '</tr></thead><tbody class="mclb-et-rows">';
+        $i = 0;
+        foreach ($types as $t) {
+            $this->event_type_row($i, (array) $t);
+            $i++;
+        }
+        echo '</tbody></table>';
+        echo '<p><button type="button" class="button mclb-et-add">' . esc_html__('Add type', 'mclb-lane-booking') . '</button></p>';
+        echo '<p class="description">' . esc_html__('Removing a type leaves existing blockouts of that type reading “Unavailable”.', 'mclb-lane-booking') . '</p>';
+
+        echo '<script type="text/html" id="tmpl-mclb-et-row">';
+        $this->event_type_row('__i__', ['slug' => '', 'label' => '', 'color' => MCLB_Event_Types::FALLBACK_COLOR, 'public' => 0]);
+        echo '</script>';
+    }
+
+    private function event_type_row($i, array $t) {
+        $base   = MCLB_OPTION . '[event_types][' . $i . ']';
+        $slug   = isset($t['slug']) ? $t['slug'] : '';
+        $label  = isset($t['label']) ? $t['label'] : '';
+        $color  = (isset($t['color']) && $t['color']) ? $t['color'] : MCLB_Event_Types::FALLBACK_COLOR;
+        $public = !empty($t['public']);
+
+        echo '<tr class="mclb-et-row">';
+        printf(
+            '<td><input type="hidden" name="%1$s[slug]" value="%2$s"><input type="text" class="regular-text" name="%1$s[label]" value="%3$s"></td>',
+            esc_attr($base),
+            esc_attr($slug),
+            esc_attr($label)
+        );
+        printf(
+            '<td><input type="text" class="mclb-color" data-default-color="%2$s" name="%1$s[color]" value="%3$s"></td>',
+            esc_attr($base),
+            esc_attr(MCLB_Event_Types::FALLBACK_COLOR),
+            esc_attr($color)
+        );
+        printf(
+            '<td style="text-align:center"><input type="hidden" name="%1$s[public]" value="0"><input type="checkbox" name="%1$s[public]" value="1" %2$s></td>',
+            esc_attr($base),
+            checked($public, true, false)
+        );
+        printf('<td><button type="button" class="button-link mclb-et-remove" style="color:#b32d2e">%s</button></td>', esc_html__('Remove', 'mclb-lane-booking'));
+        echo '</tr>';
     }
 
     // ── Page ─────────────────────────────────────────────────────────────────

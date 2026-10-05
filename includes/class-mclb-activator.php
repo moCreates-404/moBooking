@@ -40,9 +40,27 @@ class MCLB_Activator {
         global $wpdb;
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+        $prev            = get_option('mclb_db_version');
         $charset_collate = $wpdb->get_charset_collate();
         dbDelta(MCLB_Bookings::schema($charset_collate));
         dbDelta(MCLB_Closures::schema($charset_collate));
+
+        // One-time v3 backfill: tag pre-existing orderless bookings as manual.
+        // Runs ONLY when crossing up into v3 from an earlier version — not on
+        // fresh installs, re-activations, or future upgrades. A manual entry has
+        // no WC order AND no session_token; anything orderless that is held, or
+        // carries a session_token (a live or swept-cancelled online hold), is
+        // excluded so it is never mislabelled.
+        if ($prev !== false && version_compare((string) $prev, '3', '<')) {
+            $bt = MCLB_Bookings::table();
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$bt} SET source = 'manual'
+                   WHERE order_id IS NULL
+                     AND status <> %s
+                     AND (session_token IS NULL OR session_token = '')",
+                MCLB_Bookings::STATUS_HELD
+            ));
+        }
 
         update_option('mclb_db_version', MCLB_DB_VERSION);
     }

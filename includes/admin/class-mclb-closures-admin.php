@@ -80,9 +80,10 @@ class MCLB_Closures_Admin {
         }
 
         $data = [
-            'lane_id' => isset($_POST['lane_id']) ? absint($_POST['lane_id']) : 0,
-            'kind'    => $kind,
-            'label'   => isset($_POST['label']) ? wp_unslash($_POST['label']) : '',
+            'lane_id'    => isset($_POST['lane_id']) ? absint($_POST['lane_id']) : 0,
+            'kind'       => $kind,
+            'event_type' => isset($_POST['event_type']) ? sanitize_title(wp_unslash($_POST['event_type'])) : '',
+            'label'      => isset($_POST['label']) ? wp_unslash($_POST['label']) : '',
         ];
 
         if ($kind === 'oneoff') {
@@ -187,8 +188,9 @@ class MCLB_Closures_Admin {
         $weekday   = $is_edit ? (int) $c->weekday : 0;
         $r_start   = ($is_edit && $c->start_time) ? substr($c->start_time, 0, 5) : '';
         $r_end     = ($is_edit && $c->end_time) ? substr($c->end_time, 0, 5) : '';
-        $a_from    = $is_edit ? (string) $c->active_from : '';
-        $a_until   = $is_edit ? (string) $c->active_until : '';
+        $a_from     = $is_edit ? (string) $c->active_from : '';
+        $a_until    = $is_edit ? (string) $c->active_until : '';
+        $event_type = $is_edit ? (string) $c->event_type : '';
 
         echo '<h2>' . ($is_edit ? esc_html__('Edit closure', 'mclb-lane-booking') : esc_html__('Add a closure', 'mclb-lane-booking')) . '</h2>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -238,16 +240,25 @@ class MCLB_Closures_Admin {
         echo '</td></tr>';
         echo '</tbody>';
 
-        // Shared time fields (start/end apply to both kinds)
+        // Shared fields (apply to both kinds)
         echo '<tbody>';
         echo '<tr><th scope="row">' . esc_html__('Time', 'mclb-lane-booking') . '</th><td>';
         printf('<input type="time" name="start_time" value="%s"> &ndash; ', esc_attr($kind === 'recurring' ? $r_start : $o_start));
         printf('<input type="time" name="end_time" value="%s">', esc_attr($kind === 'recurring' ? $r_end : $o_end));
         echo '</td></tr>';
 
-        echo '<tr><th scope="row">' . esc_html__('Label', 'mclb-lane-booking') . '</th><td>';
-        printf('<input type="text" class="regular-text" name="label" value="%s" placeholder="%s">', esc_attr($label), esc_attr__('e.g. Academy, Maintenance', 'mclb-lane-booking'));
-        printf('<p class="description">%s</p>', esc_html__('For your reference only.', 'mclb-lane-booking'));
+        echo '<tr><th scope="row">' . esc_html__('Event type', 'mclb-lane-booking') . '</th><td><select name="event_type">';
+        printf('<option value="">%s</option>', esc_html__('— None —', 'mclb-lane-booking'));
+        foreach (MCLB_Event_Types::options() as $slug => $tlabel) {
+            printf('<option value="%s" %s>%s</option>', esc_attr($slug), selected($event_type, $slug, false), esc_html($tlabel));
+        }
+        echo '</select>';
+        printf('<p class="description">%s</p>', esc_html__('Colours the admin calendar. Customers see the type name only if it’s set to show publicly — otherwise “Unavailable”.', 'mclb-lane-booking'));
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row">' . esc_html__('Note', 'mclb-lane-booking') . '</th><td>';
+        printf('<input type="text" class="regular-text" name="label" value="%s" placeholder="%s">', esc_attr($label), esc_attr__('e.g. Smith Academy, court resurfacing', 'mclb-lane-booking'));
+        printf('<p class="description">%s</p>', esc_html__('Internal note for staff — never shown to customers.', 'mclb-lane-booking'));
         echo '</td></tr>';
         echo '</tbody>';
 
@@ -290,12 +301,13 @@ class MCLB_Closures_Admin {
         $weekdays = MCLB_Settings::weekdays();
         echo '<table class="widefat striped"><thead><tr>';
         printf(
-            '<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th></th>',
+            '<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th></th>',
             esc_html($this->label_singular()),
             esc_html__('Type', 'mclb-lane-booking'),
             esc_html__('When', 'mclb-lane-booking'),
             esc_html__('Time', 'mclb-lane-booking'),
-            esc_html__('Label', 'mclb-lane-booking')
+            esc_html__('Event', 'mclb-lane-booking'),
+            esc_html__('Note', 'mclb-lane-booking')
         );
         echo '</tr></thead><tbody>';
 
@@ -324,11 +336,23 @@ class MCLB_Closures_Admin {
                 'mclb_delete_closure_' . (int) $r->id
             );
 
+            // Event type cell: colour swatch + resolved label (admin always sees
+            // the real name; unknown/untyped falls back to a dash).
+            $etype = (string) $r->event_type;
             echo '<tr' . (!empty($r->_is_past) ? ' style="opacity:.55"' : '') . '>';
             printf('<td>%s</td>', esc_html($lane_name));
             printf('<td>%s</td>', esc_html($r->kind === 'recurring' ? __('Recurring', 'mclb-lane-booking') : __('One-off', 'mclb-lane-booking')));
             printf('<td>%s</td>', esc_html($when));
             printf('<td>%s</td>', esc_html($time));
+            if ($etype !== '') {
+                printf(
+                    '<td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:6px;background:%s"></span>%s</td>',
+                    esc_attr(MCLB_Event_Types::color($etype)),
+                    esc_html(MCLB_Event_Types::admin_label($etype))
+                );
+            } else {
+                echo '<td>—</td>';
+            }
             printf('<td>%s</td>', esc_html((string) $r->label));
             printf(
                 '<td><a href="%s">%s</a> | <a href="%s" onclick="return confirm(%s)" style="color:#b32d2e">%s</a></td>',

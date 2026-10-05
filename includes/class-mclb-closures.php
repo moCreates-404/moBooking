@@ -38,6 +38,7 @@ class MCLB_Closures {
   end_time time DEFAULT NULL,
   active_from date DEFAULT NULL,
   active_until date DEFAULT NULL,
+  event_type varchar(50) DEFAULT NULL,
   label varchar(191) DEFAULT NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -125,9 +126,10 @@ class MCLB_Closures {
     private static function prepare(array $data) {
         $kind = (isset($data['kind']) && $data['kind'] === 'recurring') ? 'recurring' : 'oneoff';
         $row  = [
-            'lane_id' => isset($data['lane_id']) ? absint($data['lane_id']) : 0,
-            'kind'    => $kind,
-            'label'   => isset($data['label']) ? sanitize_text_field($data['label']) : null,
+            'lane_id'    => isset($data['lane_id']) ? absint($data['lane_id']) : 0,
+            'kind'       => $kind,
+            'event_type' => (isset($data['event_type']) && $data['event_type'] !== '') ? sanitize_title((string) $data['event_type']) : null,
+            'label'      => isset($data['label']) ? sanitize_text_field($data['label']) : null,
             // Reset both shapes; the relevant branch fills its own below.
             'starts_at'    => null,
             'ends_at'      => null,

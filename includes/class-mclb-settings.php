@@ -56,6 +56,17 @@ class MCLB_Settings {
                 6 => ['open' => '09:00', 'close' => '17:00', 'closed' => 0],
                 7 => ['open' => '09:00', 'close' => '19:00', 'closed' => 0],
             ],
+            'event_types'             => [
+                // Blockout categories (CCWA defaults). public=0 → customers see
+                // "Unavailable"; toggle a type public to surface its name on the grid.
+                ['slug' => 'academy',         'label' => 'Academy',         'color' => '#6c5ce7', 'public' => 0],
+                ['slug' => 'coaching-clinic', 'label' => 'Coaching Clinic', 'color' => '#0984e3', 'public' => 0],
+                ['slug' => 'school-group',    'label' => 'School / Group',  'color' => '#00b894', 'public' => 0],
+                ['slug' => 'private-hire',    'label' => 'Private Hire',    'color' => '#e17055', 'public' => 0],
+                ['slug' => 'maintenance',     'label' => 'Maintenance',     'color' => '#636e72', 'public' => 0],
+                ['slug' => 'public-holiday',  'label' => 'Public Holiday',  'color' => '#d63031', 'public' => 1],
+                ['slug' => 'other',           'label' => 'Other',           'color' => '#b2bec3', 'public' => 0],
+            ],
             'accent_color'            => '#f4c430',
             'state_available'         => '#ffffff',
             'state_booked'            => '#c94a55',
@@ -145,7 +156,62 @@ class MCLB_Settings {
         if (isset($in['font_mode'])) {
             $out['font_mode'] = in_array($in['font_mode'], ['inherit', 'override'], true) ? $in['font_mode'] : 'inherit';
         }
+        // Event types tab posts a hidden marker so "all rows removed" is
+        // distinguishable from "a different tab was saved" (same reason as the
+        // checkbox hidden-companion). Only then do we rewrite the list.
+        if (!empty($in['event_types_submitted'])) {
+            $out['event_types'] = self::sanitize_event_types($in['event_types'] ?? []);
+        }
 
+        return $out;
+    }
+
+    /**
+     * Normalise the repeatable event-type rows. A blank label = a removed row.
+     * Slugs are stable: a row carries its existing slug (hidden) so renaming the
+     * label keeps closures pointed at the same type; new rows derive a slug from
+     * the label, and collisions are de-duplicated.
+     */
+    public static function sanitize_event_types($rows) {
+        if (!is_array($rows)) {
+            return self::get('event_types');
+        }
+        $out  = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $label = isset($row['label']) ? sanitize_text_field($row['label']) : '';
+            if ($label === '') {
+                continue;
+            }
+            $slug = isset($row['slug']) ? sanitize_title($row['slug']) : '';
+            if ($slug === '') {
+                $slug = sanitize_title($label);
+            }
+            if ($slug === '') {
+                $slug = 'type';
+            }
+            $base = $slug;
+            $n    = 2;
+            while (isset($seen[$slug])) {
+                $slug = $base . '-' . $n;
+                $n++;
+            }
+            $seen[$slug] = true;
+
+            $color = isset($row['color']) ? sanitize_hex_color($row['color']) : '';
+            if (!$color) {
+                $color = MCLB_Event_Types::FALLBACK_COLOR;
+            }
+            $out[] = [
+                'slug'   => $slug,
+                'label'  => $label,
+                'color'  => $color,
+                'public' => empty($row['public']) ? 0 : 1,
+            ];
+        }
         return $out;
     }
 

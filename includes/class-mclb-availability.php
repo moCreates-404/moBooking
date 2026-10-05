@@ -267,7 +267,7 @@ class MCLB_Availability {
                 $s = self::hm_to_min((string) $c->start_time);
                 $e = self::hm_to_min((string) $c->end_time);
                 if ($s !== null && $e !== null && $e > $s) {
-                    $out[] = ['start' => $s, 'end' => $e, 'label' => $c->label];
+                    $out[] = ['start' => $s, 'end' => $e, 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
                 }
             } else { // one-off
                 if (empty($c->starts_at) || empty($c->ends_at)) {
@@ -278,7 +278,7 @@ class MCLB_Availability {
                 $s = max(0, $s);
                 $e = min(1440, $e);
                 if ($e > $s) {
-                    $out[] = ['start' => $s, 'end' => $e, 'label' => $c->label];
+                    $out[] = ['start' => $s, 'end' => $e, 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
                 }
             }
         }
