@@ -42,6 +42,10 @@ class MCLB_Bookings {
     public static function init() {
         add_filter('cron_schedules', [__CLASS__, 'cron_schedule']);
         add_action(self::CRON_HOOK, [__CLASS__, 'sweep_expired_holds']);
+        // Self-heal: re-arm the sweep if it's missing (e.g. an install whose
+        // activation hook never scheduled it, or the event was cleared). The
+        // guard inside schedule_cron() keeps this idempotent.
+        add_action('init', [__CLASS__, 'schedule_cron']);
     }
 
     /** Fully-qualified table name. */
@@ -240,17 +244,10 @@ class MCLB_Bookings {
         return $params ? $wpdb->get_results($wpdb->prepare($sql, $params)) : $wpdb->get_results($sql);
     }
 
-    /** Admin-only: assign (or clear) the coach on a booking. */
-    public static function set_coach($id, $coach_id) {
-        global $wpdb;
-        return $wpdb->update(
-            self::table(),
-            ['assigned_coach_id' => $coach_id ? (int) $coach_id : null, 'updated_at' => current_time('mysql')],
-            ['id' => (int) $id],
-            [$coach_id ? '%d' : '%s', '%s'],
-            ['%d']
-        );
-    }
+    // NOTE: coach assignment goes exclusively through assign_coach_locked() /
+    // remove_coach() (Phase 7b) so every write of assigned_coach_id is serialised
+    // by the per-coach named lock. The old unlocked set_coach() helper was removed
+    // to keep that invariant — there is no other writer of assigned_coach_id.
 
     /** A logged-in customer's bookings (for the My Account list), newest first. */
     public static function for_user($user_id, array $statuses = ['confirmed', 'cancelled']) {
@@ -361,8 +358,43 @@ class MCLB_Bookings {
      * @return array{ok:bool,id?:int,conflict?:bool,lock_error?:bool}
      */
     public static function insert_confirmed_locked(array $data) {
+        // Manual admin entry — stamp the source explicitly (column default 'online').
+        $data['source'] = 'manual';
+
+        // Optional coach: validate + snapshot the rate ONCE (so it stays stable
+        // across lock retries) and fold the fee into counter_due. A manual booking
+        // collects the lane price at the counter too → counter_due = price + fee.
+        $coach_id = isset($data['coach_id']) ? (int) $data['coach_id'] : 0;
+        $price    = isset($data['price']) ? (float) $data['price'] : 0.0;
+        if ($coach_id > 0) {
+            if (!MCLB_Coaches::is_bookable($coach_id)) {
+                return ['ok' => false, 'error' => 'coach_not_bookable'];
+            }
+            $rate = MCLB_Coaches::rate($coach_id);
+            if ($rate === null) {
+                return ['ok' => false, 'error' => 'coach_no_rate'];
+            }
+            $data['assigned_coach_id'] = $coach_id;
+            $data['coach_rate']        = (float) $rate;
+            $data['coach_fee']         = MCLB_Coaches::fee($rate, $data['starts_at'], $data['ends_at']);
+            $data['counter_due']       = round($price + $data['coach_fee'], 2);
+        } else {
+            $data['counter_due'] = round($price, 2);
+        }
+
+        $lock_coach = ($coach_id > 0);
         for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
-            $r = self::attempt_confirmed($data);
+            if ($lock_coach && !self::acquire_coach_lock($coach_id)) {
+                usleep(mt_rand(40, 120) * 1000);
+                continue; // coach busy with another write — retry
+            }
+            try {
+                $r = self::attempt_confirmed($data);
+            } finally {
+                if ($lock_coach) {
+                    self::release_coach_lock($coach_id);
+                }
+            }
             if ($r['ok'] || empty($r['lock_error'])) {
                 return $r;
             }
@@ -397,22 +429,47 @@ class MCLB_Bookings {
         }
         if ($conflict) {
             $wpdb->query('ROLLBACK');
-            return ['ok' => false, 'conflict' => true];
+            return ['ok' => false, 'conflict' => true, 'reason' => 'lane'];
         }
+        $coach_id = isset($data['assigned_coach_id']) ? (int) $data['assigned_coach_id'] : 0;
+
+        // Coach double-book guard — hard block, first in first served. A plain
+        // read: the caller holds this coach's named lock (see insert_confirmed_locked)
+        // so no other writer can assign the coach concurrently.
+        if ($coach_id > 0) {
+            $busy = $wpdb->get_var($wpdb->prepare(
+                'SELECT id FROM ' . self::table() . '
+                   WHERE assigned_coach_id = %d
+                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                     AND starts_at < %s AND ends_at > %s
+                   LIMIT 1',
+                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $data['ends_at'], $data['starts_at']
+            ));
+            if ($busy) {
+                $wpdb->query('ROLLBACK');
+                return ['ok' => false, 'conflict' => true, 'reason' => 'coach'];
+            }
+        }
+
         $row = [
-            'lane_id'        => absint($data['lane_id']),
-            'lane_name'      => sanitize_text_field($data['lane_name'] ?? ''),
-            'starts_at'      => $data['starts_at'],
-            'ends_at'        => $data['ends_at'],
-            'status'         => self::STATUS_CONFIRMED,
-            'hold_expires_at' => null,
-            'customer_id'    => isset($data['customer_id']) ? absint($data['customer_id']) : null,
-            'customer_email' => isset($data['customer_email']) ? sanitize_email($data['customer_email']) : null,
-            'customer_name'  => isset($data['customer_name']) ? sanitize_text_field($data['customer_name']) : null,
-            'price'          => isset($data['price']) ? (float) $data['price'] : null,
-            'admin_note'     => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
-            'created_at'     => $now,
-            'updated_at'     => $now,
+            'lane_id'           => absint($data['lane_id']),
+            'lane_name'         => sanitize_text_field($data['lane_name'] ?? ''),
+            'starts_at'         => $data['starts_at'],
+            'ends_at'           => $data['ends_at'],
+            'status'            => self::STATUS_CONFIRMED,
+            'hold_expires_at'   => null,
+            'customer_id'       => isset($data['customer_id']) ? absint($data['customer_id']) : null,
+            'customer_email'    => isset($data['customer_email']) ? sanitize_email($data['customer_email']) : null,
+            'customer_name'     => isset($data['customer_name']) ? sanitize_text_field($data['customer_name']) : null,
+            'price'             => isset($data['price']) ? (float) $data['price'] : null,
+            'assigned_coach_id' => $coach_id ?: null,
+            'coach_rate'        => isset($data['coach_rate']) ? (float) $data['coach_rate'] : null,
+            'coach_fee'         => isset($data['coach_fee']) ? (float) $data['coach_fee'] : null,
+            'counter_due'       => isset($data['counter_due']) ? (float) $data['counter_due'] : null,
+            'source'            => isset($data['source']) ? sanitize_text_field($data['source']) : 'manual',
+            'admin_note'        => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
+            'created_at'        => $now,
+            'updated_at'        => $now,
         ];
         $ok = $wpdb->insert(self::table(), $row);
         if (!$ok) {
@@ -421,7 +478,7 @@ class MCLB_Bookings {
                 return ['ok' => false, 'lock_error' => true];
             }
             $wpdb->query('ROLLBACK');
-            return ['ok' => false, 'conflict' => true];
+            return ['ok' => false, 'conflict' => true, 'reason' => 'lane'];
         }
         $id = (int) $wpdb->insert_id;
         $wpdb->query('COMMIT');
@@ -458,7 +515,253 @@ class MCLB_Bookings {
                 self::STATUS_CONFIRMED
             )
         );
-        return (int) $rows === 1;
+        if ((int) $rows === 1) {
+            // Only the one caller that won the flip reconciles the counter balance.
+            self::handle_counter_on_cancel((int) $id);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * On cancellation, reconcile any coach/counter balance: an UNPAID counter is
+     * voided (counter_due → NULL); a PAID counter can't be un-taken automatically,
+     * so it's flagged for manual handling in admin_note and (if there's an order)
+     * an order note. Runs once, for the caller that won claim_cancel().
+     */
+    private static function handle_counter_on_cancel($id) {
+        global $wpdb;
+        $b = self::get((int) $id);
+        if (!$b) {
+            return;
+        }
+        $now  = current_time('mysql');
+        $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+
+        if (!$paid) {
+            if ($b->counter_due !== null) {
+                $wpdb->update(self::table(), ['counter_due' => null, 'updated_at' => $now], ['id' => (int) $id]);
+            }
+            return;
+        }
+
+        /* translators: %s: money amount. */
+        $msg        = sprintf(__('Cancelled after a counter payment of %s was taken — handle manually.', 'mclb-lane-booking'), MCLB_Coaches::money((float) $b->counter_due));
+        $line       = "[{$now}] {$msg}";
+        $admin_note = trim((string) $b->admin_note);
+        $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
+        $wpdb->update(self::table(), ['admin_note' => $admin_note, 'updated_at' => $now], ['id' => (int) $id]);
+
+        if ($b->order_id && function_exists('wc_get_order')) {
+            $order = wc_get_order((int) $b->order_id);
+            if ($order) {
+                $order->add_order_note('moBooking: ' . $msg);
+            }
+        }
+    }
+
+    // ── Coach assignment (hard double-book block) + counter payments (Phase 7b) ──
+
+    /**
+     * Assign (or change) a coach on a confirmed booking under a FOR-UPDATE lock,
+     * mirroring the hold/insert guard: one transaction locks the target booking
+     * row then the coach's overlapping rows, so two concurrent assigns of the same
+     * coach to overlapping slots can't both win. Hard block — no override.
+     *
+     * While the counter is unpaid the fee + counter_due recompute; once counter-
+     * paid the money is locked, so a change needs an admin note and is logged
+     * rather than silently re-priced. coach_id 0 removes the coach.
+     *
+     * @return array{ok:bool,error?:string,conflict?:bool,reason?:string,coach_fee?:float,counter_due?:float,locked?:bool}
+     */
+    // Named application lock per coach — serialises every assignment attempt for a
+    // coach across processes, which is what actually guarantees the hard block. A
+    // FOR-UPDATE read on assigned_coach_id can't: while the value doesn't exist yet
+    // (NULL → id) concurrent transactions take *shared* gap locks and can both pass
+    // the overlap check (verified failing under a parallel race). The named lock is
+    // not an InnoDB row lock, so it can't deadlock with the lane lock either.
+    private static function coach_lock_name($coach_id) {
+        // Hashed to a fixed length well under MySQL's 64-char lock-name limit, so a
+        // long DB name can never truncate the coach id (which would collide locks).
+        // Namespaced by DB name so parallel sites on one server never share a lock.
+        return 'mclb_coach_' . substr(md5(DB_NAME . '|' . (int) $coach_id), 0, 32);
+    }
+    // Short timeout: the lock is only ever held for a sub-second transaction, so a
+    // wait this long means real contention — fail fast as "busy" and let the retry
+    // loop (or the user) try again rather than hanging the request.
+    private static function acquire_coach_lock($coach_id, $timeout = 3) {
+        global $wpdb;
+        $got = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, %d)', self::coach_lock_name($coach_id), $timeout));
+        return (string) $got === '1';
+    }
+    private static function release_coach_lock($coach_id) {
+        global $wpdb;
+        $wpdb->query($wpdb->prepare('SELECT RELEASE_LOCK(%s)', self::coach_lock_name($coach_id)));
+    }
+
+    public static function assign_coach_locked($booking_id, $coach_id, $note = '') {
+        $booking_id = (int) $booking_id;
+        $coach_id   = (int) $coach_id;
+
+        if ($coach_id <= 0) {
+            return self::remove_coach($booking_id, $note);
+        }
+        if (!MCLB_Coaches::is_bookable($coach_id)) {
+            return ['ok' => false, 'error' => 'coach_not_bookable'];
+        }
+        $rate = MCLB_Coaches::rate($coach_id);
+        if ($rate === null) {
+            return ['ok' => false, 'error' => 'coach_no_rate'];
+        }
+
+        for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
+            if (!self::acquire_coach_lock($coach_id)) {
+                usleep(mt_rand(40, 120) * 1000);
+                continue; // coach busy with another assignment — retry
+            }
+            try {
+                $r = self::attempt_assign_coach($booking_id, $coach_id, (float) $rate, (string) $note);
+            } finally {
+                self::release_coach_lock($coach_id);
+            }
+            if ($r['ok'] || empty($r['lock_error'])) {
+                return $r;
+            }
+            usleep(mt_rand(40, 120) * 1000);
+        }
+        return ['ok' => false, 'lock_error' => true];
+    }
+
+    private static function attempt_assign_coach($booking_id, $coach_id, $rate, $note) {
+        global $wpdb;
+        $t   = self::table();
+        $now = current_time('mysql');
+
+        $wpdb->query('START TRANSACTION');
+
+        // Lock + re-read the target booking (guards against a concurrent cancel).
+        $b = $wpdb->get_row($wpdb->prepare("SELECT * FROM $t WHERE id = %d FOR UPDATE", $booking_id));
+        if (self::is_lock_error($wpdb->last_error)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'lock_error' => true]; }
+        if (!$b) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->status !== self::STATUS_CONFIRMED) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_confirmed']; }
+
+        // Coach double-book guard. Plain read — the caller holds this coach's named
+        // lock, so no other writer can assign the coach concurrently.
+        $busy = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $t
+               WHERE assigned_coach_id = %d
+                 AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                 AND starts_at < %s AND ends_at > %s
+                 AND id <> %d
+               LIMIT 1",
+            $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $b->ends_at, $b->starts_at, $booking_id
+        ));
+        if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach']; }
+
+        $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        if ($paid) {
+            // Financials locked. A swap needs a note and is logged, not re-priced.
+            if (trim((string) $note) === '') { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'locked_need_note']; }
+            /* translators: 1: datetime, 2: coach name, 3: admin note. */
+            $line       = sprintf(__('[%1$s] Coach changed to %2$s after counter payment — %3$s', 'mclb-lane-booking'), $now, MCLB_Coaches::label($coach_id), sanitize_text_field($note));
+            $admin_note = trim((string) $b->admin_note);
+            $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
+            $upd = $wpdb->update($t, ['assigned_coach_id' => $coach_id, 'admin_note' => $admin_note, 'updated_at' => $now], ['id' => $booking_id]);
+            if ($upd === false) {
+                $lock = self::is_lock_error($wpdb->last_error);
+                $wpdb->query('ROLLBACK');
+                return $lock ? ['ok' => false, 'lock_error' => true] : ['ok' => false, 'error' => 'db'];
+            }
+            $wpdb->query('COMMIT');
+            return ['ok' => true, 'locked' => true, 'coach_fee' => (float) $b->coach_fee, 'counter_due' => (float) $b->counter_due];
+        }
+
+        // Unpaid → snapshot the rate, (re)compute fee + counter_due.
+        $fee         = MCLB_Coaches::fee($rate, $b->starts_at, $b->ends_at);
+        $price       = (float) $b->price;
+        $counter_due = ($b->source === 'manual') ? round($price + $fee, 2) : round($fee, 2);
+        $upd = $wpdb->update($t, [
+            'assigned_coach_id' => $coach_id,
+            'coach_rate'        => $rate,
+            'coach_fee'         => $fee,
+            'counter_due'       => $counter_due,
+            'updated_at'        => $now,
+        ], ['id' => $booking_id]);
+        if ($upd === false) {
+            $lock = self::is_lock_error($wpdb->last_error);
+            $wpdb->query('ROLLBACK');
+            return $lock ? ['ok' => false, 'lock_error' => true] : ['ok' => false, 'error' => 'db'];
+        }
+        $wpdb->query('COMMIT');
+        return ['ok' => true, 'coach_fee' => $fee, 'counter_due' => $counter_due];
+    }
+
+    /** Remove the coach. Unpaid → recompute counter_due; paid → needs a note, logged. */
+    public static function remove_coach($booking_id, $note = '') {
+        global $wpdb;
+        $t   = self::table();
+        $now = current_time('mysql');
+        $b   = self::get((int) $booking_id);
+        if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->status !== self::STATUS_CONFIRMED) { return ['ok' => false, 'error' => 'not_confirmed']; }
+
+        $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        if ($paid) {
+            if (trim((string) $note) === '') { return ['ok' => false, 'error' => 'locked_need_note']; }
+            /* translators: 1: datetime, 2: admin note. */
+            $line       = sprintf(__('[%1$s] Coach removed after counter payment — %2$s', 'mclb-lane-booking'), $now, sanitize_text_field($note));
+            $admin_note = trim((string) $b->admin_note);
+            $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
+            $wpdb->update($t, ['assigned_coach_id' => null, 'admin_note' => $admin_note, 'updated_at' => $now], ['id' => (int) $booking_id]);
+            return ['ok' => true, 'locked' => true];
+        }
+
+        $price       = (float) $b->price;
+        $counter_due = ($b->source === 'manual') ? round($price, 2) : null;
+        $wpdb->update($t, [
+            'assigned_coach_id' => null,
+            'coach_rate'        => null,
+            'coach_fee'         => null,
+            'counter_due'       => $counter_due,
+            'updated_at'        => $now,
+        ], ['id' => (int) $booking_id]);
+        return ['ok' => true];
+    }
+
+    /** Record (never charge) a counter payment. */
+    public static function mark_counter_paid($booking_id, $staff_id = 0) {
+        global $wpdb;
+        $b = self::get((int) $booking_id);
+        if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->counter_due === null) { return ['ok' => false, 'error' => 'nothing_due']; }
+        if ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00') { return ['ok' => false, 'error' => 'already_paid']; }
+        $wpdb->update(self::table(), [
+            'counter_paid_at' => current_time('mysql'),
+            'counter_paid_by' => $staff_id ?: get_current_user_id(),
+            'updated_at'      => current_time('mysql'),
+        ], ['id' => (int) $booking_id]);
+        return ['ok' => true];
+    }
+
+    /** Reverse a recorded counter payment — requires an admin note, logged. */
+    public static function reverse_counter_paid($booking_id, $note) {
+        global $wpdb;
+        if (trim((string) $note) === '') { return ['ok' => false, 'error' => 'need_note']; }
+        $b = self::get((int) $booking_id);
+        if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->counter_paid_at === null || $b->counter_paid_at === '0000-00-00 00:00:00') { return ['ok' => false, 'error' => 'not_paid']; }
+        $now        = current_time('mysql');
+        /* translators: 1: datetime, 2: admin note. */
+        $line       = sprintf(__('[%1$s] Counter payment reversed — %2$s', 'mclb-lane-booking'), $now, sanitize_text_field($note));
+        $admin_note = trim((string) $b->admin_note);
+        $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
+        $wpdb->update(self::table(), [
+            'counter_paid_at' => null,
+            'counter_paid_by' => null,
+            'admin_note'      => $admin_note,
+            'updated_at'      => $now,
+        ], ['id' => (int) $booking_id]);
+        return ['ok' => true];
     }
 
     /** Release every held/confirmed row for an order (cancel/refund). */

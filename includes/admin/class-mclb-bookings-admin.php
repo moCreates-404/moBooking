@@ -21,6 +21,7 @@ class MCLB_Bookings_Admin {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_mclb_admin_cancel', [$this, 'handle_cancel']);
         add_action('admin_post_mclb_assign_coach', [$this, 'handle_assign_coach']);
+        add_action('admin_post_mclb_counter_paid', [$this, 'handle_counter_paid']);
         add_action('admin_post_mclb_add_booking', [$this, 'handle_add']);
     }
 
@@ -58,13 +59,24 @@ class MCLB_Bookings_Admin {
         $id   = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
         $mode = (isset($_POST['mode']) && $_POST['mode'] === 'refund') ? 'refund' : 'norefund';
 
+        // Capture the counter state BEFORE cancelling — claim_cancel() flags a
+        // paid counter into admin_note but we also surface the amount in the notice.
+        $pre          = MCLB_Bookings::get($id);
+        $counter_paid = $pre && $pre->counter_paid_at !== null && $pre->counter_paid_at !== '0000-00-00 00:00:00' && $pre->counter_due !== null;
+        $counter_amt  = $counter_paid ? (float) $pre->counter_due : 0.0;
+
         if ($mode === 'refund') {
             $res    = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'));
             $notice = empty($res['ok']) ? 'nochange' : (!empty($res['refunded']) ? 'refunded' : 'cancelled_norefund');
         } else {
             $notice = MCLB_Bookings::claim_cancel($id) ? 'cancelled' : 'nochange';
         }
-        wp_safe_redirect(add_query_arg('mclb_msg', $notice, $this->base_url()));
+
+        $args = ['mclb_msg' => $notice];
+        if ($counter_amt > 0 && $notice !== 'nochange') {
+            $args['mclb_counter_amt'] = $counter_amt;
+        }
+        wp_safe_redirect(add_query_arg($args, $this->base_url()));
         exit;
     }
 
@@ -74,8 +86,34 @@ class MCLB_Bookings_Admin {
         }
         $id       = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
         $coach_id = isset($_POST['coach_id']) ? absint($_POST['coach_id']) : 0;
-        MCLB_Bookings::set_coach($id, $coach_id);
-        wp_safe_redirect(add_query_arg('mclb_msg', 'coach', $this->base_url()));
+        $note     = isset($_POST['coach_note']) ? sanitize_text_field(wp_unslash($_POST['coach_note'])) : '';
+
+        $res = MCLB_Bookings::assign_coach_locked($id, $coach_id, $note);
+        if (!empty($res['ok'])) {
+            $msg = ($coach_id === 0) ? 'coach_removed' : 'coach';
+        } elseif (!empty($res['conflict'])) {
+            $msg = 'coach_conflict';
+        } else {
+            $errmap = [
+                'coach_no_rate'      => 'coach_no_rate',
+                'coach_not_bookable' => 'coach_not_bookable',
+                'locked_need_note'   => 'coach_locked',
+                'not_confirmed'      => 'nochange',
+                'not_found'          => 'nochange',
+            ];
+            $msg = $errmap[$res['error'] ?? ''] ?? 'coach_busy';
+        }
+        wp_safe_redirect(add_query_arg('mclb_msg', $msg, $this->base_url()));
+        exit;
+    }
+
+    public function handle_counter_paid() {
+        if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_counter_paid')) {
+            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+        }
+        $id  = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
+        $res = MCLB_Bookings::mark_counter_paid($id);
+        wp_safe_redirect(add_query_arg('mclb_msg', !empty($res['ok']) ? 'counter_paid' : 'counter_nochange', $this->base_url()));
         exit;
     }
 
@@ -125,6 +163,8 @@ class MCLB_Bookings_Admin {
         $duration = $hours / 3600;
         $price    = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
 
+        $coach_id = isset($_POST['coach_id']) ? absint($_POST['coach_id']) : 0;
+
         $res = MCLB_Bookings::insert_confirmed_locked([
             'lane_id'        => $lane_id,
             'lane_name'      => get_the_title($lane_id),
@@ -134,14 +174,21 @@ class MCLB_Bookings_Admin {
             'customer_name'  => $name,
             'customer_email' => $email,
             'admin_note'     => $note,
+            'coach_id'       => $coach_id,
         ]);
 
         if (!empty($res['ok'])) {
             $msg = 'add_ok';
         } elseif (!empty($res['lock_error'])) {
             $msg = 'add_busy';
+        } elseif (!empty($res['conflict'])) {
+            $msg = (($res['reason'] ?? '') === 'coach') ? 'add_coach_conflict' : 'add_conflict';
+        } elseif (($res['error'] ?? '') === 'coach_no_rate') {
+            $msg = 'add_coach_no_rate';
+        } elseif (($res['error'] ?? '') === 'coach_not_bookable') {
+            $msg = 'add_coach_invalid';
         } else {
-            $msg = 'add_conflict'; // real double-book, blocked even with override
+            $msg = 'add_conflict';
         }
         wp_safe_redirect(add_query_arg('mclb_msg', $msg, $add_url));
         exit;
@@ -175,6 +222,19 @@ class MCLB_Bookings_Admin {
         echo '<tr><th scope="row">' . esc_html__('Customer', 'mclb-lane-booking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mclb-lane-booking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mclb-lane-booking') . '"></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Note', 'mclb-lane-booking') . '</th><td><textarea name="admin_note" rows="2" class="large-text"></textarea></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Override', 'mclb-lane-booking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mclb-lane-booking') . '</label></td></tr>';
+
+        $coach_opts = MCLB_Coaches::options();
+        if (!empty($coach_opts)) {
+            echo '<tr><th scope="row">' . esc_html(MCLB_Coaches::label_singular()) . '</th><td><select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mclb-lane-booking') . '</option>';
+            foreach ($coach_opts as $cid => $clabel) {
+                $rate   = MCLB_Coaches::rate((int) $cid);
+                $rlabel = ($rate === null) ? __('no rate set', 'mclb-lane-booking') : MCLB_Coaches::money($rate) . __('/hr', 'mclb-lane-booking');
+                printf('<option value="%d">%s — %s</option>', (int) $cid, esc_html($clabel), esc_html($rlabel));
+            }
+            echo '</select>';
+            printf('<p class="description">%s</p>', esc_html__('The counter total is the lane price plus the coach fee (coach rate × booking length). A coach already booked for an overlapping time is blocked.', 'mclb-lane-booking'));
+            echo '</td></tr>';
+        }
 
         echo '</tbody></table>';
         submit_button(__('Add booking', 'mclb-lane-booking'), 'primary', 'submit', true, $can_book ? [] : ['disabled' => 'disabled']);
@@ -210,20 +270,26 @@ class MCLB_Bookings_Admin {
         $tz          = wp_timezone();
         $df          = get_option('date_format') ?: 'j M Y';
         $tf          = get_option('time_format') ?: 'g:i a';
-        $coach_on    = (int) MCLB_Settings::get('enable_coach_requests') === 1;
-        $coach_opts  = $coach_on ? MCLB_Bookings::coach_options() : [];
+        $now_sql     = current_time('mysql');
+        $coach_opts  = MCLB_Coaches::options();
+        $has_coaches = !empty($coach_opts);
+        $staff_label = MCLB_Coaches::label_singular();
         $res_label   = MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mclb-lane-booking');
 
         echo '<table class="widefat striped"><thead><tr>';
-        printf(
-            '<th>#</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th>',
-            esc_html($res_label),
-            esc_html__('When', 'mclb-lane-booking'),
-            esc_html__('Customer', 'mclb-lane-booking'),
-            esc_html__('Status', 'mclb-lane-booking'),
-            esc_html__('Order', 'mclb-lane-booking'),
-            esc_html__('Actions', 'mclb-lane-booking')
-        );
+        echo '<th>#</th>';
+        printf('<th>%s</th>', esc_html($res_label));
+        printf('<th>%s</th>', esc_html__('When', 'mclb-lane-booking'));
+        printf('<th>%s</th>', esc_html__('Customer', 'mclb-lane-booking'));
+        printf('<th>%s</th>', esc_html__('Status', 'mclb-lane-booking'));
+        printf('<th>%s</th>', esc_html__('Order', 'mclb-lane-booking'));
+        if ($has_coaches) {
+            printf('<th>%s</th>', esc_html($staff_label));
+            printf('<th>%s</th>', esc_html__('Fee', 'mclb-lane-booking'));
+            printf('<th>%s</th>', esc_html__('Counter due', 'mclb-lane-booking'));
+            printf('<th>%s</th>', esc_html__('Paid', 'mclb-lane-booking'));
+        }
+        printf('<th>%s</th>', esc_html__('Actions', 'mclb-lane-booking'));
         echo '</tr></thead><tbody>';
 
         foreach ($rows as $b) {
@@ -231,24 +297,54 @@ class MCLB_Bookings_Admin {
             $end   = new DateTimeImmutable($b->ends_at, $tz);
             $when  = wp_date($df, $start->getTimestamp()) . ', ' . wp_date($tf, $start->getTimestamp()) . ' – ' . wp_date($tf, $end->getTimestamp());
             $cust  = trim(($b->customer_name ?: '') . ($b->customer_email ? ' <' . $b->customer_email . '>' : ''));
+            $paid  = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
 
             echo '<tr>';
             printf('<td>%d</td>', (int) $b->id);
             printf('<td>%s</td>', esc_html($b->lane_name));
             printf('<td>%s</td>', esc_html($when));
             printf('<td>%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mclb-lane-booking')));
-            printf('<td>%s</td>', esc_html(ucfirst($b->status)));
+            // A lapsed hold reads "Expired" regardless of whether the sweep cron
+            // has run yet — availability already treats it as free (lazy expiry).
+            if ($b->status === MCLB_Bookings::STATUS_HELD && $b->hold_expires_at && $b->hold_expires_at < $now_sql) {
+                printf('<td><span style="color:#8a6d00">%s</span></td>', esc_html__('Expired', 'mclb-lane-booking'));
+            } else {
+                printf('<td>%s</td>', esc_html(ucfirst($b->status)));
+            }
             if ($b->order_id) {
                 printf('<td><a href="%s">#%d</a></td>', esc_url(admin_url('post.php?post=' . (int) $b->order_id . '&action=edit')), (int) $b->order_id);
             } else {
-                echo '<td>' . esc_html__('—', 'mclb-lane-booking') . '</td>';
+                echo '<td>—</td>';
+            }
+
+            if ($has_coaches) {
+                printf('<td>%s</td>', $b->assigned_coach_id ? esc_html(MCLB_Coaches::label((int) $b->assigned_coach_id)) : '—');
+                printf('<td>%s</td>', $b->coach_fee !== null ? esc_html(MCLB_Coaches::money((float) $b->coach_fee)) : '—');
+                printf('<td>%s</td>', $b->counter_due !== null ? esc_html(MCLB_Coaches::money((float) $b->counter_due)) : '—');
+                if ($b->counter_due === null) {
+                    echo '<td>—</td>';
+                } elseif ($paid && $b->status === MCLB_Bookings::STATUS_CANCELLED) {
+                    // Cancelled after the counter payment was taken — staff must
+                    // hand the money back; the amount is otherwise only in admin_note.
+                    printf(
+                        '<td><strong style="color:#b32d2e">%s</strong></td>',
+                        esc_html(sprintf(__('Refund at counter: %s', 'mclb-lane-booking'), MCLB_Coaches::money((float) $b->counter_due)))
+                    );
+                } elseif ($paid) {
+                    printf('<td><span style="color:#1a7f37">%s</span></td>', esc_html__('Paid', 'mclb-lane-booking'));
+                } else {
+                    printf('<td><span style="color:#b32d2e">%s</span></td>', esc_html__('Due', 'mclb-lane-booking'));
+                }
             }
 
             echo '<td>';
             if ($b->status === MCLB_Bookings::STATUS_CONFIRMED) {
                 $this->cancel_forms((int) $b->id);
-                if ($coach_on && (int) $b->coach_requested === 1) {
+                if ($has_coaches) {
                     $this->coach_form($b, $coach_opts);
+                    if ($b->counter_due !== null && !$paid) {
+                        $this->counter_paid_form((int) $b->id);
+                    }
                 }
             }
             echo '</td></tr>';
@@ -296,23 +392,32 @@ class MCLB_Bookings_Admin {
     }
 
     private function coach_form($b, $coach_opts) {
+        $requested = (int) $b->coach_requested === 1 ? ' ' . esc_html__('(requested)', 'mclb-lane-booking') : '';
         echo '<div style="margin-top:6px">';
-        if (empty($coach_opts)) {
-            printf('<small>%s</small>', esc_html__('Coach requested — no coaches available (wire the mclb_coach_options filter).', 'mclb-lane-booking'));
-            echo '</div>';
-            return;
-        }
         printf('<form method="post" action="%s" style="display:inline">', esc_url(admin_url('admin-post.php')));
         echo '<input type="hidden" name="action" value="mclb_assign_coach">';
         printf('<input type="hidden" name="booking_id" value="%d">', (int) $b->id);
         wp_nonce_field('mclb_assign_coach');
-        echo '<select name="coach_id"><option value="0">' . esc_html__('— Coach requested —', 'mclb-lane-booking') . '</option>';
+        echo '<select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mclb-lane-booking') . '</option>';
         foreach ($coach_opts as $cid => $label) {
-            printf('<option value="%d" %s>%s</option>', (int) $cid, selected((int) $b->assigned_coach_id, (int) $cid, false), esc_html($label));
+            $rate   = MCLB_Coaches::rate((int) $cid);
+            $rlabel = ($rate === null) ? __('no rate set', 'mclb-lane-booking') : MCLB_Coaches::money($rate) . __('/hr', 'mclb-lane-booking');
+            printf('<option value="%d" %s>%s — %s</option>', (int) $cid, selected((int) $b->assigned_coach_id, (int) $cid, false), esc_html($label), esc_html($rlabel));
         }
         echo '</select> ';
+        printf('<input type="text" name="coach_note" placeholder="%s" style="width:130px"> ', esc_attr__('note (if counter paid)', 'mclb-lane-booking'));
         printf('<button class="button button-small">%s</button>', esc_html__('Assign', 'mclb-lane-booking'));
+        echo $requested; // phpcs:ignore WordPress.Security.EscapeOutput -- pre-escaped above.
         echo '</form></div>';
+    }
+
+    private function counter_paid_form($id) {
+        printf('<form method="post" action="%s" style="display:inline-block;margin-top:6px" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Record that the counter payment was taken? (This is not a charge.)', 'mclb-lane-booking')) . '"'));
+        echo '<input type="hidden" name="action" value="mclb_counter_paid">';
+        printf('<input type="hidden" name="booking_id" value="%d">', (int) $id);
+        wp_nonce_field('mclb_counter_paid');
+        printf('<button class="button button-small">%s</button>', esc_html__('Mark counter paid', 'mclb-lane-booking'));
+        echo '</form>';
     }
 
     private function notice() {
@@ -323,18 +428,39 @@ class MCLB_Bookings_Admin {
             'refunded'           => ['success', __('Booking cancelled and refunded.', 'mclb-lane-booking')],
             'cancelled'          => ['success', __('Booking cancelled.', 'mclb-lane-booking')],
             'cancelled_norefund' => ['warning', __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mclb-lane-booking')],
-            'coach'              => ['success', __('Coach updated.', 'mclb-lane-booking')],
+            'coach'              => ['success', __('Coach assigned.', 'mclb-lane-booking')],
+            'coach_removed'      => ['success', __('Coach removed.', 'mclb-lane-booking')],
+            'coach_conflict'     => ['error', __('That coach is already booked for an overlapping time — not assigned.', 'mclb-lane-booking')],
+            'coach_no_rate'      => ['error', __('That coach has no hourly rate set — assign a rate before booking them.', 'mclb-lane-booking')],
+            'coach_not_bookable' => ['error', __('That coach isn’t available for bookings.', 'mclb-lane-booking')],
+            'coach_locked'       => ['error', __('Counter payment already taken — add a note to change or remove the coach.', 'mclb-lane-booking')],
+            'coach_busy'         => ['error', __('Could not update the coach — please try again.', 'mclb-lane-booking')],
+            'counter_paid'       => ['success', __('Counter payment recorded.', 'mclb-lane-booking')],
+            'counter_nochange'   => ['warning', __('No change — nothing was due, or it was already recorded.', 'mclb-lane-booking')],
             'nochange'           => ['warning', __('No change — the booking was not in a cancellable state.', 'mclb-lane-booking')],
             'add_ok'             => ['success', __('Booking added.', 'mclb-lane-booking')],
             'add_conflict'       => ['error', __('That lane is already booked for part of that time — not added.', 'mclb-lane-booking')],
             'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mclb-lane-booking')],
             'add_busy'           => ['error', __('The system was busy — please try again.', 'mclb-lane-booking')],
             'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mclb-lane-booking')],
+            'add_coach_conflict' => ['error', __('That coach is already booked for an overlapping time — booking not added.', 'mclb-lane-booking')],
+            'add_coach_no_rate'  => ['error', __('That coach has no hourly rate set — booking not added.', 'mclb-lane-booking')],
+            'add_coach_invalid'  => ['error', __('That coach isn’t available for bookings — booking not added.', 'mclb-lane-booking')],
             'demo'               => ['error', MCLB_License::demo_message()],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($map[$key])) {
-            printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($map[$key][0]), esc_html($map[$key][1]));
+            $type = $map[$key][0];
+            $msg  = $map[$key][1];
+            // A cancelled booking whose counter payment was already taken: say so,
+            // with the amount, so staff refund it at the counter (bump to warning).
+            $amt = isset($_GET['mclb_counter_amt']) ? (float) $_GET['mclb_counter_amt'] : 0.0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            if ($amt > 0 && in_array($key, ['refunded', 'cancelled', 'cancelled_norefund'], true)) {
+                /* translators: %s: money amount. */
+                $msg .= ' ' . sprintf(__('Counter payment of %s was taken. Refund at the counter.', 'mclb-lane-booking'), MCLB_Coaches::money($amt));
+                $type = 'warning';
+            }
+            printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), esc_html($msg));
         }
     }
 }

@@ -44,6 +44,8 @@ class MCLB_Settings {
             'booking_increment'       => 60, // minutes
             'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
             'enable_coach_requests'   => 0,  // gates the Phase 3 "Request a coach" UI; off by default
+            'staff_label_singular'    => 'Coach',  // what an assignable staff member is called (Coach, Pro, Instructor…)
+            'staff_label_plural'      => 'Coaches',
             'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
             'self_cancel_hours'       => 24, // logged-in self-cancel cutoff before booking start
             'refund_window_hours'     => 24, // cancel within this long after placing (and >cutoff before start) = real refund, else credit
@@ -143,6 +145,12 @@ class MCLB_Settings {
         // than sticking on the previous value through this per-tab merge.
         if (isset($in['enable_coach_requests'])) {
             $out['enable_coach_requests'] = empty($in['enable_coach_requests']) ? 0 : 1;
+        }
+        if (isset($in['staff_label_singular'])) {
+            $out['staff_label_singular'] = sanitize_text_field($in['staff_label_singular']) ?: $d['staff_label_singular'];
+        }
+        if (isset($in['staff_label_plural'])) {
+            $out['staff_label_plural'] = sanitize_text_field($in['staff_label_plural']) ?: $d['staff_label_plural'];
         }
         if (isset($in['hours']) && is_array($in['hours'])) {
             $out['hours'] = self::sanitize_hours($in['hours']);

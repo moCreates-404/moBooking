@@ -120,6 +120,8 @@ class MCLB_Admin {
             echo '<p>' . esc_html__('Cricketers-Club-specific add-on. When on, the booking flow offers a “Request a coach” option (admin assigns the coach later). Leave off for installs that don’t do coaching.', 'mclb-lane-booking') . '</p>';
         }, $g);
         $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mclb-lane-booking'), __('Show the “Request a coach” option on lane bookings', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_coach', 'staff_label_singular', __('Staff label (singular)', 'mclb-lane-booking'), __('e.g. Coach, Pro, Instructor', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_coach', 'staff_label_plural', __('Staff label (plural)', 'mclb-lane-booking'), __('e.g. Coaches, Pros, Instructors', 'mclb-lane-booking'));
 
         // General → WooCommerce
         add_settings_section('mclb_wc', __('WooCommerce', 'mclb-lane-booking'), function () {
