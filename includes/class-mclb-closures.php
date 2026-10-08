@@ -83,6 +83,40 @@ class MCLB_Closures {
     }
 
     /**
+     * Blockouts that fall on $date, resolved for the admin Manage calendar
+     * (Phase 7c). Matching is delegated to MCLB_Availability::closure_window() so
+     * it is identical to the public availability engine. lane_id 0 = site-wide
+     * (render across every lane column). One-off blockouts are editable in the
+     * calendar panel; recurring are read-only there (edit on the Closures screen).
+     *
+     * @return array<int,array>
+     */
+    public static function for_day_detail($date) {
+        $out = [];
+        foreach (self::all() as $c) {
+            $w = MCLB_Availability::closure_window($c, $date);
+            if (!$w) {
+                continue;
+            }
+            $out[] = [
+                'id'         => (int) $c->id,
+                'lane_id'    => (int) $c->lane_id,
+                'kind'       => $c->kind,
+                'event_type' => (string) $c->event_type,
+                'note'       => (string) $c->label,
+                'colour'     => MCLB_Event_Types::color($c->event_type),
+                'type_label' => MCLB_Event_Types::admin_label($c->event_type),
+                'editable'   => ($c->kind === 'oneoff'),
+                'starts_at'  => $w['starts_at'],
+                'ends_at'    => $w['ends_at'],
+                'start_min'  => (int) $w['start_min'],
+                'end_min'    => (int) $w['end_min'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
      * Closures that could affect a given lane (its own + site-wide) — the query
      * the availability engine (Phase 2) will build on.
      *

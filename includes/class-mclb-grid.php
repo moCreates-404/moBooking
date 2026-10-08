@@ -36,8 +36,10 @@ class MCLB_Grid {
     // ── Assets ────────────────────────────────────────────────────────────────
 
     public static function register_assets() {
-        wp_register_style(self::HANDLE, MCLB_URL . 'assets/css/mclb-grid.css', [], MCLB_VERSION);
-        wp_register_script(self::HANDLE, MCLB_URL . 'assets/js/mclb-grid.js', [], MCLB_VERSION, true);
+        $cssmt = @filemtime(MCLB_DIR . 'assets/css/mclb-grid.css');
+        $jsmt  = @filemtime(MCLB_DIR . 'assets/js/mclb-grid.js');
+        wp_register_style(self::HANDLE, MCLB_URL . 'assets/css/mclb-grid.css', [], $cssmt ? (string) $cssmt : MCLB_VERSION);
+        wp_register_script(self::HANDLE, MCLB_URL . 'assets/js/mclb-grid.js', [], $jsmt ? (string) $jsmt : MCLB_VERSION, true);
 
         $symbol = function_exists('get_woocommerce_currency_symbol')
             ? html_entity_decode(get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8')

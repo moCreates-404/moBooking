@@ -132,10 +132,12 @@ class MCLB_Coaches {
         return MCLB_Settings::get('staff_label_plural') ?: 'Coaches';
     }
 
-    /** Amount formatted with the store currency symbol, for notes/UI. */
+    /** Amount formatted with the store currency symbol, for notes/UI (plain text). */
     public static function money($amount) {
         if (function_exists('wc_price')) {
-            return wp_strip_all_tags(wc_price((float) $amount));
+            // wc_price returns HTML with a numeric entity for the symbol (&#36;);
+            // strip tags then decode so notes/badges read "$95.00", not "&#36;95.00".
+            return html_entity_decode(wp_strip_all_tags(wc_price((float) $amount)), ENT_QUOTES, 'UTF-8');
         }
         return number_format((float) $amount, 2);
     }

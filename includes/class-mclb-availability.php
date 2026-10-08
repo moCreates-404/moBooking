@@ -248,41 +248,107 @@ class MCLB_Availability {
         return true;
     }
 
+    /**
+     * Is the range within bookable TIME — opening hours, not closed, not past —
+     * ignoring existing bookings? The override gate for admin create: a 'booked'
+     * slot passes here (it's inside hours), so a double-book is left to the
+     * authoritative FOR-UPDATE insert (which surfaces as "slot taken"), while a
+     * closure / out-of-hours / past slot fails here (override-able). Only 'closed'
+     * (and missing) slots fail.
+     */
+    public static function is_range_bookable_time($lane_id, $starts_at, $ends_at) {
+        $date = substr((string) $starts_at, 0, 10);
+        $av   = self::for_lane((int) $lane_id, $date);
+        if (empty($av['is_open'])) {
+            return false;
+        }
+        $by = [];
+        foreach ($av['slots'] as $s) {
+            $by[$s['start']] = $s;
+        }
+        $cursor = (string) $starts_at;
+        $guard  = 0;
+        while ($cursor !== (string) $ends_at) {
+            if (++$guard > 48 || !isset($by[$cursor])) {
+                return false;
+            }
+            $slot = $by[$cursor];
+            if ($slot['state'] === 'closed' || $slot['end'] > $ends_at) {
+                return false;
+            }
+            $cursor = $slot['end'];
+        }
+        return true;
+    }
+
     // ── Interval helpers ────────────────────────────────────────────────────
 
     /** @return array<int,array{start:int,end:int,label:?string}> */
     private static function closed_intervals(array $closures, $date, $weekday, DateTimeImmutable $midnight, DateTimeZone $tz) {
         $out = [];
         foreach ($closures as $c) {
-            if ($c->kind === 'recurring') {
-                if ((int) $c->weekday !== (int) $weekday) {
-                    continue;
-                }
-                if (!empty($c->active_from) && $date < $c->active_from) {
-                    continue;
-                }
-                if (!empty($c->active_until) && $date > $c->active_until) {
-                    continue;
-                }
-                $s = self::hm_to_min((string) $c->start_time);
-                $e = self::hm_to_min((string) $c->end_time);
-                if ($s !== null && $e !== null && $e > $s) {
-                    $out[] = ['start' => $s, 'end' => $e, 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
-                }
-            } else { // one-off
-                if (empty($c->starts_at) || empty($c->ends_at)) {
-                    continue;
-                }
-                $s = self::min_of_day(new DateTimeImmutable($c->starts_at, $tz), $midnight);
-                $e = self::min_of_day(new DateTimeImmutable($c->ends_at, $tz), $midnight);
-                $s = max(0, $s);
-                $e = min(1440, $e);
-                if ($e > $s) {
-                    $out[] = ['start' => $s, 'end' => $e, 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
-                }
+            $m = self::closure_minutes($c, $date, $midnight, $tz);
+            if ($m) {
+                $out[] = ['start' => $m['start'], 'end' => $m['end'], 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
             }
         }
         return $out;
+    }
+
+    /**
+     * THE shared closure matcher: does closure $c apply on $date, and if so over
+     * what minutes-from-midnight window (clamped to the day)? One-off by its
+     * datetime range; recurring by weekday + active_from/until. Site-wide
+     * (lane_id = 0) vs per-lane is the caller's concern. Returns null when the
+     * closure doesn't touch the date. Used by both the public availability engine
+     * (closed_intervals) and the admin calendar (MCLB_Closures::for_day_detail),
+     * so the two can never drift.
+     *
+     * @return array{start:int,end:int}|null
+     */
+    public static function closure_minutes($c, $date, DateTimeImmutable $midnight, DateTimeZone $tz) {
+        if ($c->kind === 'recurring') {
+            if ((int) $c->weekday !== (int) $midnight->format('N')) {
+                return null;
+            }
+            if (!empty($c->active_from) && $date < $c->active_from) {
+                return null;
+            }
+            if (!empty($c->active_until) && $date > $c->active_until) {
+                return null;
+            }
+            $s = self::hm_to_min((string) $c->start_time);
+            $e = self::hm_to_min((string) $c->end_time);
+            return ($s !== null && $e !== null && $e > $s) ? ['start' => $s, 'end' => $e] : null;
+        }
+        if (empty($c->starts_at) || empty($c->ends_at)) {
+            return null;
+        }
+        $s = max(0, self::min_of_day(new DateTimeImmutable($c->starts_at, $tz), $midnight));
+        $e = min(1440, self::min_of_day(new DateTimeImmutable($c->ends_at, $tz), $midnight));
+        return ($e > $s) ? ['start' => $s, 'end' => $e] : null;
+    }
+
+    /**
+     * Admin-calendar resolver: the clamped minute window AND the wall-clock
+     * datetimes for a closure on $date, or null. Wraps closure_minutes() so the
+     * matching rules are identical to the public engine.
+     *
+     * @return array{start_min:int,end_min:int,starts_at:string,ends_at:string}|null
+     */
+    public static function closure_window($c, $date) {
+        $tz       = wp_timezone();
+        $midnight = new DateTimeImmutable($date . ' 00:00:00', $tz);
+        $m        = self::closure_minutes($c, $date, $midnight, $tz);
+        if (!$m) {
+            return null;
+        }
+        return [
+            'start_min' => $m['start'],
+            'end_min'   => $m['end'],
+            'starts_at' => $midnight->modify('+' . (int) $m['start'] . ' minutes')->format('Y-m-d H:i:s'),
+            'ends_at'   => $midnight->modify('+' . (int) $m['end'] . ' minutes')->format('Y-m-d H:i:s'),
+        ];
     }
 
     /** @return array<int,array{start:int,end:int,id:int}> */

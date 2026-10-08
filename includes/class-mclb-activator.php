@@ -20,6 +20,9 @@ class MCLB_Activator {
 
         self::install();
 
+        // Capabilities + Booking Staff role (Phase 7c).
+        MCLB_Caps::install();
+
         // CPT must be registered before flushing so its (absent) rewrite rules
         // are handled correctly.
         MCLB_Lane::register();

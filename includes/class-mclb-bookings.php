@@ -249,6 +249,46 @@ class MCLB_Bookings {
     // by the per-coach named lock. The old unlocked set_coach() helper was removed
     // to keep that invariant — there is no other writer of assigned_coach_id.
 
+    /**
+     * Rows occupying a lane on $date for the admin Manage calendar (Phase 7c):
+     * confirmed, plus LIVE (unexpired) holds so staff can see a checkout in
+     * progress, and cancelled only when asked (rendered ghosted). Expired holds
+     * are excluded — they no longer occupy the slot.
+     *
+     * @return array
+     */
+    public static function for_day_admin($date, $include_cancelled = false) {
+        global $wpdb;
+        $now     = current_time('mysql');
+        $clauses = [
+            $wpdb->prepare('status = %s', self::STATUS_CONFIRMED),
+            $wpdb->prepare('(status = %s AND hold_expires_at > %s)', self::STATUS_HELD, $now),
+        ];
+        if ($include_cancelled) {
+            $clauses[] = $wpdb->prepare('status = %s', self::STATUS_CANCELLED);
+        }
+        $status_sql = '(' . implode(' OR ', $clauses) . ')';
+        return $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM ' . self::table() . "
+               WHERE starts_at < %s AND ends_at > %s AND {$status_sql}
+               ORDER BY lane_id, starts_at",
+            $date . ' 23:59:59',
+            $date . ' 00:00:00'
+        ));
+    }
+
+    /** Append one timestamped audit line to a booking's admin_note (Phase 7c). */
+    public static function append_admin_note($id, $line) {
+        global $wpdb;
+        $b = self::get((int) $id);
+        if (!$b) {
+            return false;
+        }
+        $existing = trim((string) $b->admin_note);
+        $new      = ($existing === '') ? $line : $existing . "\n" . $line;
+        return $wpdb->update(self::table(), ['admin_note' => $new, 'updated_at' => current_time('mysql')], ['id' => (int) $id]);
+    }
+
     /** A logged-in customer's bookings (for the My Account list), newest first. */
     public static function for_user($user_id, array $statuses = ['confirmed', 'cancelled']) {
         global $wpdb;
@@ -660,13 +700,10 @@ class MCLB_Bookings {
 
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
         if ($paid) {
-            // Financials locked. A swap needs a note and is logged, not re-priced.
+            // Financials locked: a swap requires a note (enforced here); the audit
+            // line itself is written once by the caller in the standard format.
             if (trim((string) $note) === '') { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'locked_need_note']; }
-            /* translators: 1: datetime, 2: coach name, 3: admin note. */
-            $line       = sprintf(__('[%1$s] Coach changed to %2$s after counter payment — %3$s', 'mclb-lane-booking'), $now, MCLB_Coaches::label($coach_id), sanitize_text_field($note));
-            $admin_note = trim((string) $b->admin_note);
-            $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
-            $upd = $wpdb->update($t, ['assigned_coach_id' => $coach_id, 'admin_note' => $admin_note, 'updated_at' => $now], ['id' => $booking_id]);
+            $upd = $wpdb->update($t, ['assigned_coach_id' => $coach_id, 'updated_at' => $now], ['id' => $booking_id]);
             if ($upd === false) {
                 $lock = self::is_lock_error($wpdb->last_error);
                 $wpdb->query('ROLLBACK');
@@ -707,12 +744,9 @@ class MCLB_Bookings {
 
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
         if ($paid) {
+            // Requires a note (enforced); the audit line is written once by the caller.
             if (trim((string) $note) === '') { return ['ok' => false, 'error' => 'locked_need_note']; }
-            /* translators: 1: datetime, 2: admin note. */
-            $line       = sprintf(__('[%1$s] Coach removed after counter payment — %2$s', 'mclb-lane-booking'), $now, sanitize_text_field($note));
-            $admin_note = trim((string) $b->admin_note);
-            $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
-            $wpdb->update($t, ['assigned_coach_id' => null, 'admin_note' => $admin_note, 'updated_at' => $now], ['id' => (int) $booking_id]);
+            $wpdb->update($t, ['assigned_coach_id' => null, 'updated_at' => $now], ['id' => (int) $booking_id]);
             return ['ok' => true, 'locked' => true];
         }
 
@@ -750,16 +784,11 @@ class MCLB_Bookings {
         $b = self::get((int) $booking_id);
         if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
         if ($b->counter_paid_at === null || $b->counter_paid_at === '0000-00-00 00:00:00') { return ['ok' => false, 'error' => 'not_paid']; }
-        $now        = current_time('mysql');
-        /* translators: 1: datetime, 2: admin note. */
-        $line       = sprintf(__('[%1$s] Counter payment reversed — %2$s', 'mclb-lane-booking'), $now, sanitize_text_field($note));
-        $admin_note = trim((string) $b->admin_note);
-        $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
+        // Requires a note (enforced); the audit line is written once by the caller.
         $wpdb->update(self::table(), [
             'counter_paid_at' => null,
             'counter_paid_by' => null,
-            'admin_note'      => $admin_note,
-            'updated_at'      => $now,
+            'updated_at'      => current_time('mysql'),
         ], ['id' => (int) $booking_id]);
         return ['ok' => true];
     }

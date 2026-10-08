@@ -44,6 +44,12 @@ class MCLB_Plugin {
         MCLB_Order::init();
         MCLB_Account::init();
 
+        // Staff Manage view (Phase 7c): caps/role, the [mclb_manage] page + admin
+        // Calendar screen, and the admin REST layer.
+        MCLB_Caps::init();
+        MCLB_Manage::init();
+        MCLB_REST_Admin::init();
+
         if (is_admin()) {
             new MCLB_Admin();
             new MCLB_Closures_Admin();

@@ -123,6 +123,12 @@ class MCLB_Admin {
         $this->text_field($g, 'mclb_coach', 'staff_label_singular', __('Staff label (singular)', 'mclb-lane-booking'), __('e.g. Coach, Pro, Instructor', 'mclb-lane-booking'));
         $this->text_field($g, 'mclb_coach', 'staff_label_plural', __('Staff label (plural)', 'mclb-lane-booking'), __('e.g. Coaches, Pros, Instructors', 'mclb-lane-booking'));
 
+        // General → staff access (Manage view)
+        add_settings_section('mclb_staff_access', __('Staff access', 'mclb-lane-booking'), function () {
+            echo '<p>' . esc_html__('The page holding the [mclb_manage] shortcode — the staff calendar. Booking Staff are sent here at login; the page is login-gated, never cached, and noindexed.', 'mclb-lane-booking') . '</p>';
+        }, $g);
+        add_settings_field('manage_page_id', __('Manage page', 'mclb-lane-booking'), [$this, 'render_manage_page'], $g, 'mclb_staff_access');
+
         // General → WooCommerce
         add_settings_section('mclb_wc', __('WooCommerce', 'mclb-lane-booking'), function () {
             echo '<p>' . esc_html__('Cart items hang on a hidden virtual “anchor” product. Leave the ID blank to auto-create one on first checkout.', 'mclb-lane-booking') . '</p>';
@@ -274,6 +280,20 @@ class MCLB_Admin {
             checked($val, 'override', false),
             esc_html__('Override with the plugin’s own font stack', 'mclb-lane-booking')
         );
+    }
+
+    public function render_manage_page() {
+        wp_dropdown_pages([
+            'name'              => esc_attr($this->name('manage_page_id')),
+            'selected'          => (int) $this->val('manage_page_id'),
+            'show_option_none'  => __('— Select a page —', 'mclb-lane-booking'),
+            'option_none_value' => '0',
+        ]);
+        $id = (int) $this->val('manage_page_id');
+        if ($id) {
+            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url(get_permalink($id)), esc_html__('View', 'mclb-lane-booking'));
+        }
+        printf('<p class="description">%s</p>', esc_html__('Create a page containing just the [mclb_manage] shortcode, then choose it here.', 'mclb-lane-booking'));
     }
 
     public function render_hours() {
