@@ -287,6 +287,20 @@
     block.style.height = (Math.max(end - start, INC / 2) * PPM - 2) + 'px';
   }
 
+  // Advisory: is [startMin,endMin) outside this lane's open hours, over a blockout,
+  // or in the past today? Computed from the day payload (server stays authoritative).
+  function rangeOutside(lane, startMin, endMin) {
+    if (lane.open_min == null || lane.close_min == null) { return true; }
+    if (startMin < lane.open_min || endMin > lane.close_min) { return true; }
+    var bos = state.data.blockouts || [];
+    for (var i = 0; i < bos.length; i++) {
+      var bo = bos[i];
+      if ((bo.lane_id === 0 || bo.lane_id === lane.id) && startMin < bo.end_min && bo.start_min < endMin) { return true; }
+    }
+    if (state.date === CFG.today && state.data.now && startMin < dtToMin(state.data.now)) { return true; }
+    return false;
+  }
+
   function blockoutBlock(bo, open) {
     var b = el('div', 'mclb-mblock mclb-mblock--blockout');
     pos(b, bo.start_min, bo.end_min, open);
@@ -460,7 +474,12 @@
       bookBody.appendChild(ovWrap);
       var ovWarn = el('p', 'mclb-panel__warn', '⚠ Booking outside normal availability.'); ovWarn.style.display = 'none';
       bookBody.appendChild(ovWarn);
-      ov.onchange = function () { ovWarn.style.display = ov.checked ? '' : 'none'; };
+      // Show the warning when the range is genuinely outside hours/blockouts/past,
+      // or when override is ticked. (Advisory — the server is the authority.)
+      var outside = rangeOutside(lane, startMin, endMin);
+      function syncWarn() { ovWarn.style.display = (ov.checked || outside) ? '' : 'none'; }
+      ov.onchange = syncWarn;
+      syncWarn();
 
       var ini = initialsField(bookBody);
       var err = errBox(bookBody);
@@ -519,6 +538,7 @@
       var coachRow = el('div', 'mclb-panel__row');
       coachRow.appendChild(el('span', 'mclb-panel__rlabel', (CFG.labels.staffSingular || 'Coach') + ': ' + (b.coach_label || '—')));
       panel.appendChild(coachRow);
+      var coachSaveBtn = null; // set when the actions are built; enabled once coaches load
       var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
       field(panel, 'Change ' + (CFG.labels.staffSingular || 'coach'), coach);
       api('/coaches?date=' + state.date + '&start=' + timeInput(b.start_min) + '&end=' + timeInput(b.end_min) + '&exclude=' + b.id)
@@ -531,6 +551,7 @@
           }
           list.forEach(function (c) { coach.appendChild(opt(String(c.id), c.name + ' — ' + money(c.rate) + '/hr')); });
           coach.value = b.coach_id ? String(b.coach_id) : '0';
+          if (coachSaveBtn) { coachSaveBtn.disabled = false; }
         });
       var coachNote = mkInput('text'); coachNote.placeholder = 'note (required if counter paid)';
       if (b.counter_paid) { field(panel, 'Note', coachNote); }
@@ -557,7 +578,7 @@
 
       // actions
       var actions = el('div', 'mclb-panel__actions');
-      actions.appendChild(actionBtn('Save ' + (CFG.labels.staffSingular || 'coach'), function (btn) {
+      coachSaveBtn = actionBtn('Save ' + (CFG.labels.staffSingular || 'coach'), function (btn) {
         if (!needInitials()) { return; }
         var coachId = parseInt(coach.value, 10) || 0;
         // A counter-paid booking needs an explicit note to change/remove the coach.
@@ -566,7 +587,11 @@
           return;
         }
         runWrite(btn, err, api('/booking/' + b.id + '/coach', { method: 'POST', body: { coach_id: coachId, note: coachNote.value, actor: ini.value.trim() } }));
-      }));
+      });
+      // Disabled until the free-coach list has loaded + the current coach is
+      // preselected, so an accidental click can't fire the default "No coach".
+      coachSaveBtn.disabled = true;
+      actions.appendChild(coachSaveBtn);
       if (b.counter_due != null && b.counter_due > 0 && !b.counter_paid) {
         actions.appendChild(actionBtn('Mark counter paid', function () {
           if (!needInitials()) { return; }

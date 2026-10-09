@@ -306,19 +306,13 @@ class MCLB_Daysheets {
         return $out;
     }
 
-    /** Filterable footer; default is the club name + WC store address. */
+    /**
+     * Email footer. Default is just the club name (plain); the theme adds the
+     * club phone + address by hooking mclb_daysheet_footer_html, so the plugin
+     * stays generic with no theme/ACF dependency.
+     */
     private static function footer_html() {
-        $lines = [get_bloginfo('name') ?: 'Cricketers Club'];
-        $parts = array_filter([
-            get_option('woocommerce_store_address'),
-            get_option('woocommerce_store_address_2'),
-            get_option('woocommerce_store_city'),
-        ]);
-        if ($parts) {
-            $lines[] = implode(', ', $parts);
-        }
-        $html = implode('<br>', array_map('esc_html', $lines));
-        /* Theme can add a phone line etc. */
+        $html = esc_html(get_bloginfo('name') ?: 'Cricketers Club');
         return apply_filters('mclb_daysheet_footer_html', $html);
     }
 

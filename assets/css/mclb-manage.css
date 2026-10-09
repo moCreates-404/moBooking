@@ -107,3 +107,30 @@
   .mclb-cal__col { flex: 0 0 132px; min-width: 132px; }
   .mclb-panel { width: 100%; }
 }
+
+/* Front-end only (wp-admin already styles .button). Scoped so the staff page's
+ * toolbar/inputs/buttons look like the rest of the calendar, not raw native
+ * controls, and the big theme gap above the toolbar is trimmed. */
+.mclb-manage--front { margin-top: -8px; }
+.mclb-manage--front .mclb-cal__toolbar { margin-top: 0; }
+.mclb-manage--front .button,
+.mclb-manage--front .mclb-cal__btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 36px; padding: 0 12px; border: 1px solid var(--mclb-line);
+  border-radius: 6px; background: #fff; color: var(--mclb-ink);
+  font-size: 14px; line-height: 1; cursor: pointer; box-sizing: border-box;
+  text-decoration: none;
+}
+.mclb-manage--front .mclb-cal__btn { padding: 0 10px; font-weight: 600; }
+.mclb-manage--front .button:hover,
+.mclb-manage--front .mclb-cal__btn:hover { background: #f3f4f6; }
+.mclb-manage--front .button[disabled] { opacity: .5; cursor: default; }
+.mclb-manage--front .button-primary { background: var(--mclb-accent); border-color: var(--mclb-accent); color: #fff; }
+.mclb-manage--front .button-primary:hover { filter: brightness(.95); background: var(--mclb-accent); }
+.mclb-manage--front .mclb-cal__date,
+.mclb-manage--front .mclb-cal__coach,
+.mclb-manage--front .mclb-panel__field input,
+.mclb-manage--front .mclb-panel__field select {
+  min-height: 36px; padding: 4px 8px; border: 1px solid var(--mclb-line);
+  border-radius: 6px; background: #fff; color: var(--mclb-ink); box-sizing: border-box;
+}

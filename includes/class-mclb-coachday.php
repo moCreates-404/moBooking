@@ -85,13 +85,17 @@ class MCLB_Coachday {
         $ppm   = 0.9; // px per minute
         $colW  = 120;
         $gut   = 56;
+        $head  = 22; // space for the lane-name headers
+        $pad   = 16; // bottom breathing room so the last hour tick isn't clipped
 
-        // Timeline.
-        $tl  = '<div class="mclb-cd-tlwrap"><div class="mclb-cd-tl" style="height:' . (($bot - $top) * $ppm) . 'px;width:' . ($gut + count($lanes) * $colW) . 'px;">';
+        // Timeline. Height = header band + hours + bottom pad, so it sizes to its
+        // content and nothing is cut off by an inner scrollbar.
+        $tlH = $head + ($bot - $top) * $ppm + $pad;
+        $tl  = '<div class="mclb-cd-tlwrap"><div class="mclb-cd-tl" style="height:' . $tlH . 'px;width:' . ($gut + count($lanes) * $colW) . 'px;">';
         // hour ticks
         for ($m = $top; $m <= $bot; $m += 60) {
             $tlabel = wp_date($tf, (new DateTimeImmutable($date . ' 00:00:00', $tz))->modify('+' . $m . ' minutes')->getTimestamp());
-            $tl    .= '<div class="mclb-cd-tick" style="top:' . (($m - $top) * $ppm) . 'px;">' . esc_html($tlabel) . '</div>';
+            $tl    .= '<div class="mclb-cd-tick" style="top:' . ($head + ($m - $top) * $ppm) . 'px;">' . esc_html($tlabel) . '</div>';
         }
         // lane headers
         foreach ($lanes as $lid => $lname) {
@@ -105,7 +109,7 @@ class MCLB_Coachday {
             $x        = $gut + $laneIdx[(int) $r->lane_id] * $colW;
             $customer = self::fmt($r->customer_name);
             $note     = (string) $r->admin_note;
-            $tl .= '<div class="mclb-cd-block" style="top:' . (($s - $top) * $ppm + 20) . 'px;height:' . (max($e - $s, 30) * $ppm - 2) . 'px;left:' . ($x + 2) . 'px;width:' . ($colW - 6) . 'px;">'
+            $tl .= '<div class="mclb-cd-block" style="top:' . ($head + ($s - $top) * $ppm) . 'px;height:' . (max($e - $s, 30) * $ppm - 2) . 'px;left:' . ($x + 2) . 'px;width:' . ($colW - 6) . 'px;">'
                 . '<strong>' . esc_html(wp_date($tf, (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp())) . '</strong>'
                 . ($customer !== '' ? '<br>' . esc_html($customer) : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')

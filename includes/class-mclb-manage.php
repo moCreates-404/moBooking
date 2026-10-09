@@ -103,7 +103,7 @@ class MCLB_Manage {
             return '<p>' . esc_html__('You don’t have access to the booking manager.', 'mclb-lane-booking') . '</p>';
         }
         self::enqueue();
-        return self::container_html();
+        return self::container_html('front');
     }
 
     // ── wp-admin Calendar page ────────────────────────────────────────────────
@@ -130,7 +130,7 @@ class MCLB_Manage {
             return;
         }
         echo '<div class="wrap"><h1 class="wp-heading-inline">' . esc_html__('Calendar', 'mclb-lane-booking') . '</h1>';
-        echo self::container_html(); // phpcs:ignore WordPress.Security.EscapeOutput -- static markup.
+        echo self::container_html('admin'); // phpcs:ignore WordPress.Security.EscapeOutput -- static markup.
         echo '</div>';
     }
 
@@ -219,8 +219,9 @@ class MCLB_Manage {
         wp_add_inline_script(self::HANDLE, 'window.mclbManage = ' . wp_json_encode($data) . ';', 'before');
     }
 
-    private static function container_html() {
-        return '<div class="mclb-manage" data-today="' . esc_attr(wp_date('Y-m-d')) . '">'
+    private static function container_html($ctx = 'front') {
+        $cls = 'mclb-manage mclb-manage--' . ($ctx === 'admin' ? 'admin' : 'front');
+        return '<div class="' . esc_attr($cls) . '" data-today="' . esc_attr(wp_date('Y-m-d')) . '">'
             . '<p class="mclb-manage__loading">' . esc_html__('Loading…', 'mclb-lane-booking') . '</p>'
             . '</div>';
     }
