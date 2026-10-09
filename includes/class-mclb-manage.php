@@ -168,6 +168,7 @@ class MCLB_Manage {
             'ajaxUrl'   => esc_url_raw(admin_url('admin-ajax.php')),
             'nonce'     => wp_create_nonce('wp_rest'),
             'canRefund'  => current_user_can(MCLB_Caps::REFUND),
+            'testRecipient' => sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient')),
             'eventTypes' => array_map(static function ($t) {
                 return ['slug' => $t['slug'], 'label' => $t['label']];
             }, MCLB_Event_Types::all()),
@@ -202,6 +203,16 @@ class MCLB_Manage {
                 'delete'      => __('Delete', 'mclb-lane-booking'),
                 'initials'    => __('Your initials', 'mclb-lane-booking'),
                 'noAccess'    => __('No access.', 'mclb-lane-booking'),
+                'sendSheet'   => __('Send day sheet', 'mclb-lane-booking'),
+                'resend'      => __('Resend day sheet', 'mclb-lane-booking'),
+                'sheetSent'   => __('Sheet sent', 'mclb-lane-booking'),
+                'sheetChanged'=> __('changed since sent', 'mclb-lane-booking'),
+                'sendConfirm' => __('Send the day sheet now?', 'mclb-lane-booking'),
+                'notSent'     => __('Not sent', 'mclb-lane-booking'),
+                'sentOk'      => __('Sent ✓', 'mclb-lane-booking'),
+                'testMode'    => __('Test mode:', 'mclb-lane-booking'),
+                'testGoesTo'  => __('this will go to', 'mclb-lane-booking'),
+                'notTheCoach' => __('not the coach', 'mclb-lane-booking'),
             ],
         ];
 

@@ -20,6 +20,8 @@ class MCLB_Admin {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_fields']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue']);
+        add_action('admin_post_mclb_daysheet_preview', [$this, 'handle_daysheet_preview']);
+        add_action('admin_post_mclb_daysheet_rotate', [$this, 'handle_daysheet_rotate']);
     }
 
     /**
@@ -33,6 +35,7 @@ class MCLB_Admin {
             'general'    => __('General', 'mclb-lane-booking'),
             'appearance' => __('Appearance', 'mclb-lane-booking'),
             'events'     => __('Events', 'mclb-lane-booking'),
+            'daysheets'  => __('Day sheets', 'mclb-lane-booking'),
             'license'    => __('License', 'mclb-lane-booking'),
         ];
     }
@@ -96,10 +99,11 @@ class MCLB_Admin {
     // ── Field/section registration ───────────────────────────────────────────
 
     public function register_fields() {
-        $g = $this->tab_page('general');
-        $a = $this->tab_page('appearance');
-        $e = $this->tab_page('events');
-        $l = $this->tab_page('license');
+        $g  = $this->tab_page('general');
+        $a  = $this->tab_page('appearance');
+        $e  = $this->tab_page('events');
+        $ds = $this->tab_page('daysheets');
+        $l  = $this->tab_page('license');
 
         // General → wording
         add_settings_section('mclb_labels', __('Resource wording', 'mclb-lane-booking'), function () {
@@ -162,6 +166,43 @@ class MCLB_Admin {
             echo '<p>' . esc_html__('Categories for blockouts (e.g. Academy, Maintenance). Each has a colour for the admin calendar and a toggle for whether its name is shown to customers — otherwise a blockout simply reads “Unavailable”.', 'mclb-lane-booking') . '</p>';
         }, $e);
         add_settings_field('mclb_event_types_rows', __('Types', 'mclb-lane-booking'), [$this, 'render_event_types'], $e, 'mclb_event_types');
+
+        // Day sheets
+        add_settings_section('mclb_ds', __('Coach day sheets', 'mclb-lane-booking'), [$this, 'ds_intro'], $ds);
+        add_settings_field('daysheet_enabled', __('Enable', 'mclb-lane-booking'), function () {
+            printf('<input type="hidden" name="%s" value="1">', esc_attr($this->name('daysheet_submitted')));
+            printf('<input type="hidden" name="%s" value="0">', esc_attr($this->name('daysheet_enabled')));
+            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions on a schedule', 'mclb-lane-booking'));
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_send_time', __('Send time', 'mclb-lane-booking'), function () {
+            printf('<input type="time" name="%s" value="%s">', esc_attr($this->name('daysheet_send_time')), esc_attr($this->val('daysheet_send_time')));
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_target', __('Which day', 'mclb-lane-booking'), function () {
+            $v = $this->val('daysheet_target');
+            echo '<select name="' . esc_attr($this->name('daysheet_target')) . '">';
+            foreach (['tomorrow' => __('Tomorrow', 'mclb-lane-booking'), 'today' => __('Today', 'mclb-lane-booking')] as $k => $lbl) {
+                printf('<option value="%s" %s>%s</option>', esc_attr($k), selected($v, $k, false), esc_html($lbl));
+            }
+            echo '</select>';
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_names', __('Customer names', 'mclb-lane-booking'), function () {
+            $v = $this->val('daysheet_names');
+            echo '<select name="' . esc_attr($this->name('daysheet_names')) . '">';
+            foreach (['full' => __('Full name', 'mclb-lane-booking'), 'first_initial' => __('First name + initial', 'mclb-lane-booking'), 'none' => __('Hide names', 'mclb-lane-booking')] as $k => $lbl) {
+                printf('<option value="%s" %s>%s</option>', esc_attr($k), selected($v, $k, false), esc_html($lbl));
+            }
+            echo '</select>';
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_cc', __('CC address', 'mclb-lane-booking'), function () {
+            printf('<input type="email" class="regular-text" name="%s" value="%s" placeholder="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_cc')), esc_attr($this->val('daysheet_cc')), esc_attr__('e.g. front desk', 'mclb-lane-booking'), esc_html__('optional; skipped when a test recipient is set', 'mclb-lane-booking'));
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_test_recipient', __('Test recipient', 'mclb-lane-booking'), function () {
+            printf('<input type="email" class="regular-text" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_test_recipient')), esc_attr($this->val('daysheet_test_recipient')), esc_html__('when set, EVERY sheet goes here instead of the coach', 'mclb-lane-booking'));
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_expiry_hours', __('Link expiry', 'mclb-lane-booking'), function () {
+            printf('<input type="number" min="1" max="720" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_expiry_hours')), esc_attr($this->val('daysheet_expiry_hours')), esc_html__('hours the “View my day” link stays valid', 'mclb-lane-booking'));
+        }, $ds, 'mclb_ds');
+        add_settings_field('daysheet_tools', __('Tools & log', 'mclb-lane-booking'), [$this, 'render_daysheet_tools'], $ds, 'mclb_ds');
 
         // License
         add_settings_section('mclb_license', __('License', 'mclb-lane-booking'), function () {
@@ -280,6 +321,88 @@ class MCLB_Admin {
             checked($val, 'override', false),
             esc_html__('Override with the plugin’s own font stack', 'mclb-lane-booking')
         );
+    }
+
+    public function ds_intro() {
+        if (!empty($_GET['mclb_rotated'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag after a nonced action.
+            printf('<div class="notice notice-success inline" style="margin:8px 0"><p>%s</p></div>', esc_html__('Link secret regenerated — previous “View my day” links no longer work.', 'mclb-lane-booking'));
+        }
+        echo '<p>' . esc_html__('A daily email to each coach with the sessions assigned to them, plus a signed “View my day” link.', 'mclb-lane-booking') . '</p>';
+        $test = sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient'));
+        if ($test !== '') {
+            printf('<div class="notice notice-warning inline" style="margin:8px 0"><p><strong>%s</strong> %s</p></div>',
+                esc_html__('Test mode:', 'mclb-lane-booking'),
+                sprintf(esc_html__('every day sheet is being sent to %s (not to coaches).', 'mclb-lane-booking'), '<code>' . esc_html($test) . '</code>'));
+        }
+        $env = function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production';
+        if ($env !== 'production' && $test === '') {
+            printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
+                sprintf(esc_html__('This site’s environment is “%s”, so real coach emails are blocked. Set a test recipient to send, or set WP_ENVIRONMENT_TYPE to production on live.', 'mclb-lane-booking'), esc_html($env)));
+        }
+        if (!MCLB_Daysheets::as_available()) {
+            printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
+                esc_html__('Action Scheduler (via WooCommerce) isn’t available, so scheduled sends won’t run. Manual “Send day sheet” still works.', 'mclb-lane-booking'));
+        }
+    }
+
+    public function render_daysheet_tools() {
+        // NOTE: Preview + Regenerate buttons are rendered OUTSIDE the settings form
+        // (see daysheet_actions() after the form) — they can't be nested here or
+        // they'd submit options.php. This field shows the read-only log only.
+
+        // Send log (most recent first).
+        $log = array_reverse(MCLB_Daysheets::get_log());
+        echo '<h3 style="margin-top:20px">' . esc_html__('Recent sends', 'mclb-lane-booking') . '</h3>';
+        if (empty($log)) {
+            echo '<p>' . esc_html__('No sends logged yet.', 'mclb-lane-booking') . '</p>';
+            return;
+        }
+        echo '<table class="widefat striped" style="max-width:820px"><thead><tr>';
+        printf('<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th>',
+            esc_html__('When', 'mclb-lane-booking'), esc_html__('Coach', 'mclb-lane-booking'), esc_html__('For date', 'mclb-lane-booking'),
+            esc_html__('Recipient', 'mclb-lane-booking'), esc_html__('Trigger', 'mclb-lane-booking'), esc_html__('Result', 'mclb-lane-booking'));
+        echo '</tr></thead><tbody>';
+        foreach (array_slice($log, 0, 60) as $e) {
+            $colour = $e['result'] === 'sent' ? '#1a7f37' : ($e['result'] === 'failed' ? '#b32d2e' : '#8a6d00');
+            printf('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td style="color:%s">%s</td></tr>',
+                esc_html($e['sent_at']), esc_html($e['name']), esc_html($e['date']),
+                esc_html($e['recipient'] ?: '—'), esc_html($e['trigger']), esc_attr($colour), esc_html($e['result']));
+        }
+        echo '</tbody></table>';
+    }
+
+    public function handle_daysheet_preview() {
+        // GET request (link in a new tab), so read from $_REQUEST.
+        if (!current_user_can('manage_options') || !isset($_REQUEST['_wpnonce']) || !wp_verify_nonce($_REQUEST['_wpnonce'], 'mclb_daysheet_preview')) {
+            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+        }
+        $date  = isset($_REQUEST['date']) ? sanitize_text_field(wp_unslash($_REQUEST['date'])) : MCLB_Daysheets::target_date();
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = MCLB_Daysheets::target_date();
+        }
+        $built = MCLB_Daysheets::build_all($date);
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><html><head><meta charset="utf-8"><title>Day sheet preview</title><style>body{background:#eef0f2;font-family:sans-serif;margin:0;padding:24px}.pw{max-width:640px;margin:0 auto 28px}.pw .hd{font:13px monospace;color:#444;background:#fff;border:1px solid #ccd;padding:8px 12px;border-radius:6px 6px 0 0}.pw .bd{background:#fff;border:1px solid #ccd;border-top:none;border-radius:0 0 6px 6px;padding:16px}</style></head><body>';
+        printf('<p style="max-width:640px;margin:0 auto 16px;color:#333">%s <strong>%s</strong> — %s</p>',
+            esc_html__('Preview for', 'mclb-lane-booking'), esc_html($date), esc_html__('nothing is sent.', 'mclb-lane-booking'));
+        if (empty($built)) {
+            echo '<p style="max-width:640px;margin:0 auto">' . esc_html__('No coaches have sessions that day.', 'mclb-lane-booking') . '</p>';
+        }
+        foreach ($built as $b) {
+            $meta = $b['name'] . ' → ' . ($b['recipient'] ?: '(no recipient)') . ($b['skip'] ? '  [WOULD SKIP: ' . $b['skip'] . ']' : '') . '  |  ' . $b['subject'];
+            echo '<div class="pw"><div class="hd">' . esc_html($meta) . '</div><div class="bd">' . $b['html'] . '</div></div>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from escaped parts.
+        }
+        echo '</body></html>';
+        exit;
+    }
+
+    public function handle_daysheet_rotate() {
+        if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_daysheet_rotate')) {
+            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+        }
+        MCLB_Daysheet_Token::rotate();
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => 'daysheets', 'mclb_rotated' => '1'], admin_url('admin.php')));
+        exit;
     }
 
     public function render_manage_page() {
@@ -405,6 +528,29 @@ class MCLB_Admin {
         settings_fields(MCLB_Settings::GROUP);
         do_settings_sections($this->tab_page($current));
         submit_button();
-        echo '</form></div>';
+        echo '</form>';
+
+        // Day-sheet action buttons live OUTSIDE the settings form (own form actions).
+        if ($current === 'daysheets') {
+            $this->daysheet_actions();
+        }
+        echo '</div>';
+    }
+
+    private function daysheet_actions() {
+        echo '<h2 style="margin-top:8px">' . esc_html__('Preview &amp; links', 'mclb-lane-booking') . '</h2>';
+        // Preview — a GET form (opens the built email(s) in a new tab, never sends).
+        printf('<form method="get" action="%s" target="_blank" style="display:inline-block;margin-right:14px">', esc_url(admin_url('admin-post.php')));
+        echo '<input type="hidden" name="action" value="mclb_daysheet_preview">';
+        wp_nonce_field('mclb_daysheet_preview');
+        printf('<input type="date" name="date" value="%s"> ', esc_attr(MCLB_Daysheets::target_date()));
+        printf('<button class="button">%s</button>', esc_html__('Preview (no send)', 'mclb-lane-booking'));
+        echo '</form>';
+        // Regenerate link secret — its own POST form with a confirm.
+        printf('<form method="post" action="%s" style="display:inline-block" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Regenerate the link secret? All existing “View my day” links will stop working.', 'mclb-lane-booking')) . '"'));
+        echo '<input type="hidden" name="action" value="mclb_daysheet_rotate">';
+        wp_nonce_field('mclb_daysheet_rotate');
+        printf('<button class="button">%s</button>', esc_html__('Regenerate link secret', 'mclb-lane-booking'));
+        echo '</form>';
     }
 }

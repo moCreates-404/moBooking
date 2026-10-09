@@ -47,6 +47,14 @@ class MCLB_Settings {
             'staff_label_singular'    => 'Coach',  // what an assignable staff member is called (Coach, Pro, Instructor…)
             'staff_label_plural'      => 'Coaches',
             'manage_page_id'          => 0,  // page holding [mclb_manage] (the staff calendar); 0 = none set
+            // Coach day sheets (Phase 7d)
+            'daysheet_enabled'        => 0,
+            'daysheet_send_time'      => '19:00',
+            'daysheet_target'         => 'tomorrow', // tomorrow | today
+            'daysheet_names'          => 'full',     // full | first_initial | none
+            'daysheet_cc'             => '',
+            'daysheet_test_recipient' => '',          // when set, ALL sheets go here (dev safety)
+            'daysheet_expiry_hours'   => 48,
             'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
             'self_cancel_hours'       => 24, // logged-in self-cancel cutoff before booking start
             'refund_window_hours'     => 24, // cancel within this long after placing (and >cutoff before start) = real refund, else credit
@@ -155,6 +163,18 @@ class MCLB_Settings {
         }
         if (isset($in['manage_page_id'])) {
             $out['manage_page_id'] = absint($in['manage_page_id']);
+        }
+        // Day sheets. The tab posts a hidden marker so unchecked/empty fields are
+        // distinguishable from another tab's save (same pattern as the checkbox).
+        if (!empty($in['daysheet_submitted'])) {
+            $out['daysheet_enabled']        = empty($in['daysheet_enabled']) ? 0 : 1;
+            $out['daysheet_send_time']      = self::sanitize_time($in['daysheet_send_time'] ?? '') ?: $d['daysheet_send_time'];
+            $out['daysheet_target']         = in_array($in['daysheet_target'] ?? '', ['tomorrow', 'today'], true) ? $in['daysheet_target'] : 'tomorrow';
+            $out['daysheet_names']          = in_array($in['daysheet_names'] ?? '', ['full', 'first_initial', 'none'], true) ? $in['daysheet_names'] : 'full';
+            $out['daysheet_cc']             = sanitize_email($in['daysheet_cc'] ?? '');
+            $out['daysheet_test_recipient'] = sanitize_email($in['daysheet_test_recipient'] ?? '');
+            $v                              = absint($in['daysheet_expiry_hours'] ?? 0);
+            $out['daysheet_expiry_hours']   = ($v >= 1 && $v <= 720) ? $v : 48;
         }
         if (isset($in['hours']) && is_array($in['hours'])) {
             $out['hours'] = self::sanitize_hours($in['hours']);

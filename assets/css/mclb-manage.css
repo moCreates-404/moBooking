@@ -24,6 +24,8 @@
 .mclb-cal__date { min-height: 36px; }
 .mclb-cal__coach { min-height: 36px; max-width: 220px; }
 .mclb-cal__showcancel { display: inline-flex; align-items: center; gap: 4px; color: var(--mclb-muted); }
+.mclb-cal__sheet { display: inline-flex; align-items: center; gap: 8px; }
+.mclb-cal__sheetnote { font-size: 12px; color: var(--mclb-muted); }
 
 /* To-collect strip */
 .mclb-cal__collect { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; margin-bottom: 10px; border: 1px solid var(--mclb-line); border-radius: 8px; background: var(--mclb-surface); }

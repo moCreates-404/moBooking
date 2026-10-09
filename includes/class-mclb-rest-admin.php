@@ -62,6 +62,11 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'booking_cancel'],
         ]);
+        register_rest_route(self::NS, '/admin/daysheet', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'send_daysheet'],
+        ]);
         register_rest_route(self::NS, '/admin/blockout', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -201,11 +206,19 @@ class MCLB_REST_Admin {
         // Blockouts (one-off + recurring resolved for this date).
         $blockouts = MCLB_Closures::for_day_detail($date);
 
-        // Coaches (all bookable, with rate) for chips + the filter dropdown.
+        // Coaches (all bookable, with rate) for chips + the filter dropdown, plus
+        // each coach's day-sheet status for this date (sent / changed-since-sent).
         $coaches = [];
         foreach (MCLB_Coaches::options() as $cid => $name) {
-            $rate      = MCLB_Coaches::rate((int) $cid);
-            $coaches[] = ['id' => (int) $cid, 'name' => $name, 'rate' => $rate];
+            $rate    = MCLB_Coaches::rate((int) $cid);
+            $st      = MCLB_Daysheets::status((int) $cid, $date);
+            $coaches[] = [
+                'id'            => (int) $cid,
+                'name'          => $name,
+                'rate'          => $rate,
+                'sheet_sent_at' => $st['sent_at'],
+                'sheet_changed' => $st['changed'],
+            ];
         }
 
         return rest_ensure_response([
@@ -414,6 +427,22 @@ class MCLB_REST_Admin {
         }
         self::log($id, $actor, __('cancelled', 'mclb-lane-booking'));
         return rest_ensure_response(['ok' => true]);
+    }
+
+    // ── POST /admin/daysheet (manual send) ───────────────────────────────────
+
+    public static function send_daysheet($request) {
+        $actor = self::actor($request);
+        if ($actor === null) {
+            return self::need_initials();
+        }
+        $coach_id = (int) $request->get_param('coach_id');
+        $date     = self::sanitize_date((string) $request->get_param('date'));
+        if (!$coach_id || $date === '') {
+            return new WP_Error('mclb_invalid', __('Pick a coach and a valid date.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $res = MCLB_Daysheets::send_for_coach($coach_id, $date, 'manual:' . $actor);
+        return rest_ensure_response(['ok' => !empty($res['ok']), 'result' => $res['result'] ?? '']);
     }
 
     // ── Blockouts ──────────────────────────────────────────────────────────────

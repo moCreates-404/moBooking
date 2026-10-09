@@ -190,6 +190,21 @@
     lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + (I18N.showCancel || 'Show cancelled')));
     filters.appendChild(coach); filters.appendChild(lbl);
 
+    // Day-sheet controls for the selected coach (viewed date).
+    if (state.coachFilter) {
+      var cobj = (state.data.coaches || []).filter(function (c) { return c.id === state.coachFilter; })[0];
+      if (cobj) {
+        var sheet = el('span', 'mclb-cal__sheet');
+        if (cobj.sheet_sent_at) {
+          sheet.appendChild(el('span', 'mclb-cal__sheetnote', (I18N.sheetSent || 'Sheet sent') + (cobj.sheet_changed ? ' · ' + (I18N.sheetChanged || 'changed since sent') : '')));
+        }
+        var sbtn = el('button', 'button mclb-cal__btn', cobj.sheet_sent_at ? (I18N.resend || 'Resend day sheet') : (I18N.sendSheet || 'Send day sheet'));
+        sbtn.onclick = function () { openSendSheet(cobj); };
+        sheet.appendChild(sbtn);
+        filters.appendChild(sheet);
+      }
+    }
+
     bar.appendChild(nav); bar.appendChild(filters);
     return bar;
   }
@@ -625,6 +640,41 @@
           runWrite(yesBtn, err, api('/blockout/' + bo.id, { method: 'DELETE', body: { actor: ini.value.trim() } }));
         });
       }, 'is-danger'));
+      panel.appendChild(actions);
+    });
+  }
+
+  // ── Send day sheet (from the coach filter) ───────────────────────────────────
+  function openSendSheet(coach) {
+    openPanel(function (panel) {
+      panelHead(panel, I18N.sendSheet || 'Send day sheet');
+      panel.appendChild(el('p', 'mclb-panel__ctx', coach.name + ' · ' + state.date));
+      if (CFG.testRecipient) {
+        panel.appendChild(el('p', 'mclb-panel__warn', (I18N.testMode || 'Test mode:') + ' ' + (I18N.testGoesTo || 'this will go to') + ' ' + CFG.testRecipient + ' — ' + (I18N.notTheCoach || 'not the coach') + '.'));
+      }
+      if (coach.sheet_sent_at) {
+        panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.sheetSent || 'Sheet sent') + ' ' + coach.sheet_sent_at + (coach.sheet_changed ? ' — ' + (I18N.sheetChanged || 'changed since sent') : '')));
+      }
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+      var actions = el('div', 'mclb-panel__actions');
+      actions.appendChild(actionBtn(I18N.sendSheet || 'Send day sheet', function () {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        initialsSet(ini.value.trim());
+        confirmStep(actions, (I18N.sendConfirm || 'Send the day sheet now?'), function (yesBtn) {
+          setBusy(yesBtn, true); err.style.display = 'none';
+          api('/daysheet', { method: 'POST', body: { coach_id: coach.id, date: state.date, actor: ini.value.trim() } })
+            .then(function (res) {
+              if (res.ok && res.body && res.body.ok) {
+                yesBtn.textContent = (I18N.sentOk || 'Sent ✓');
+                setTimeout(function () { closePanel(); load(true); }, 900);
+              } else {
+                setBusy(yesBtn, false);
+                showErr(err, (res.body && res.body.result) ? ((I18N.notSent || 'Not sent') + ': ' + res.body.result) : errText(res));
+              }
+            });
+        });
+      }));
       panel.appendChild(actions);
     });
   }

@@ -14,6 +14,7 @@ class MCLB_Deactivator {
 
     public static function deactivate() {
         MCLB_Bookings::clear_cron();
+        MCLB_Daysheets::unschedule();
         flush_rewrite_rules();
     }
 }

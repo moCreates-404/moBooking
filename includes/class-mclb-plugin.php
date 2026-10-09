@@ -50,6 +50,10 @@ class MCLB_Plugin {
         MCLB_Manage::init();
         MCLB_REST_Admin::init();
 
+        // Coach day sheets (Phase 7d): scheduler + emails, and the public token page.
+        MCLB_Daysheets::init();
+        MCLB_Coachday::init();
+
         if (is_admin()) {
             new MCLB_Admin();
             new MCLB_Closures_Admin();

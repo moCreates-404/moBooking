@@ -29,6 +29,7 @@ class MCLB_Activator {
         flush_rewrite_rules();
 
         MCLB_Bookings::schedule_cron();
+        MCLB_Daysheets::schedule(); // no-op unless day sheets are enabled
     }
 
     /** Run table creation only when the stored DB version is behind the code. */
