@@ -94,7 +94,11 @@ class MCLB_Grid {
             <button type="button" class="mclb-nav mclb-nav--next" aria-label="<?php esc_attr_e('Next day', 'mclb-lane-booking'); ?>">&#8250;</button>
           </div>
 
-          <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
+          <div class="mclb-grid__scroll">
+            <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
+            <div class="mclb-grid__fade" aria-hidden="true"></div>
+            <span class="mclb-grid__hint" aria-hidden="true"><?php esc_html_e('Swipe for more lanes', 'mclb-lane-booking'); ?> &#8594;</span>
+          </div>
 
           <div class="mclb-legend" aria-hidden="true">
             <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--available"></i><?php esc_html_e('Available', 'mclb-lane-booking'); ?></span>

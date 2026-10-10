@@ -35,6 +35,7 @@
     this.wrap = wrap;
     this.type = wrap.getAttribute('data-type') || '';
     this.grid = wrap.querySelector('.mclb-grid');
+    this.scrollWrap = wrap.querySelector('.mclb-grid__scroll');
     this.selectionBox = wrap.querySelector('.mclb-selection');
     this.list = wrap.querySelector('.mclb-selection__list');
     this.totalEl = wrap.querySelector('.mclb-selection__total');
@@ -56,6 +57,17 @@
     this.grid.addEventListener('pointermove', function (e) { self.onPointerMove(e); });
     // pointerup can land outside a cell — listen on the document.
     document.addEventListener('pointerup', function (e) { self.onPointerUp(e); });
+
+    // Scroll affordance: recompute the "swipe for more" cue as the grid scrolls
+    // or the viewport resizes. A ResizeObserver also catches the grid gaining
+    // size when a hidden container (e.g. the booking drawer) opens — at that
+    // point scrollWidth/clientWidth finally differ, so the cue must recompute.
+    if (this.grid) { this.grid.addEventListener('scroll', function () { self.updateScrollHint(); }); }
+    window.addEventListener('resize', function () { self.updateScrollHint(); });
+    if (window.ResizeObserver && this.grid) {
+      this.resizeObs = new ResizeObserver(function () { self.updateScrollHint(); });
+      this.resizeObs.observe(this.grid);
+    }
 
     // Date navigation.
     var prev = this.wrap.querySelector('.mclb-nav--prev');
@@ -343,6 +355,15 @@
     if (prev && this.dateInput && this.dateInput.min) {
       prev.disabled = this.wrap.getAttribute('data-date') <= this.dateInput.min;
     }
+    this.updateScrollHint();
+  };
+
+  // Show the scroll cue only while there are more lanes to the right; hide it
+  // when everything fits or the user has scrolled to the end.
+  MclbGrid.prototype.updateScrollHint = function () {
+    if (!this.scrollWrap || !this.grid) { return; }
+    var remaining = this.grid.scrollWidth - this.grid.clientWidth - this.grid.scrollLeft;
+    this.scrollWrap.classList.toggle('is-scrollable', remaining > 4);
   };
 
   // ── Add to cart (Phase 3 → Phase 4 handoff) ─────────────────────────────────

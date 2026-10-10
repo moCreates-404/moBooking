@@ -46,6 +46,10 @@ class MCLB_Bookings {
         // activation hook never scheduled it, or the event was cleared). The
         // guard inside schedule_cron() keeps this idempotent.
         add_action('init', [__CLASS__, 'schedule_cron']);
+        // One-off v1.1.1 backfill of billing names onto pre-existing online
+        // bookings (guest checkouts showed "Guest"). Runs in an admin request,
+        // once per site, gated by its own option flag.
+        add_action('admin_init', [__CLASS__, 'maybe_backfill_billing_names']);
     }
 
     /** Fully-qualified table name. */
@@ -535,6 +539,111 @@ class MCLB_Bookings {
             ['%d', '%d', '%s'],
             ['%d']
         );
+    }
+
+    /**
+     * Snapshot the WooCommerce order's billing name + email onto every booking
+     * row linked to it. Falls back to the account display name only when billing
+     * has no name. The email is only ever filled when empty (never overwritten).
+     * HPOS-safe (reads the order via CRUD).
+     *
+     * @param int  $order_id
+     * @param bool $overwrite_name When true (checkout, MCLB_Order::on_order_processed)
+     *                             the billing name always wins — at that point the
+     *                             booking was just created, so there is no staff
+     *                             edit to protect. When false (the one-off
+     *                             backfill over historical rows) only empty or
+     *                             "Guest" names are filled, so a hand-edited name
+     *                             is preserved.
+     * @return int rows actually changed.
+     */
+    public static function fill_customer_from_order($order_id, $overwrite_name = true) {
+        if (!function_exists('wc_get_order')) {
+            return 0;
+        }
+        $order = wc_get_order((int) $order_id);
+        if (!$order) {
+            return 0;
+        }
+
+        $name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+        if ($name === '') {
+            $uid = (int) $order->get_customer_id();
+            if ($uid) {
+                $u = get_userdata($uid);
+                if ($u) {
+                    $name = trim($u->display_name);
+                }
+            }
+        }
+        $email = sanitize_email((string) $order->get_billing_email());
+
+        global $wpdb;
+        $table = self::table();
+        $set   = [];
+        $args  = [];
+        if ($name !== '') {
+            if ($overwrite_name) {
+                // Billing always wins (never wipe to empty — guarded by $name !== '').
+                $set[] = 'customer_name = %s';
+            } else {
+                // Backfill: only fill an empty or "Guest" placeholder name.
+                $set[] = "customer_name = CASE WHEN (customer_name IS NULL OR customer_name = '' OR customer_name = 'Guest') THEN %s ELSE customer_name END";
+            }
+            $args[] = sanitize_text_field($name);
+        }
+        if ($email !== '') {
+            // Fill the email only when it is empty (never overwrite an existing one).
+            $set[]  = "customer_email = CASE WHEN (customer_email IS NULL OR customer_email = '') THEN %s ELSE customer_email END";
+            $args[] = $email;
+        }
+        if (empty($set)) {
+            return 0;
+        }
+        $set[]  = 'updated_at = %s';
+        $args[] = current_time('mysql');
+        $args[] = (int) $order_id;
+
+        $sql = "UPDATE {$table} SET " . implode(', ', $set) . ' WHERE order_id = %d';
+        return (int) $wpdb->query($wpdb->prepare($sql, $args)); // phpcs:ignore WordPress.DB -- columns are literals; values are prepared.
+    }
+
+    /**
+     * One-off backfill: fill name/email on existing ONLINE bookings that carry
+     * an order but an empty/"Guest" holder, from their WooCommerce orders.
+     * Idempotent and gated by an option flag so it runs once per site after the
+     * v1.1.1 upgrade. If WooCommerce isn't loaded yet the flag is left unset so
+     * it retries on a later admin request.
+     *
+     * @return int rows updated (also stored in mclb_billing_backfill_count).
+     */
+    public static function maybe_backfill_billing_names() {
+        if (get_option('mclb_billing_backfill_done')) {
+            return 0;
+        }
+        if (!function_exists('wc_get_order')) {
+            return 0; // WC not ready — don't set the flag; try again next request.
+        }
+
+        global $wpdb;
+        $table     = self::table();
+        $order_ids = $wpdb->get_col(
+            "SELECT DISTINCT order_id FROM {$table}
+              WHERE order_id IS NOT NULL AND order_id > 0
+                AND source = 'online'
+                AND ( customer_name IS NULL OR customer_name = '' OR customer_name = 'Guest'
+                      OR customer_email IS NULL OR customer_email = '' )"
+        );
+
+        $updated = 0;
+        foreach ((array) $order_ids as $oid) {
+            // Historical rows: preserve any hand-edited name (empty/"Guest" only).
+            $updated += self::fill_customer_from_order((int) $oid, false);
+        }
+
+        update_option('mclb_billing_backfill_done', 1, false);
+        update_option('mclb_billing_backfill_count', $updated, false);
+        return $updated;
     }
 
     /**

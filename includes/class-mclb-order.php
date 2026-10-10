@@ -33,11 +33,19 @@ class MCLB_Order {
         if (!$order) {
             return;
         }
+        $attached = 0;
         foreach ($order->get_items() as $item_id => $item) {
             $hold_id = (int) $item->get_meta('_mclb_hold_id');
             if ($hold_id) {
                 MCLB_Bookings::attach_order($hold_id, $order->get_id(), (int) $item_id);
+                $attached++;
             }
+        }
+        // Snapshot the order's billing holder name + email onto the linked rows,
+        // so guest checkouts show the real name (not "Guest") on the calendar.
+        // Only empty/"Guest" values are filled, never a staff-edited name.
+        if ($attached) {
+            MCLB_Bookings::fill_customer_from_order($order->get_id());
         }
     }
 
