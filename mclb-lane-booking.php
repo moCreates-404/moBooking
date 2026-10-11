@@ -3,7 +3,7 @@
  * Plugin Name:       moBooking
  * Plugin URI:        https://mocreates.com.au/
  * Description:       Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid, checking out through WooCommerce. Generic and configurable per install.
- * Version:           1.1.2
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            moCreates
