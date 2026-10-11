@@ -269,6 +269,58 @@
 .mclb-selection__msg--ok { color: #1a7f37; }
 .mclb-selection__msg--err { color: var(--mclb-booked, #c94a55); }
 
+/* Instruction line above the grid (small, muted, one line; touch vs mouse text
+   chosen in JS by matchMedia('(pointer: coarse)')). */
+.mclb-grid__instr { margin: 0 0 10px; font-size: 0.85rem; color: var(--mclb-ink-muted); }
+
+/* v1.2.1 sticky mini-bar: a MOBILE-ONLY (<=768px) quick Add-to-cart mirror of the
+   summary, shown whenever >=1 slot is selected, fixed to the viewport bottom with
+   safe-area padding and above the theme's future sticky Book bar (z-index 100000 >
+   the drawer's 9999). The full .mclb-selection summary still renders below the grid
+   on every width. */
+.mclb-grid__minibar { display: none; }
+.mclb-grid__minibar-info { font-weight: 700; flex: 1 1 auto; min-width: 0; }
+.mclb-grid__minibar-add {
+  background: var(--mclb-accent, #f4c430);
+  color: #1a1a1a;
+  border: 0;
+  border-radius: 6px;
+  padding: 11px 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mclb-grid__minibar-add[disabled] { opacity: 0.5; cursor: default; }
+.mclb-grid__minibar-clear {
+  border: 1px solid var(--mclb-line);
+  background: var(--mclb-surface);
+  color: var(--mclb-ink);
+  border-radius: 6px;
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .mclb-grid__minibar:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100000;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--mclb-surface);
+    color: var(--mclb-ink);
+    border-top: 1px solid var(--mclb-line);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.12);
+  }
+  .mclb-grid-wrap--minibar { padding-bottom: 88px; }
+}
+
 /* Narrow viewports: shrink the column floor + gutter and tighten label type so
    realistic lane counts (CCWA: 5 nets / 4 machines) fit without horizontal
    scroll; genuinely many lanes (e.g. a combined 9) still scroll by design. */

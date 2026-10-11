@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,17 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.2.1 =
+* Customer booking grid: new tap flow — tap a free slot to pre-select (light),
+  tap it again to select (dark); tapping another slot moves the pre-select, a dark
+  slot is removed, adjacent dark slots in a lane merge into one run. Scrolls and
+  swipes never change the selection. Mobile sticky "N slots · $X · Add to cart"
+  mini-bar; instruction line (touch vs mouse). Desktop keeps click + drag-select.
+* Cart: expired / cancelled / past-date holds are removed from the cart on the
+  cart and checkout pages with a re-pick notice, and checkout can never accept an
+  expired hold (blocked at submission). The "slot no longer available" message now
+  names the lane + time.
 
 = 1.2.0 =
 * Phase 8a-1: booking details. DB v4 adds customer_phone, staff_note (editable,

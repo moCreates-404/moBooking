@@ -36,6 +36,42 @@ class MCLB_Cart {
         add_action('woocommerce_cart_item_removed', [__CLASS__, 'on_item_removed'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [__CLASS__, 'add_order_item_meta'], 10, 4);
         add_filter('woocommerce_hidden_order_itemmeta', [__CLASS__, 'hidden_order_itemmeta']);
+        // Drop cart items whose hold has expired / been cancelled / is in the past,
+        // on cart + checkout load. Runs at checkout too, so an expired hold can
+        // never be ordered (the error notice also blocks the submit).
+        add_action('woocommerce_check_cart_items', [__CLASS__, 'validate_cart_items']);
+    }
+
+    /**
+     * Remove any cart item whose moBooking hold is no longer live (missing,
+     * cancelled, expired, or in the past), each with a re-pick notice. Fires on
+     * the cart + checkout pages (woocommerce_check_cart_items), so checkout can
+     * never accept an expired hold — the error notice halts the submit.
+     */
+    public static function validate_cart_items() {
+        if (!WC()->cart) {
+            return;
+        }
+        $now    = current_time('mysql');
+        $remove = []; // key => label
+        foreach (WC()->cart->get_cart() as $key => $item) {
+            if (empty($item[self::ITEM_KEY]['hold_id'])) {
+                continue;
+            }
+            $b = MCLB_Bookings::get((int) $item[self::ITEM_KEY]['hold_id']);
+            $live = $b
+                && in_array((string) $b->status, [MCLB_Bookings::STATUS_HELD, MCLB_Bookings::STATUS_CONFIRMED], true)
+                && $b->ends_at > $now
+                && ((string) $b->status !== MCLB_Bookings::STATUS_HELD || $b->hold_expires_at > $now);
+            if (!$live) {
+                $remove[$key] = ($item[self::ITEM_KEY]['lane_name'] ?? '') . ' · ' . self::format_when($item[self::ITEM_KEY]);
+            }
+        }
+        foreach ($remove as $key => $label) {
+            WC()->cart->remove_cart_item($key); // on_item_removed cancels the (already dead) hold harmlessly
+            /* translators: %s: lane + date/time of the expired hold. */
+            wc_add_notice(sprintf(__('Your hold on %s expired — please re-select.', 'mclb-lane-booking'), $label), 'error');
+        }
     }
 
     /** Hide the plugin's internal (_mclb_*) line-item meta on the order admin + emails. */
@@ -214,7 +250,10 @@ class MCLB_Cart {
         $date  = substr($starts, 0, 10);
         $avail = MCLB_Availability::for_lane($lane_id, $date);
         if (empty($avail['is_open']) || !self::range_all_available($avail, $starts, $ends)) {
-            return new WP_Error('mclb_unavailable', __('That time is no longer available.', 'mclb-lane-booking'), ['status' => 409]);
+            $tf    = get_option('time_format') ?: 'g:i a';
+            $label = get_the_title($lane_id) . ' · ' . wp_date($tf, $s->getTimestamp()) . '–' . wp_date($tf, $e->getTimestamp());
+            /* translators: %s: lane + time of the slot that is no longer free. */
+            return new WP_Error('mclb_unavailable', sprintf(__('%s is no longer available — please re-pick that slot.', 'mclb-lane-booking'), $label), ['status' => 409]);
         }
 
         $duration = ($e->getTimestamp() - $s->getTimestamp()) / 3600.0;

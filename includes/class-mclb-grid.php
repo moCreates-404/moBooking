@@ -57,14 +57,17 @@ class MCLB_Grid {
                 'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes',
             ],
             'i18n'         => [
-                'addToCart' => __('Add to cart', 'mclb-lane-booking'),
-                'remove'    => __('Remove', 'mclb-lane-booking'),
-                'total'     => __('Total', 'mclb-lane-booking'),
-                'coach'     => __('Request a coach', 'mclb-lane-booking'),
-                'coachNote' => __('Anything the coach should know? (optional)', 'mclb-lane-booking'),
-                'selectHint'=> __('Select an available time to begin.', 'mclb-lane-booking'),
-                'cartSoon'  => __('Booking checkout is not available yet.', 'mclb-lane-booking'),
-                'demo'      => MCLB_License::demo_message(),
+                'addToCart'  => __('Add to cart', 'mclb-lane-booking'),
+                'remove'     => __('Remove', 'mclb-lane-booking'),
+                'total'      => __('Total', 'mclb-lane-booking'),
+                'slot'       => __('slot', 'mclb-lane-booking'),
+                'slots'      => __('slots', 'mclb-lane-booking'),
+                'coach'      => __('Request a coach', 'mclb-lane-booking'),
+                'coachNote'  => __('Anything the coach should know? (optional)', 'mclb-lane-booking'),
+                'cartSoon'   => __('Could not add to cart — please try again.', 'mclb-lane-booking'),
+                'demo'       => MCLB_License::demo_message(),
+                'instrTouch' => __('Tap a time, then tap it again to select it. Choose as many as you need, then Add to cart.', 'mclb-lane-booking'),
+                'instrMouse' => __('Click a time to select it, or drag to select several.', 'mclb-lane-booking'),
             ],
         ]);
     }
@@ -94,6 +97,7 @@ class MCLB_Grid {
             <button type="button" class="mclb-nav mclb-nav--next" aria-label="<?php esc_attr_e('Next day', 'mclb-lane-booking'); ?>">&#8250;</button>
           </div>
           <p class="mclb-grid__datelabel" aria-live="polite"><?php echo esc_html(self::date_label($today)); ?></p>
+          <p class="mclb-grid__instr"><?php esc_html_e('Click a time to select it, or drag to select several.', 'mclb-lane-booking'); ?></p>
 
           <p class="mclb-grid__hint" aria-hidden="true" hidden><?php esc_html_e('Swipe for more lanes', 'mclb-lane-booking'); ?> &#8594;</p>
           <div class="mclb-grid__scroll">
@@ -118,6 +122,12 @@ class MCLB_Grid {
             <button type="button" class="mclb-add-to-cart" disabled><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
             <p class="mclb-selection__msg" role="status"></p>
           </aside>
+
+          <div class="mclb-grid__minibar" hidden aria-live="polite">
+            <span class="mclb-grid__minibar-info"></span>
+            <button type="button" class="mclb-grid__minibar-add"><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
+            <button type="button" class="mclb-grid__minibar-clear" aria-label="<?php esc_attr_e('Clear all', 'mclb-lane-booking'); ?>">&#10005;</button>
+          </div>
 
           <noscript><p><?php esc_html_e('This booking grid needs JavaScript enabled.', 'mclb-lane-booking'); ?></p></noscript>
         </div>
