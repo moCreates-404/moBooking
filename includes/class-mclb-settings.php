@@ -17,6 +17,21 @@ class MCLB_Settings {
     /** Settings API option group. */
     const GROUP = 'mclb_settings_group';
 
+    /**
+     * Friendly long date label in the SITE timezone, e.g. "Monday, 26 October
+     * 2026". $ts is a Unix timestamp, taken from a timezone-aware
+     * DateTimeImmutable's getTimestamp() (never strtotime of a Y-m-d string,
+     * which would be parsed in UTC and can shift the day). Filterable.
+     */
+    public static function friendly_date($ts) {
+        return wp_date(apply_filters('mclb_date_format', 'l, j F Y'), (int) $ts);
+    }
+
+    /** Short friendly date for tables, e.g. "Mon 26 Oct 2026". Filterable. */
+    public static function friendly_date_short($ts) {
+        return wp_date(apply_filters('mclb_date_format_short', 'D j M Y'), (int) $ts);
+    }
+
     /** Weekday keys 1..7 => Monday..Sunday (matches wp_date('N')). */
     public static function weekdays() {
         return [

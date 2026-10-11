@@ -165,7 +165,7 @@ class MCLB_Daysheets {
             }
         }
 
-        $date_label = wp_date('l j F Y', (new DateTimeImmutable($date . ' 00:00:00', wp_timezone()))->getTimestamp());
+        $date_label = MCLB_Settings::friendly_date((new DateTimeImmutable($date . ' 00:00:00', wp_timezone()))->getTimestamp());
         $base_sub   = sprintf(__('Your sessions — %s', 'mclb-lane-booking'), $date_label);
         $subject    = $test !== '' ? '[TEST → ' . $name . '] ' . $base_sub : $base_sub;
         $url        = MCLB_Daysheet_Token::url($coach_id, $date, self::expiry());

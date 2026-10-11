@@ -354,8 +354,9 @@ class MCLB_Cart {
         $s  = new DateTimeImmutable($m['starts_at'], $tz);
         $e  = new DateTimeImmutable($m['ends_at'], $tz);
         $tf = get_option('time_format') ?: 'g:i a';
-        $df = get_option('date_format') ?: 'j M Y';
-        return wp_date($df, $s->getTimestamp()) . ', ' . wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp());
+        // Friendly long date ("Monday, 26 October 2026"). Only new orders snapshot
+        // this into their line-item meta; existing orders keep their stored text.
+        return MCLB_Settings::friendly_date($s->getTimestamp()) . ', ' . wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp());
     }
 
     private static function rate_limited() {

@@ -268,7 +268,6 @@ class MCLB_Bookings_Admin {
         }
 
         $tz          = wp_timezone();
-        $df          = get_option('date_format') ?: 'j M Y';
         $tf          = get_option('time_format') ?: 'g:i a';
         $now_sql     = current_time('mysql');
         $coach_opts  = MCLB_Coaches::options();
@@ -295,7 +294,8 @@ class MCLB_Bookings_Admin {
         foreach ($rows as $b) {
             $start = new DateTimeImmutable($b->starts_at, $tz);
             $end   = new DateTimeImmutable($b->ends_at, $tz);
-            $when  = wp_date($df, $start->getTimestamp()) . ', ' . wp_date($tf, $start->getTimestamp()) . ' – ' . wp_date($tf, $end->getTimestamp());
+            // Short friendly date ("Mon 26 Oct 2026") — this is a width-sensitive table.
+            $when  = MCLB_Settings::friendly_date_short($start->getTimestamp()) . ', ' . wp_date($tf, $start->getTimestamp()) . ' – ' . wp_date($tf, $end->getTimestamp());
             $cust  = trim(($b->customer_name ?: '') . ($b->customer_email ? ' <' . $b->customer_email . '>' : ''));
             $paid  = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
 

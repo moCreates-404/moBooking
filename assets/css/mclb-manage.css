@@ -3,6 +3,23 @@
  * is safe both on the front-end page and inside wp-admin. Tablet landscape is the
  * primary target; collapses to a horizontally-scrolling calendar on phones.
  */
+/* B4 staff app shell bar — a SIBLING of .mclb-manage (the calendar replaces its
+ * own innerHTML), so it uses explicit colours rather than the scoped tokens. */
+.mclb-staffbar {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  padding: 10px 14px; margin: 0 0 12px; border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px; background: #fff; color: #1a1a1a; font-size: 14px;
+}
+.mclb-staffbar__brand { display: flex; align-items: center; gap: 10px; }
+.mclb-staffbar__logo { height: 28px; width: auto; display: block; }
+.mclb-staffbar__site { font-weight: 700; }
+.mclb-staffbar__title { color: rgba(0, 0, 0, 0.55); font-size: 13px; }
+.mclb-staffbar__meta { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; font-size: 13px; color: rgba(0, 0, 0, 0.55); }
+.mclb-staffbar__date { font-weight: 600; color: #1a1a1a; }
+.mclb-staffbar__user { color: #1a1a1a; }
+.mclb-staffbar__link { color: #2563eb; text-decoration: none; }
+.mclb-staffbar__link:hover { text-decoration: underline; }
+
 .mclb-manage {
   --mclb-line: rgba(0, 0, 0, 0.12);
   --mclb-ink: #1a1a1a;
@@ -20,6 +37,7 @@
 /* Toolbar */
 .mclb-cal__toolbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
 .mclb-cal__nav, .mclb-cal__filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mclb-cal__datelabel { font-weight: 600; font-size: 15px; color: var(--mclb-ink); align-self: center; }
 .mclb-cal__btn { cursor: pointer; }
 .mclb-cal__date { min-height: 36px; }
 .mclb-cal__coach { min-height: 36px; max-width: 220px; }
@@ -44,11 +62,13 @@
 .mclb-cal__gutterinner { position: relative; }
 .mclb-cal__tick { position: absolute; left: 0; right: 4px; transform: translateY(-50%); text-align: right; font-size: 11px; color: var(--mclb-muted); }
 
-.mclb-cal__group { display: flex; flex-direction: column; flex: 0 0 auto; }
+/* Groups + columns grow to fill the calendar width when there's room; the
+ * min-width floors mean many lanes still overflow into the horizontal scroll. */
+.mclb-cal__group { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .mclb-cal__grouphead { box-sizing: border-box; height: 24px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--mclb-muted); padding: 2px 8px; border-bottom: 1px dashed var(--mclb-line); background: #fafafa; position: sticky; top: 0; z-index: 4; }
-.mclb-cal__cols { display: flex; }
+.mclb-cal__cols { display: flex; flex: 1 1 auto; }
 
-.mclb-cal__col { flex: 0 0 160px; min-width: 160px; border-right: 1px solid var(--mclb-line); }
+.mclb-cal__col { flex: 1 1 160px; min-width: 160px; border-right: 1px solid var(--mclb-line); }
 .mclb-cal__colhead { box-sizing: border-box; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--mclb-line); position: sticky; top: 24px; z-index: 4; background: var(--mclb-surface); }
 .mclb-cal__colbody { position: relative; touch-action: none; }
 .mclb-cal__line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--mclb-line); }
@@ -57,16 +77,30 @@
 .mclb-cal__sel { position: absolute; left: 2px; right: 2px; background: rgba(37, 99, 235, .18); border: 1px dashed var(--mclb-accent); border-radius: 6px; z-index: 5; }
 
 /* Blocks */
-.mclb-mblock { position: absolute; left: 2px; right: 2px; border-radius: 6px; padding: 3px 6px; overflow: hidden; font-size: 12px; line-height: 1.25; cursor: pointer; z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.mclb-mblock { box-sizing: border-box; position: absolute; left: 2px; right: 2px; border-radius: 6px; padding: 3px 6px; overflow: hidden; font-size: 12px; line-height: 1.25; cursor: pointer; z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .mclb-mblock__title { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mclb-mblock__sub { display: block; font-size: 11px; color: var(--mclb-muted); }
-.mclb-mblock__coach { display: inline-block; margin-top: 2px; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.08); font-size: 11px; }
+.mclb-mblock__coach { display: inline-block; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.08); font-size: 11px; }
+/* Line 2: coach chip + payment pill on one row (hidden on <=30-min blocks). */
+.mclb-mblock__row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.mclb-mblock__row .mclb-badge { margin: 0; }
 .mclb-mblock--booking { background: #eaf2ff; border: 1px solid #c7dbff; }
 .mclb-mblock--manual { background: #eef7ee; border-color: #cbe6cb; }
 .mclb-mblock--held { background: transparent; border: 1px dashed #999; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.06), rgba(0,0,0,.06) 5px, transparent 5px, transparent 10px); cursor: default; }
 .mclb-mblock--cancelled { opacity: .4; filter: grayscale(1); pointer-events: none; z-index: 1; text-decoration: line-through; }
-.mclb-mblock--blockout { background: var(--bo, #85c9c2); color: #fff; border: none; }
-.mclb-mblock--blockout .mclb-mblock__sub { color: rgba(255,255,255,.9); }
+/* Closures: a soft tint of the event colour + diagonal hatch + dark label, and
+ * z-index below bookings, so the (solid) bookings clearly stand out in front. */
+.mclb-mblock--blockout {
+  z-index: 1;
+  color: #1a1a1a;
+  border: 1px solid rgba(0, 0, 0, .18);
+  background-color: var(--bo, #85c9c2);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .80), rgba(255, 255, 255, .80)),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, .10), rgba(0, 0, 0, .10) 5px, transparent 5px, transparent 11px);
+}
+.mclb-mblock--blockout .mclb-mblock__title { color: #1a1a1a; }
+.mclb-mblock--blockout .mclb-mblock__sub { color: var(--mclb-muted); }
 .mclb-mblock--readonly { opacity: .9; }
 .mclb-mblock--dim { opacity: .25; }
 .mclb-mblock--hi { outline: 2px solid var(--mclb-accent); z-index: 3; }
@@ -104,7 +138,7 @@
 
 @media (max-width: 782px) {
   .mclb-cal { max-height: 72vh; }
-  .mclb-cal__col { flex: 0 0 132px; min-width: 132px; }
+  .mclb-cal__col { flex: 1 1 132px; min-width: 132px; }
   .mclb-panel { width: 100%; }
 }
 

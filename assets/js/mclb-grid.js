@@ -337,6 +337,8 @@
       .then(function (data) {
         self.wrap.setAttribute('data-date', data.date);
         if (self.dateInput) { self.dateInput.value = data.date; }
+        var lbl = self.wrap.querySelector('.mclb-grid__datelabel');
+        if (lbl && data.date_label) { lbl.textContent = data.date_label; }
         self.grid.innerHTML = data.html;
         // Single-date-per-order: the fresh grid has no --selected cells, so
         // rebuild derives an empty selection and hides the summary.

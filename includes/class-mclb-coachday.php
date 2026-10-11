@@ -50,7 +50,7 @@ class MCLB_Coachday {
         $rows  = MCLB_Daysheets::coaches_with_sessions($date)[$coach_id] ?? [];
         $name  = MCLB_Coaches::label($coach_id);
         $first = preg_split('/\s+/', trim($name))[0] ?? $name;
-        $label = wp_date('l j F Y', (new DateTimeImmutable($date . ' 00:00:00', $tz))->getTimestamp());
+        $label = MCLB_Settings::friendly_date((new DateTimeImmutable($date . ' 00:00:00', $tz))->getTimestamp());
         $tf    = get_option('time_format') ?: 'g:i a';
 
         if (empty($rows)) {

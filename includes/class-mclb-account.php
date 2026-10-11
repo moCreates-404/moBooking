@@ -74,7 +74,6 @@ class MCLB_Account {
         $tz     = wp_timezone();
         $now    = new DateTimeImmutable('now', $tz);
         $cutoff = (int) MCLB_Settings::get('self_cancel_hours');
-        $df     = get_option('date_format') ?: 'j M Y';
         $tf     = get_option('time_format') ?: 'g:i a';
 
         echo '<table class="woocommerce-orders-table shop_table"><thead><tr>';
@@ -89,7 +88,7 @@ class MCLB_Account {
         foreach ($bookings as $b) {
             $start = new DateTimeImmutable($b->starts_at, $tz);
             $end   = new DateTimeImmutable($b->ends_at, $tz);
-            $when  = wp_date($df, $start->getTimestamp()) . ', '
+            $when  = MCLB_Settings::friendly_date($start->getTimestamp()) . ', '
                    . wp_date($tf, $start->getTimestamp()) . ' – ' . wp_date($tf, $end->getTimestamp());
             $hours_out = ($start->getTimestamp() - $now->getTimestamp()) / 3600;
 

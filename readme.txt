@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 0.1.0
+Stable tag: 1.1.2
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -25,7 +25,30 @@ Phase 0 (this build): plugin scaffold + settings screen only. Booking data
 model, availability engine, front-end grid, WooCommerce integration and admin
 management follow in later phases.
 
+== Deploying an update ==
+
+Build the release zip from a committed tag (never a working copy):
+
+    powershell -File bin/build-release.ps1 v1.1.2
+
+This writes dist/mclb-lane-booking.zip with the plugin inside a top-level
+"mclb-lane-booking/" folder. In WP Admin -> Plugins -> Add New -> Upload Plugin,
+upload that zip; when WordPress detects the existing plugin, choose "Replace
+current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is named
+after the repo/ref and installs as a second, duplicate copy of the plugin.
+
 == Changelog ==
+
+= 1.1.2 =
+* Friendly long dates ("Monday, 26 October 2026") across customer and staff
+  views. Manage calendar readability: taller rows, compact blocks, hatched
+  closures behind bookings, side-by-side genuine overlaps, grouped To-collect
+  strip. Staff app shell on the Manage page. bin/build-release.ps1 release zip.
+
+= 1.1.1 =
+* Mobile booking-grid fix (lanes no longer pushed off-screen) with a scroll
+  affordance. Online bookings snapshot the WooCommerce billing name/email onto
+  the booking row, so guest checkouts no longer show "Guest".
 
 = 0.1.0 =
 * Phase 0: plugin scaffold, activation/deactivation, tabbed settings

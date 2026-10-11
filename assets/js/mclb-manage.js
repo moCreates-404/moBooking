@@ -16,10 +16,11 @@
   var root = document.querySelector('.mclb-manage');
   if (!root) { return; }
 
-  var ROW_H = 56;                                     // px per increment row
+  var ROW_H = 72;                                     // px per increment row (taller so 30-min blocks stay readable)
   var INC = parseInt(CFG.increment, 10) || 60;        // coerce: config may arrive as a string
   var PPM = ROW_H / INC;                              // px per minute
   var TOP_PAD = 10;                                   // top inset so the first hour label clears the sticky header
+  var GAP = 2;                                        // vertical gap so back-to-back blocks read as separate
   // Booleans too: treat only real true / "1" / 1 as true.
   var CANREFUND = CFG.canRefund === true || CFG.canRefund === '1' || CFG.canRefund === 1;
 
@@ -168,8 +169,10 @@
   function toolbar() {
     var bar = el('div', 'mclb-cal__toolbar');
     var nav = el('div', 'mclb-cal__nav');
-    var prev = el('button', 'button mclb-cal__btn', '‹'); prev.title = I18N.prev;
-    var next = el('button', 'button mclb-cal__btn', '›'); next.title = I18N.next;
+    // Chevrons via unicode escapes so they can't be mangled by file encoding
+    // (the literal '‹' was rendering as '|' for some fonts/encodings on the page).
+    var prev = el('button', 'button mclb-cal__btn', '‹'); prev.title = I18N.prev; prev.setAttribute('aria-label', I18N.prev || 'Previous day');
+    var next = el('button', 'button mclb-cal__btn', '›'); next.title = I18N.next; next.setAttribute('aria-label', I18N.next || 'Next day');
     var today = el('button', 'button mclb-cal__btn', I18N.today || 'Today');
     var date = el('input', 'mclb-cal__date'); date.type = 'date'; date.value = state.date;
     prev.onclick = function () { shiftDate(-1); };
@@ -205,7 +208,8 @@
       }
     }
 
-    bar.appendChild(nav); bar.appendChild(filters);
+    var dlabel = el('div', 'mclb-cal__datelabel', (state.data && state.data.date_label) || '');
+    bar.appendChild(nav); bar.appendChild(dlabel); bar.appendChild(filters);
     return bar;
   }
   function opt(v, t) { var o = el('option', null, t); o.value = v; return o; }
@@ -217,10 +221,30 @@
       return !b.held && b.badges.some(function (x) { return x.kind === 'due' || x.kind === 'refund'; });
     });
     if (!items.length) { strip.appendChild(document.createTextNode('—')); return strip; }
+
+    // Group by normalised name + email, split by kind (due vs refund). Empty or
+    // "Guest" names never merge — each stays a single pill (we can't yet tell
+    // them apart; phone joins the key in 8a). Click opens the first booking;
+    // mark-paid stays per booking in the detail panel.
+    var groups = [], byKey = {};
     items.forEach(function (b) {
       var badge = b.badges.filter(function (x) { return x.kind === 'due' || x.kind === 'refund'; })[0];
-      var chip = el('button', 'mclb-chip mclb-chip--' + badge.kind, '#' + b.id + ' ' + (b.customer || 'Guest') + ' · ' + badge.label);
-      chip.onclick = function () { openDetail(b); };
+      var nameRaw = (b.customer || '').trim();
+      var nameNorm = nameRaw.toLowerCase();
+      var anon = (nameNorm === '' || nameNorm === 'guest');
+      var key = (anon ? 'anon#' + b.id : nameNorm + '|' + (b.email || '').trim().toLowerCase()) + '|' + badge.kind;
+      var g = byKey[key];
+      if (!g) { g = { name: nameRaw || 'Guest', kind: badge.kind, count: 0, total: 0, first: b }; byKey[key] = g; groups.push(g); }
+      g.count += 1;
+      g.total += (b.counter_due || 0);
+    });
+    var one = (CFG.labels && CFG.labels.resourceSingular ? CFG.labels.resourceSingular : 'Lane').toLowerCase();
+    var many = (CFG.labels && CFG.labels.resourcePlural ? CFG.labels.resourcePlural : 'Lanes').toLowerCase();
+    groups.forEach(function (g) {
+      var label = g.name + ' · ' + g.count + ' ' + (g.count === 1 ? one : many)
+                + ' · ' + (g.kind === 'refund' ? (I18N.refund || 'Refund') : (I18N.due || 'Due')) + ' ' + money(g.total);
+      var chip = el('button', 'mclb-chip mclb-chip--' + g.kind, label);
+      chip.onclick = function () { openDetail(g.first); };
       strip.appendChild(chip);
     });
     return strip;
@@ -256,19 +280,29 @@
     if (lane.open_min != null && lane.open_min > open) { body.appendChild(shade(open, lane.open_min, open)); }
     if (lane.close_min != null && lane.close_min < close) { body.appendChild(shade(lane.close_min, close, open)); }
 
-    // blockouts (site-wide lane_id 0 render in every column)
-    (state.data.blockouts || []).forEach(function (bo) {
-      if (bo.lane_id === 0 || bo.lane_id === lane.id) { body.appendChild(blockoutBlock(bo, open)); }
-    });
-    // bookings — cancelled first (ghost, under), then active
-    var mine = (state.data.bookings || []).filter(function (b) { return b.lane_id === lane.id; });
-    // Ghosted cancelled blocks only when the toggle is on (they never block the
-    // active booking — pointer-events:none in CSS). The "to collect" strip still
-    // surfaces refund-at-counter items regardless (see collectStrip).
+    // Ghosted cancelled blocks only when the toggle is on — rendered full-width
+    // underneath, never part of the overlap layout (pointer-events:none in CSS).
+    // The "to collect" strip still surfaces refund-at-counter items regardless.
     if (state.showCancelled) {
-      mine.filter(function (b) { return b.cancelled; }).forEach(function (b) { body.appendChild(bookingBlock(b, open)); });
+      (state.data.bookings || [])
+        .filter(function (b) { return b.lane_id === lane.id && b.cancelled; })
+        .forEach(function (b) { body.appendChild(bookingBlock(b, open, null)); });
     }
-    mine.filter(function (b) { return !b.cancelled; }).forEach(function (b) { body.appendChild(bookingBlock(b, open)); });
+
+    // Blockouts (site-wide lane_id 0 render in every column) + active bookings
+    // share one overlap layout, so a genuine overlap (closure over a booking) is
+    // placed side by side rather than stacked.
+    var items = [];
+    (state.data.blockouts || []).forEach(function (bo) {
+      if (bo.lane_id === 0 || bo.lane_id === lane.id) { items.push({ start: bo.start_min, end: bo.end_min, kind: 'bo', data: bo }); }
+    });
+    (state.data.bookings || [])
+      .filter(function (b) { return b.lane_id === lane.id && !b.cancelled; })
+      .forEach(function (b) { items.push({ start: b.start_min, end: b.end_min, kind: 'bk', data: b }); });
+    layoutColumns(items);
+    // Blockouts first so they sit behind (also z-index:1 in CSS); bookings above.
+    items.forEach(function (it) { if (it.kind === 'bo') { body.appendChild(blockoutBlock(it.data, open, it)); } });
+    items.forEach(function (it) { if (it.kind === 'bk') { body.appendChild(bookingBlock(it.data, open, it)); } });
 
     wireDrag(body, lane, open, close);
     col.appendChild(body);
@@ -282,9 +316,39 @@
     return s;
   }
 
-  function pos(block, start, end, open) {
+  function pos(block, start, end, open, layout) {
     block.style.top = ((start - open) * PPM + TOP_PAD) + 'px';
-    block.style.height = (Math.max(end - start, INC / 2) * PPM - 2) + 'px';
+    block.style.height = (Math.max(end - start, INC / 2) * PPM - GAP) + 'px';
+    // Side-by-side within a genuine overlap cluster (e.g. a closure over a booking).
+    if (layout && layout.width < 99.9) {
+      block.style.left = 'calc(' + layout.left + '% + 2px)';
+      block.style.right = 'auto';
+      block.style.width = 'calc(' + layout.width + '% - 4px)';
+    }
+  }
+
+  // Assign side-by-side columns to overlapping items; sets .left and .width
+  // (percentages) on each. Non-overlapping items span the full width.
+  function layoutColumns(items) {
+    items.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+    var columns = [], group = [], clusterEnd = null;
+    function pack() {
+      var n = Math.max(columns.length, 1);
+      group.forEach(function (it) { it.width = 100 / n; it.left = it._col * (100 / n); });
+      columns = []; group = []; clusterEnd = null;
+    }
+    items.forEach(function (it) {
+      if (clusterEnd !== null && it.start >= clusterEnd) { pack(); }
+      var placed = false;
+      for (var c = 0; c < columns.length; c++) {
+        var col = columns[c];
+        if (col[col.length - 1].end <= it.start) { col.push(it); it._col = c; placed = true; break; }
+      }
+      if (!placed) { columns.push([it]); it._col = columns.length - 1; }
+      group.push(it);
+      clusterEnd = (clusterEnd === null) ? it.end : Math.max(clusterEnd, it.end);
+    });
+    pack();
   }
 
   // Advisory: is [startMin,endMin) outside this lane's open hours, over a blockout,
@@ -301,21 +365,22 @@
     return false;
   }
 
-  function blockoutBlock(bo, open) {
+  function blockoutBlock(bo, open, layout) {
     var b = el('div', 'mclb-mblock mclb-mblock--blockout');
-    pos(b, bo.start_min, bo.end_min, open);
+    pos(b, bo.start_min, bo.end_min, open, layout);
     b.style.setProperty('--bo', bo.colour || '#85c9c2');
-    var title = bo.type_label || 'Unavailable';
-    b.appendChild(el('span', 'mclb-mblock__title', title + (bo.lane_id === 0 ? ' · all' : '')));
+    var title = (bo.type_label || 'Unavailable') + (bo.lane_id === 0 ? ' · all' : '');
+    b.appendChild(el('span', 'mclb-mblock__title', title));
     if (bo.note) { b.appendChild(el('span', 'mclb-mblock__sub', bo.note)); }
+    b.title = title + ' · ' + minToLabel(bo.start_min) + '–' + minToLabel(bo.end_min) + (bo.note ? ' · ' + bo.note : '');
     if (!bo.editable) { b.classList.add('mclb-mblock--readonly'); }
     b.onclick = function (e) { e.stopPropagation(); openBlockout(bo); };
     return b;
   }
 
-  function bookingBlock(b, open) {
+  function bookingBlock(b, open, layout) {
     var block = el('div', 'mclb-mblock mclb-mblock--booking mclb-mblock--' + b.source);
-    pos(block, b.start_min, b.end_min, open);
+    pos(block, b.start_min, b.end_min, open, layout);
     if (b.held) { block.classList.add('mclb-mblock--held'); }
     if (b.cancelled) { block.classList.add('mclb-mblock--cancelled'); }
     if (state.coachFilter && b.coach_id !== state.coachFilter) { block.classList.add('mclb-mblock--dim'); }
@@ -323,18 +388,34 @@
 
     if (b.held) {
       block.appendChild(el('span', 'mclb-mblock__title', I18N.inProgress || 'Checkout in progress'));
+      block.title = (I18N.inProgress || 'Checkout in progress') + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min);
       return block; // no actions on live holds
     }
-    block.appendChild(el('span', 'mclb-mblock__title', '#' + b.id + ' ' + (b.customer || 'Guest')));
-    var meta = el('span', 'mclb-mblock__sub', b.source === 'online' ? 'online' : 'manual');
-    block.appendChild(meta);
-    if (b.coach_label) {
-      var chip = el('span', 'mclb-mblock__coach', b.coach_label);
-      block.appendChild(chip);
+
+    // Line 1: "#87 Hayden Brown" (bold). The source (online/manual) stays in the
+    // detail panel; the block only carries the colour.
+    var titleText = '#' + b.id + ' ' + (b.customer || 'Guest');
+    block.appendChild(el('span', 'mclb-mblock__title', titleText));
+
+    // Prefer the actionable pill (Due/Refund), else the paid state.
+    var pill = b.badges.filter(function (x) { return x.kind === 'due' || x.kind === 'refund'; })[0]
+            || b.badges.filter(function (x) { return x.kind === 'counter_paid' || x.kind === 'paid_online'; })[0];
+
+    // Full detail lives in the tooltip (essential for short blocks).
+    block.title = titleText + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)
+      + ' · ' + (b.source === 'online' ? 'Online' : 'Manual')
+      + (b.coach_label ? ' · ' + b.coach_label : '')
+      + (pill ? ' · ' + pill.label : '');
+
+    // Line 2 (coach chip + payment pill on one row) — hidden on ≤30-min blocks,
+    // where the name alone must stay readable and the rest is in the tooltip.
+    if ((b.end_min - b.start_min) > 30) {
+      var row = el('div', 'mclb-mblock__row');
+      if (b.coach_label) { row.appendChild(el('span', 'mclb-mblock__coach', b.coach_label)); }
+      if (pill) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + pill.kind, pill.label)); }
+      if (row.childNodes.length) { block.appendChild(row); }
     }
-    b.badges.forEach(function (bd) {
-      block.appendChild(el('span', 'mclb-badge mclb-badge--' + bd.kind, bd.label));
-    });
+
     if (!b.cancelled) { block.onclick = function (e) { e.stopPropagation(); openDetail(b); }; }
     return block;
   }

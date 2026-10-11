@@ -1,0 +1,6 @@
+# Build output (bin/build-release.ps1)
+/dist/
+
+# Dependencies (should any be added later)
+/node_modules/
+/vendor/

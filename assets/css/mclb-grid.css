@@ -63,6 +63,12 @@
   border-radius: 6px;
   font: inherit;
 }
+/* Friendly date label beside the native picker ("Monday, 26 October 2026"). */
+.mclb-grid__datelabel {
+  margin: 0 0 10px;
+  font-weight: 600;
+  color: var(--mclb-ink);
+}
 
 /* Grid shell — fits the container; horizontal scroll only when the per-column
    floors genuinely can't fit (many lanes), with a sticky time gutter. */

@@ -93,6 +93,7 @@ class MCLB_Grid {
             <input type="date" class="mclb-grid__date" value="<?php echo esc_attr($today); ?>" min="<?php echo esc_attr($today); ?>">
             <button type="button" class="mclb-nav mclb-nav--next" aria-label="<?php esc_attr_e('Next day', 'mclb-lane-booking'); ?>">&#8250;</button>
           </div>
+          <p class="mclb-grid__datelabel" aria-live="polite"><?php echo esc_html(self::date_label($today)); ?></p>
 
           <div class="mclb-grid__scroll">
             <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
@@ -145,9 +146,10 @@ class MCLB_Grid {
             return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
         }
         return rest_ensure_response([
-            'date' => $date,
-            'type' => $type,
-            'html' => self::render_grid_html($type, $date),
+            'date'       => $date,
+            'type'       => $type,
+            'date_label' => self::date_label($date),
+            'html'       => self::render_grid_html($type, $date),
         ]);
     }
 
@@ -232,6 +234,11 @@ class MCLB_Grid {
             return 0;
         }
         return (int) $m[1] * 60 + (int) $m[2];
+    }
+
+    /** Friendly long date label ("Monday, 26 October 2026") built in site tz. */
+    private static function date_label($date) {
+        return MCLB_Settings::friendly_date((new DateTimeImmutable($date . ' 00:00:00', wp_timezone()))->getTimestamp());
     }
 
     /** Time-of-day label for a minute offset, in the site's configured format. */

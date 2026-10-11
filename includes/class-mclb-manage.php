@@ -38,6 +38,17 @@ class MCLB_Manage {
         add_action('template_redirect', [__CLASS__, 'guard_front_page']);
         add_filter('rocket_cache_reject_uri', [__CLASS__, 'rocket_exclude']);
         add_filter('wp_robots', [__CLASS__, 'robots_noindex']);
+        // B4 staff app shell: a body class the theme keys off to hide its own
+        // header/footer on the Manage page (front-end only).
+        add_filter('body_class', [__CLASS__, 'body_class']);
+    }
+
+    /** Mark the front-end Manage page as the staff app shell. */
+    public static function body_class($classes) {
+        if (self::is_manage_page()) {
+            $classes[] = 'mclb-staff-app';
+        }
+        return $classes;
     }
 
     // ── Manage page identity ────────────────────────────────────────────────
@@ -72,6 +83,8 @@ class MCLB_Manage {
             wp_safe_redirect(wp_login_url(self::page_url() ?: home_url('/')));
             exit;
         }
+        // Staff app shell: drop the WP admin bar so the page reads as a clean app.
+        add_filter('show_admin_bar', '__return_false');
     }
 
     public static function robots_noindex($robots) {
@@ -103,7 +116,45 @@ class MCLB_Manage {
             return '<p>' . esc_html__('You don’t have access to the booking manager.', 'mclb-lane-booking') . '</p>';
         }
         self::enqueue();
-        return self::container_html('front');
+        // The staff bar is the app shell's own header; render it only on the
+        // designated Manage page (the body class there lets the theme drop its
+        // chrome). The bar is a SIBLING of .mclb-manage because the calendar
+        // script replaces that container's innerHTML on every render.
+        $bar = self::is_manage_page() ? self::staffbar_html() : '';
+        return $bar . self::container_html('front');
+    }
+
+    /** Slim server-rendered staff bar for the front-end Manage page (B4). */
+    private static function staffbar_html() {
+        $user  = wp_get_current_user();
+        $uname = $user ? ($user->display_name ?: $user->user_login) : '';
+        $site  = get_bloginfo('name');
+        $today = MCLB_Settings::friendly_date((new DateTimeImmutable('now', wp_timezone()))->getTimestamp());
+        // Log out → back to the login screen (login_redirect returns staff to this page).
+        $logout = wp_logout_url(wp_login_url(self::page_url() ?: home_url('/')));
+
+        $logo_id = (int) get_theme_mod('custom_logo');
+        $logo    = $logo_id ? wp_get_attachment_image($logo_id, 'medium', false, ['class' => 'mclb-staffbar__logo', 'alt' => $site]) : '';
+
+        // wp-admin Calendar link only for users who can actually reach wp-admin
+        // (admins / shop managers); counter staff are kept out of wp-admin.
+        $admin_link = '';
+        if (current_user_can('manage_woocommerce') || current_user_can('manage_options')) {
+            $admin_link = '<a class="mclb-staffbar__link" href="' . esc_url(admin_url('admin.php?page=' . self::ADMIN_SLUG)) . '">'
+                        . esc_html__('wp-admin Calendar', 'mclb-lane-booking') . '</a>';
+        }
+
+        $brand = $logo ?: '<span class="mclb-staffbar__site">' . esc_html($site) . '</span>';
+
+        return '<div class="mclb-staffbar">'
+            . '<div class="mclb-staffbar__brand">' . $brand // phpcs:ignore WordPress.Security.EscapeOutput -- logo is core markup; site name escaped above.
+            . '<span class="mclb-staffbar__title">' . esc_html__('Staff bookings', 'mclb-lane-booking') . '</span></div>'
+            . '<div class="mclb-staffbar__meta">'
+            . '<span class="mclb-staffbar__date">' . esc_html__('Today', 'mclb-lane-booking') . ' · ' . esc_html($today) . '</span>'
+            . ($uname ? '<span class="mclb-staffbar__user">' . esc_html($uname) . '</span>' : '')
+            . $admin_link // phpcs:ignore WordPress.Security.EscapeOutput -- built from esc_url/esc_html above.
+            . '<a class="mclb-staffbar__link" href="' . esc_url($logout) . '">' . esc_html__('Log out', 'mclb-lane-booking') . '</a>'
+            . '</div></div>';
     }
 
     // ── wp-admin Calendar page ────────────────────────────────────────────────

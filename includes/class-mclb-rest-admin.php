@@ -222,8 +222,9 @@ class MCLB_REST_Admin {
         }
 
         return rest_ensure_response([
-            'date'      => $date,
-            'now'       => current_time('mysql'),
+            'date'       => $date,
+            'date_label' => MCLB_Settings::friendly_date($midnight->getTimestamp()),
+            'now'        => current_time('mysql'),
             'increment' => $increment,
             'grid'      => ['open_min' => $min_open, 'close_min' => $max_close],
             'types'     => $grouped,
