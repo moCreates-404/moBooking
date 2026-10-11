@@ -111,7 +111,7 @@ class MCLB_Daysheets {
         $rows = self::coaches_with_sessions($date)[(int) $coach_id] ?? [];
         $sig  = [];
         foreach ($rows as $r) {
-            $sig[] = $r->id . '|' . $r->starts_at . '|' . $r->ends_at . '|' . $r->lane_name . '|' . $r->customer_name . '|' . $r->admin_note;
+            $sig[] = $r->id . '|' . $r->starts_at . '|' . $r->ends_at . '|' . $r->lane_name . '|' . $r->customer_name . '|' . $r->customer_phone . '|' . $r->staff_note;
         }
         sort($sig);
         return md5(implode("\n", $sig));
@@ -248,11 +248,14 @@ class MCLB_Daysheets {
             $dur      = max(0, ($e->getTimestamp() - $s->getTimestamp()) / 3600);
             $time     = esc_html(wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp()));
             $customer = esc_html(self::format_name($r->customer_name));
-            $note     = esc_html((string) $r->admin_note);
+            // Phone follows the name-visibility setting (shown only when a name is).
+            $phone    = ($customer !== '' && $r->customer_phone) ? esc_html(MCLB_Phone::format_au($r->customer_phone)) : '';
+            $custcell = ($customer !== '' ? $customer : '&mdash;') . ($phone !== '' ? '<br><span style="color:#666;font-size:12px;">' . $phone . '</span>' : '');
+            $note     = esc_html((string) $r->staff_note);
             $tr .= '<tr>'
                 . '<td ' . $cell . '><strong>' . $time . '</strong></td>'
                 . '<td ' . $cell . '>' . esc_html($r->lane_name) . '</td>'
-                . '<td ' . $cell . '>' . ($customer !== '' ? $customer : '&mdash;') . '</td>'
+                . '<td ' . $cell . '>' . $custcell . '</td>'
                 . '<td ' . $cell . '>' . esc_html(rtrim(rtrim(number_format($dur, 2), '0'), '.')) . 'h</td>'
                 . '<td ' . $cell . '>' . ($note !== '' ? $note : '') . '</td>'
                 . '</tr>';
@@ -296,10 +299,12 @@ class MCLB_Daysheets {
             $s        = new DateTimeImmutable($r->starts_at, $tz);
             $e        = new DateTimeImmutable($r->ends_at, $tz);
             $customer = self::format_name($r->customer_name);
+            $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
             $out     .= wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp())
                 . '  ' . $r->lane_name
                 . ($customer !== '' ? '  ' . $customer : '')
-                . ((string) $r->admin_note !== '' ? '  (' . $r->admin_note . ')' : '')
+                . ($phone !== '' ? '  ' . $phone : '')
+                . ((string) $r->staff_note !== '' ? '  (' . $r->staff_note . ')' : '')
                 . "\n";
         }
         $out .= "\n" . __('View my day:', 'mclb-lane-booking') . ' ' . $url . "\n";

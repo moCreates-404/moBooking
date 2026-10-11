@@ -108,7 +108,7 @@ class MCLB_Coachday {
             $e        = $mins($r->ends_at);
             $x        = $gut + $laneIdx[(int) $r->lane_id] * $colW;
             $customer = self::fmt($r->customer_name);
-            $note     = (string) $r->admin_note;
+            $note     = (string) $r->staff_note;
             $tl .= '<div class="mclb-cd-block" style="top:' . ($head + ($s - $top) * $ppm) . 'px;height:' . (max($e - $s, 30) * $ppm - 2) . 'px;left:' . ($x + 2) . 'px;width:' . ($colW - 6) . 'px;">'
                 . '<strong>' . esc_html(wp_date($tf, (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp())) . '</strong>'
                 . ($customer !== '' ? '<br>' . esc_html($customer) : '')
@@ -121,11 +121,13 @@ class MCLB_Coachday {
         $li = '';
         foreach ($rows as $r) {
             $customer = self::fmt($r->customer_name);
-            $note     = (string) $r->admin_note;
+            $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
+            $note     = (string) $r->staff_note;
             $li .= '<li><span class="mclb-cd-time">'
                 . esc_html(wp_date($tf, (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable($r->ends_at, $tz))->getTimestamp()))
                 . '</span> · ' . esc_html($r->lane_name)
                 . ($customer !== '' ? ' · ' . esc_html($customer) : '')
+                . ($phone !== '' ? ' · ' . esc_html($phone) : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')
                 . '</li>';
         }

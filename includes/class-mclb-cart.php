@@ -35,6 +35,12 @@ class MCLB_Cart {
         add_filter('woocommerce_cart_item_quantity', [__CLASS__, 'lock_quantity'], 10, 3);
         add_action('woocommerce_cart_item_removed', [__CLASS__, 'on_item_removed'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [__CLASS__, 'add_order_item_meta'], 10, 4);
+        add_filter('woocommerce_hidden_order_itemmeta', [__CLASS__, 'hidden_order_itemmeta']);
+    }
+
+    /** Hide the plugin's internal (_mclb_*) line-item meta on the order admin + emails. */
+    public static function hidden_order_itemmeta($keys) {
+        return array_merge((array) $keys, ['_mclb_hold_id', '_mclb_lane_id', '_mclb_coach_note']);
     }
 
     // ── REST endpoint ──────────────────────────────────────────────────────────

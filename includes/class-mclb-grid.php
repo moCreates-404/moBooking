@@ -95,10 +95,10 @@ class MCLB_Grid {
           </div>
           <p class="mclb-grid__datelabel" aria-live="polite"><?php echo esc_html(self::date_label($today)); ?></p>
 
+          <p class="mclb-grid__hint" aria-hidden="true" hidden><?php esc_html_e('Swipe for more lanes', 'mclb-lane-booking'); ?> &#8594;</p>
           <div class="mclb-grid__scroll">
             <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
             <div class="mclb-grid__fade" aria-hidden="true"></div>
-            <span class="mclb-grid__hint" aria-hidden="true"><?php esc_html_e('Swipe for more lanes', 'mclb-lane-booking'); ?> &#8594;</span>
           </div>
 
           <div class="mclb-legend" aria-hidden="true">

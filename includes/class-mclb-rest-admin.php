@@ -62,6 +62,16 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'booking_cancel'],
         ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/details', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'booking_details'],
+        ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/price', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'booking_price'],
+        ]);
         register_rest_route(self::NS, '/admin/daysheet', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -190,14 +200,18 @@ class MCLB_REST_Admin {
                 'source'      => (string) $b->source,
                 'customer'    => trim((string) $b->customer_name),
                 'email'       => (string) $b->customer_email,
+                'phone'       => $b->customer_phone ? MCLB_Phone::format_au($b->customer_phone) : '',
+                'phone_raw'   => (string) $b->customer_phone,
                 'coach_id'    => $b->assigned_coach_id ? (int) $b->assigned_coach_id : 0,
                 'coach_label' => $b->assigned_coach_id ? MCLB_Coaches::label((int) $b->assigned_coach_id) : '',
                 'price'       => $b->price !== null ? (float) $b->price : null,
+                'price_original' => $b->price_original !== null ? (float) $b->price_original : null,
                 'coach_fee'   => $b->coach_fee !== null ? (float) $b->coach_fee : null,
                 'counter_due' => $b->counter_due !== null ? (float) $b->counter_due : null,
                 'counter_paid'=> $paid,
                 'order_id'    => $b->order_id ? (int) $b->order_id : 0,
                 'note'        => (string) $b->admin_note,
+                'staff_note'  => (string) $b->staff_note,
                 'badges'      => $held ? [] : self::badges($b, $paid, $cancelled),
                 'refundable'  => (!$held && !$cancelled && (string) $b->source === 'online' && $b->order_id),
             ];
@@ -296,7 +310,13 @@ class MCLB_REST_Admin {
         $coach_id = (int) $request->get_param('coach_id');
         $name     = sanitize_text_field((string) $request->get_param('name'));
         $email    = sanitize_email((string) $request->get_param('email'));
-        $note     = sanitize_textarea_field((string) $request->get_param('note'));
+        $phone    = MCLB_Phone::clean((string) $request->get_param('phone'));
+        $note     = sanitize_textarea_field((string) $request->get_param('note')); // → staff_note
+
+        // Phone is required on a manual booking (loose validation: 8+ digits).
+        if (!MCLB_Phone::valid($phone)) {
+            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mclb-lane-booking'), ['status' => 400]);
+        }
 
         $lane = get_post($lane_id);
         $re   = '/^([01]\d|2[0-3]):[0-5]\d$/';
@@ -316,7 +336,28 @@ class MCLB_REST_Admin {
 
         $tz       = wp_timezone();
         $duration = ((new DateTimeImmutable($ends_at, $tz))->getTimestamp() - (new DateTimeImmutable($starts_at, $tz))->getTimestamp()) / 3600;
-        $price    = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
+        $lane_price = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
+
+        // Optional lane-price override at creation (reason required when it changes
+        // the price). coach_fee is never overridden; counter_due = price + fee is
+        // recomputed inside insert_confirmed_locked from the price we pass.
+        $price          = $lane_price;
+        $price_original = null;
+        $reason         = sanitize_text_field((string) $request->get_param('price_reason'));
+        $override_in    = $request->get_param('override_price');
+        if ($override_in !== null && $override_in !== '') {
+            if (!is_numeric($override_in) || (float) $override_in < 0) {
+                return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mclb-lane-booking'), ['status' => 400]);
+            }
+            $op = round((float) $override_in, 2);
+            if (abs($op - $lane_price) > 0.001) {
+                if ($reason === '') {
+                    return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mclb-lane-booking'), ['status' => 400]);
+                }
+                $price          = $op;
+                $price_original = $lane_price;
+            }
+        }
 
         $res = MCLB_Bookings::insert_confirmed_locked([
             'lane_id'        => $lane_id,
@@ -324,19 +365,125 @@ class MCLB_REST_Admin {
             'starts_at'      => $starts_at,
             'ends_at'        => $ends_at,
             'price'          => $price,
+            'price_original' => $price_original,
             'customer_name'  => $name,
             'customer_email' => $email,
-            'admin_note'     => $note,
+            'customer_phone' => $phone,
+            'staff_note'     => $note,
             'coach_id'       => $coach_id,
         ]);
         if (empty($res['ok'])) {
             return self::write_error($res);
         }
+        $id = (int) $res['id'];
         $summary = $coach_id > 0
             ? sprintf(__('created booking with coach %s', 'mclb-lane-booking'), MCLB_Coaches::label($coach_id))
             : __('created booking', 'mclb-lane-booking');
-        self::log((int) $res['id'], $actor, $summary);
-        return rest_ensure_response(['ok' => true, 'id' => (int) $res['id']]);
+        self::log($id, $actor, $summary);
+        if ($price_original !== null) {
+            /* translators: 1: original price, 2: new price, 3: reason. */
+            self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($price_original), self::money($price), $reason));
+        }
+        return rest_ensure_response(['ok' => true, 'id' => $id]);
+    }
+
+    // ── POST /admin/booking/{id}/details (edit customer fields) ───────────────
+
+    public static function booking_details($request) {
+        $actor = self::actor($request);
+        if ($actor === null) {
+            return self::need_initials();
+        }
+        $id = (int) $request['id'];
+        $b  = MCLB_Bookings::get($id);
+        if (!$b) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+
+        $fields = [];
+        $audit  = [];
+        $dash   = '—';
+
+        if ($request->get_param('name') !== null) {
+            $new = sanitize_text_field((string) $request->get_param('name'));
+            $old = (string) $b->customer_name;
+            if ($new !== $old) {
+                $fields['customer_name'] = $new;
+                /* translators: 1: old, 2: new. */
+                $audit[] = sprintf(__('name %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
+            }
+        }
+        if ($request->get_param('email') !== null) {
+            $new = sanitize_email((string) $request->get_param('email'));
+            $old = (string) $b->customer_email;
+            if ($new !== $old) {
+                $fields['customer_email'] = $new;
+                /* translators: 1: old, 2: new. */
+                $audit[] = sprintf(__('email %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
+            }
+        }
+        if ($request->get_param('phone') !== null) {
+            $new = MCLB_Phone::clean((string) $request->get_param('phone'));
+            if ($new !== '' && !MCLB_Phone::valid($new)) {
+                return new WP_Error('mclb_bad_phone', __('Enter a valid phone number.', 'mclb-lane-booking'), ['status' => 400]);
+            }
+            $old = (string) $b->customer_phone;
+            if ($new !== $old) {
+                $fields['customer_phone'] = $new;
+                /* translators: 1: old, 2: new. */
+                $audit[] = sprintf(__('phone %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? MCLB_Phone::format_au($old) : $dash, $new !== '' ? MCLB_Phone::format_au($new) : $dash);
+            }
+        }
+        if ($request->get_param('staff_note') !== null) {
+            $new = sanitize_textarea_field((string) $request->get_param('staff_note'));
+            $old = (string) $b->staff_note;
+            if ($new !== $old) {
+                $fields['staff_note'] = $new;
+                $audit[] = __('updated note', 'mclb-lane-booking');
+            }
+        }
+
+        if (empty($fields)) {
+            return rest_ensure_response(['ok' => true, 'unchanged' => true]);
+        }
+        MCLB_Bookings::update_customer($id, $fields);
+        foreach ($audit as $line) {
+            self::log($id, $actor, $line);
+        }
+        return rest_ensure_response(['ok' => true]);
+    }
+
+    // ── POST /admin/booking/{id}/price (lane-price override) ──────────────────
+
+    public static function booking_price($request) {
+        $actor = self::actor($request);
+        if ($actor === null) {
+            return self::need_initials();
+        }
+        $id = (int) $request['id'];
+        $b  = MCLB_Bookings::get($id);
+        if (!$b) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        if ((string) $b->source === 'online' || $paid) {
+            return new WP_Error('mclb_no_override', __('Only an unpaid manual booking can have its price overridden.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        $new = $request->get_param('price');
+        if ($new === null || $new === '' || !is_numeric($new) || (float) $new < 0) {
+            return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $reason = sanitize_text_field((string) $request->get_param('reason'));
+        if ($reason === '') {
+            return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $res = MCLB_Bookings::override_lane_price($id, (float) $new);
+        if (empty($res['ok'])) {
+            return new WP_Error('mclb_write', __('Could not update the price.', 'mclb-lane-booking'), ['status' => 500]);
+        }
+        /* translators: 1: old price, 2: new price, 3: reason. */
+        self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($res['old']), self::money($res['new']), $reason));
+        return rest_ensure_response(['ok' => true]);
     }
 
     // ── POST /admin/booking/{id}/coach ────────────────────────────────────────

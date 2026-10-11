@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.1.2
+Stable tag: 1.2.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,14 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.2.0 =
+* Phase 8a-1: booking details. DB v4 adds customer_phone, staff_note (editable,
+  separate from the append-only audit) and price_original. Phone on manual
+  bookings (AU format) + snapshotted from WC billing; editable name/phone/email/
+  note on any booking with an audit trail; lane-price override (reason required,
+  unpaid/manual only, original kept); "who's on now" highlight; internal
+  _mclb_* order item meta hidden on the order screen and emails.
 
 = 1.1.2 =
 * Friendly long dates ("Monday, 26 October 2026") across customer and staff

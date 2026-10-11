@@ -232,7 +232,7 @@
       var nameRaw = (b.customer || '').trim();
       var nameNorm = nameRaw.toLowerCase();
       var anon = (nameNorm === '' || nameNorm === 'guest');
-      var key = (anon ? 'anon#' + b.id : nameNorm + '|' + (b.email || '').trim().toLowerCase()) + '|' + badge.kind;
+      var key = (anon ? 'anon#' + b.id : nameNorm + '|' + (b.phone_raw || '').trim() + '|' + (b.email || '').trim().toLowerCase()) + '|' + badge.kind;
       var g = byKey[key];
       if (!g) { g = { name: nameRaw || 'Guest', kind: badge.kind, count: 0, total: 0, first: b }; byKey[key] = g; groups.push(g); }
       g.count += 1;
@@ -365,6 +365,14 @@
     return false;
   }
 
+  // Is this booking happening right now (today only)? Refreshed each render /
+  // 60s reload, in step with the now-line.
+  function nowActive(b) {
+    if (state.date !== CFG.today || !state.data || !state.data.now || b.held || b.cancelled) { return false; }
+    var n = dtToMin(state.data.now);
+    return b.start_min <= n && n < b.end_min;
+  }
+
   function blockoutBlock(bo, open, layout) {
     var b = el('div', 'mclb-mblock mclb-mblock--blockout');
     pos(b, bo.start_min, bo.end_min, open, layout);
@@ -392,6 +400,10 @@
       return block; // no actions on live holds
     }
 
+    // "Who's on now" outline (today only) + a price-overridden marker.
+    if (b.price_original != null) { block.classList.add('mclb-mblock--overridden'); }
+    if (nowActive(b)) { block.classList.add('mclb-mblock--now'); }
+
     // Line 1: "#87 Hayden Brown" (bold). The source (online/manual) stays in the
     // detail panel; the block only carries the colour.
     var titleText = '#' + b.id + ' ' + (b.customer || 'Guest');
@@ -405,7 +417,9 @@
     block.title = titleText + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)
       + ' · ' + (b.source === 'online' ? 'Online' : 'Manual')
       + (b.coach_label ? ' · ' + b.coach_label : '')
-      + (pill ? ' · ' + pill.label : '');
+      + (b.phone ? ' · ' + b.phone : '')
+      + (pill ? ' · ' + pill.label : '')
+      + (b.price_original != null ? ' · ' + (I18N.priceOverridden || 'price overridden') : '');
 
     // Line 2 (coach chip + payment pill on one row) — hidden on ≤30-min blocks,
     // where the name alone must stay readable and the rest is in the tooltip.
@@ -514,7 +528,8 @@
   function openNewBooking(lane, startMin, endMin) {
     openPanel(function (panel) {
       panelHead(panel, I18N.newBooking || 'New booking');
-      panel.appendChild(el('p', 'mclb-panel__ctx', lane.name + ' · ' + state.date + ' · ' + minToLabel(startMin) + '–' + minToLabel(endMin)));
+      var dstr = (state.data && state.data.date_label) || state.date;
+      panel.appendChild(el('p', 'mclb-panel__ctx', lane.name + ' · ' + dstr + ' · ' + minToLabel(startMin) + '–' + minToLabel(endMin)));
 
       var tabs = el('div', 'mclb-panel__tabs');
       var tabBook = el('button', 'mclb-tab is-active', I18N.newBooking || 'New booking');
@@ -528,18 +543,30 @@
       tabBlock.onclick = function () { tabBlock.classList.add('is-active'); tabBook.classList.remove('is-active'); blockBody.style.display = ''; bookBody.style.display = 'none'; panel._title.textContent = I18N.blockout || 'Block out'; };
 
       // -- booking tab --
-      var name = field(bookBody, 'Name', mkInput('text'));
-      var email = field(bookBody, 'Email', mkInput('email'));
-      var note = field(bookBody, 'Note', mkInput('text'));
+      var name = field(bookBody, I18N.name || 'Name', mkInput('text'));
+      var email = field(bookBody, I18N.email || 'Email', mkInput('email'));
+      var phone = field(bookBody, (I18N.phone || 'Phone') + ' *', mkInput('tel'));
+      var note = field(bookBody, I18N.notes || 'Note', mkInput('text'));
       var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
       field(bookBody, CFG.labels.staffSingular || 'Coach', coach);
+
+      var laneRate = lane.price_per_hour || 0, hours = (endMin - startMin) / 60;
+      var baseLane = Math.round(laneRate * hours * 100) / 100;
+      var priceIn = field(bookBody, I18N.lanePrice || 'Lane price', mkInput('number'));
+      priceIn.step = '0.01'; priceIn.min = '0'; priceIn.value = baseLane.toFixed(2);
+      var reasonWrap = el('label', 'mclb-panel__field'); reasonWrap.style.display = 'none';
+      reasonWrap.appendChild(el('span', null, I18N.overrideReason || 'Reason for price change'));
+      var reason = mkInput('text'); reasonWrap.appendChild(reason); bookBody.appendChild(reasonWrap);
+
       var preview = el('p', 'mclb-panel__preview');
       bookBody.appendChild(preview);
-      var laneRate = lane.price_per_hour || 0, hours = (endMin - startMin) / 60;
       var coachRates = {};
+      function laneVal() { var v = parseFloat(priceIn.value); return isNaN(v) ? 0 : v; }
       function updatePreview() {
         var cfee = coachRates[coach.value] ? coachRates[coach.value] * hours : 0;
-        preview.textContent = 'Lane ' + money(laneRate * hours) + (coach.value !== '0' ? ' + coach ' + money(cfee) + ' = ' + money(laneRate * hours + cfee) : '') + ' (advisory)';
+        var l = laneVal();
+        preview.textContent = 'Lane ' + money(l) + (coach.value !== '0' ? ' + Coach ' + money(cfee) : '') + ' = Due ' + money(l + cfee);
+        reasonWrap.style.display = (Math.abs(l - baseLane) > 0.001) ? '' : 'none';
       }
       api('/coaches?date=' + state.date + '&start=' + timeInput(startMin) + '&end=' + timeInput(endMin))
         .then(function (res) {
@@ -547,7 +574,7 @@
             res.body.coaches.forEach(function (c) { coachRates[String(c.id)] = c.rate; coach.appendChild(opt(String(c.id), c.name + ' — ' + money(c.rate) + '/hr')); });
           }
         });
-      coach.onchange = updatePreview; updatePreview();
+      coach.onchange = updatePreview; priceIn.oninput = updatePreview; updatePreview();
 
       var ovWrap = el('label', 'mclb-panel__override');
       var ov = el('input'); ov.type = 'checkbox';
@@ -568,11 +595,13 @@
       bookBody.appendChild(save);
       save.onclick = function () {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        if (!phone.value.trim()) { showErr(err, I18N.phoneRequired || 'A phone number is required.'); return; }
         initialsSet(ini.value.trim());
         runWrite(save, err, api('/booking', { method: 'POST', body: {
           lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
-          name: name.value, email: email.value, note: note.value,
-          coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0, actor: ini.value.trim()
+          name: name.value, email: email.value, phone: phone.value, note: note.value,
+          coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0,
+          override_price: priceIn.value, price_reason: reason.value, actor: ini.value.trim()
         } }));
       };
 
@@ -614,6 +643,52 @@
     openPanel(function (panel) {
       panelHead(panel, '#' + b.id + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min));
       panel.appendChild(el('p', 'mclb-panel__ctx', (b.source === 'online' ? 'Online' : 'Manual') + ' · ' + (b.customer || 'Guest') + (b.email ? ' · ' + b.email : '')));
+      if (b.phone) { panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.phone || 'Phone') + ': ' + b.phone)); }
+      if (b.price_original != null) {
+        panel.appendChild(el('p', 'mclb-panel__warn', (I18N.priceOverridden || 'Price overridden') + ' (' + (I18N.was || 'was') + ' ' + money(b.price_original) + ')'));
+      }
+
+      // ── Edit details (name / email / phone / staff note) — the audit log below
+      //    records each change; "Notes" here is the editable staff note. ──
+      var edToggle = el('button', 'button mclb-panel__act', I18N.editDetails || 'Edit details');
+      panel.appendChild(edToggle);
+      var edForm = el('div', 'mclb-panel__edit'); edForm.style.display = 'none'; panel.appendChild(edForm);
+      var edName = field(edForm, I18N.name || 'Name', mkInput('text')); edName.value = b.customer || '';
+      var edEmail = field(edForm, I18N.email || 'Email', mkInput('email')); edEmail.value = b.email || '';
+      var edPhone = field(edForm, I18N.phone || 'Phone', mkInput('tel')); edPhone.value = b.phone_raw || '';
+      var edNoteLbl = el('label', 'mclb-panel__field'); edNoteLbl.appendChild(el('span', null, I18N.notes || 'Notes'));
+      var edNote = el('textarea'); edNote.rows = 2; edNote.value = b.staff_note || ''; edNoteLbl.appendChild(edNote); edForm.appendChild(edNoteLbl);
+      var edSave = el('button', 'button button-primary mclb-panel__save', I18N.saveDetails || 'Save details'); edForm.appendChild(edSave);
+      edToggle.onclick = function () { edForm.style.display = (edForm.style.display === 'none') ? '' : 'none'; };
+      edSave.onclick = function () {
+        if (!needInitials()) { return; }
+        runWrite(edSave, err, api('/booking/' + b.id + '/details', { method: 'POST', body: {
+          name: edName.value, email: edEmail.value, phone: edPhone.value, staff_note: edNote.value, actor: ini.value.trim()
+        } }));
+      };
+
+      // ── Override lane price (manual + unpaid only; coach fee is never changed) ──
+      if (b.source === 'manual' && !b.counter_paid) {
+        var opToggle = el('button', 'button mclb-panel__act', I18N.overridePrice || 'Override price');
+        panel.appendChild(opToggle);
+        var opForm = el('div', 'mclb-panel__edit'); opForm.style.display = 'none'; panel.appendChild(opForm);
+        var opPrice = field(opForm, I18N.lanePrice || 'Lane price', mkInput('number')); opPrice.step = '0.01'; opPrice.min = '0';
+        opPrice.value = (b.price != null ? Number(b.price).toFixed(2) : '0.00');
+        var opReason = field(opForm, I18N.overrideReason || 'Reason', mkInput('text'));
+        var opPrev = el('p', 'mclb-panel__preview'); opForm.appendChild(opPrev);
+        var opFee = b.coach_fee || 0;
+        function opUpdate() { var l = parseFloat(opPrice.value); if (isNaN(l)) { l = 0; } opPrev.textContent = 'Lane ' + money(l) + (opFee ? ' + Coach ' + money(opFee) : '') + ' = Due ' + money(l + opFee); }
+        opPrice.oninput = opUpdate; opUpdate();
+        var opSave = el('button', 'button button-primary mclb-panel__save', I18N.savePrice || 'Save price'); opForm.appendChild(opSave);
+        opToggle.onclick = function () { opForm.style.display = (opForm.style.display === 'none') ? '' : 'none'; };
+        opSave.onclick = function () {
+          if (!needInitials()) { return; }
+          if (!opReason.value.trim()) { showErr(err, I18N.reasonRequired || 'A reason is required.'); return; }
+          runWrite(opSave, err, api('/booking/' + b.id + '/price', { method: 'POST', body: {
+            price: opPrice.value, reason: opReason.value, actor: ini.value.trim()
+          } }));
+        };
+      }
 
       // coach
       var coachRow = el('div', 'mclb-panel__row');
@@ -644,10 +719,18 @@
         panel.appendChild(cr);
       }
 
-      // note history
+      // Staff note (read view) — editable version lives in "Edit details" above.
+      if (b.staff_note) {
+        var sn = el('div', 'mclb-panel__notes');
+        sn.appendChild(el('strong', null, I18N.notes || 'Notes'));
+        sn.appendChild(el('div', 'mclb-panel__noteln', b.staff_note));
+        panel.appendChild(sn);
+      }
+
+      // audit history (admin_note, append-only, read-only)
       if (b.note) {
         var hist = el('div', 'mclb-panel__notes');
-        hist.appendChild(el('strong', null, 'Notes'));
+        hist.appendChild(el('strong', null, I18N.history || 'History'));
         b.note.split('\n').forEach(function (ln) { hist.appendChild(el('div', 'mclb-panel__noteln', ln)); });
         panel.appendChild(hist);
       }

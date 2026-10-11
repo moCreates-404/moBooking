@@ -104,6 +104,9 @@
 .mclb-mblock--readonly { opacity: .9; }
 .mclb-mblock--dim { opacity: .25; }
 .mclb-mblock--hi { outline: 2px solid var(--mclb-accent); z-index: 3; }
+/* Phase 8a: lane-price override marker (gold inset bar) + "who's on now" outline. */
+.mclb-mblock--overridden { box-shadow: inset 3px 0 0 #8a6d00, 0 1px 2px rgba(0, 0, 0, .12); }
+.mclb-mblock--now { outline: 2px solid #16a34a; outline-offset: -2px; }
 
 .mclb-badge { display: inline-block; margin-top: 2px; margin-right: 3px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; }
 .mclb-badge--paid_online { background: #dcfce7; color: #166534; }
@@ -135,6 +138,9 @@
 .mclb-panel__act.is-danger { color: #b32d2e; }
 .mclb-panel__save { margin-top: 8px; }
 .mclb-panel__confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; font-size: 13px; }
+/* Phase 8a: inline edit-details / override-price forms in the detail panel. */
+.mclb-panel__edit { margin: 6px 0 10px; padding: 10px; background: #fafafa; border: 1px solid var(--mclb-line); border-radius: 6px; }
+.mclb-panel__edit textarea { width: 100%; box-sizing: border-box; min-height: 48px; }
 
 @media (max-width: 782px) {
   .mclb-cal { max-height: 72vh; }

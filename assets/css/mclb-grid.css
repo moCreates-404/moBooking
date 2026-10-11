@@ -72,7 +72,7 @@
 
 /* Grid shell — fits the container; horizontal scroll only when the per-column
    floors genuinely can't fit (many lanes), with a sticky time gutter. */
-.mclb-grid { overflow-x: auto; }
+.mclb-grid { overflow-x: auto; touch-action: pan-x pan-y; } /* allow native horizontal + vertical panning */
 /* width:100% (NOT min-width) caps the inner to the scroll container's width, so
    the minmax() column floors actually apply. With min-width:100% the grid was
    free to grow to max-content and `1fr` resolved to each column's content width
@@ -85,37 +85,36 @@
    moment everything fits or the end is reached (JS toggles .is-scrollable).
    Desktop fits after the width cap above, so this never appears there. */
 .mclb-grid__scroll { position: relative; }
-.mclb-grid__fade,
-.mclb-grid__hint {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
+/* Right-edge fade: purely visual, pointer-events:none so it never intercepts a
+   tap. Shown whenever the scroller overflows (JS adds .is-scrollable), not gated
+   to a breakpoint, so the narrow 50vw desktop drawer gets the cue too. */
 .mclb-grid__fade {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 36px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
   background: linear-gradient(to right, transparent, var(--mclb-surface));
 }
+.mclb-grid__scroll.is-scrollable .mclb-grid__fade { opacity: 1; }
+/* "Swipe for more lanes" hint sits ABOVE the grid (never over bookable cells),
+   is informational only (pointer-events:none), and JS shows it only while the
+   grid overflows and hides it after the first horizontal scroll (via [hidden]). */
 .mclb-grid__hint {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 5px 10px;
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-size: 0.72rem;
   line-height: 1;
-  white-space: nowrap;
+  pointer-events: none;
 }
-/* Shown whenever the scroller actually overflows (JS adds .is-scrollable) — NOT
-   gated to a viewport breakpoint, so the narrow 50vw desktop booking drawer
-   (~778px, where nets 7–9 sit off-screen) gets the cue too. */
-.mclb-grid__scroll.is-scrollable .mclb-grid__fade,
-.mclb-grid__scroll.is-scrollable .mclb-grid__hint { opacity: 1; }
+.mclb-grid__hint[hidden] { display: none; }
 
 .mclb-grid__head,
 .mclb-grid__row {

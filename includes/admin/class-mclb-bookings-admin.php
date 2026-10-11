@@ -137,7 +137,8 @@ class MCLB_Bookings_Admin {
         $override = !empty($_POST['override']);
         $name     = isset($_POST['customer_name']) ? sanitize_text_field(wp_unslash($_POST['customer_name'])) : '';
         $email    = isset($_POST['customer_email']) ? sanitize_email(wp_unslash($_POST['customer_email'])) : '';
-        $note     = isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '';
+        $phone    = isset($_POST['customer_phone']) ? MCLB_Phone::clean(wp_unslash($_POST['customer_phone'])) : '';
+        $note     = isset($_POST['staff_note']) ? sanitize_textarea_field(wp_unslash($_POST['staff_note'])) : '';
 
         $lane = get_post($lane_id);
         $re   = '/^([01]\d|2[0-3]):[0-5]\d$/';
@@ -149,6 +150,11 @@ class MCLB_Bookings_Admin {
         $ends_at   = "$date $end:00";
         if ($ends_at <= $starts_at) {
             wp_safe_redirect(add_query_arg('mclb_msg', 'add_invalid', $add_url));
+            exit;
+        }
+        // Phone is required on a manual booking (loose validation).
+        if (!MCLB_Phone::valid($phone)) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'add_phone', $add_url));
             exit;
         }
 
@@ -173,7 +179,8 @@ class MCLB_Bookings_Admin {
             'price'          => $price,
             'customer_name'  => $name,
             'customer_email' => $email,
-            'admin_note'     => $note,
+            'customer_phone' => $phone,
+            'staff_note'     => $note,
             'coach_id'       => $coach_id,
         ]);
 
@@ -219,8 +226,8 @@ class MCLB_Bookings_Admin {
         echo '</select></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Date', 'mclb-lane-booking') . '</th><td><input type="date" name="date" required></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Time', 'mclb-lane-booking') . '</th><td><input type="time" name="start_time" required> &ndash; <input type="time" name="end_time" required></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Customer', 'mclb-lane-booking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mclb-lane-booking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mclb-lane-booking') . '"></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Note', 'mclb-lane-booking') . '</th><td><textarea name="admin_note" rows="2" class="large-text"></textarea></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Customer', 'mclb-lane-booking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mclb-lane-booking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mclb-lane-booking') . '"> <input type="tel" name="customer_phone" required placeholder="' . esc_attr__('Phone (required)', 'mclb-lane-booking') . '"></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Staff note', 'mclb-lane-booking') . '</th><td><textarea name="staff_note" rows="2" class="large-text"></textarea></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Override', 'mclb-lane-booking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mclb-lane-booking') . '</label></td></tr>';
 
         $coach_opts = MCLB_Coaches::options();
@@ -297,13 +304,14 @@ class MCLB_Bookings_Admin {
             // Short friendly date ("Mon 26 Oct 2026") — this is a width-sensitive table.
             $when  = MCLB_Settings::friendly_date_short($start->getTimestamp()) . ', ' . wp_date($tf, $start->getTimestamp()) . ' – ' . wp_date($tf, $end->getTimestamp());
             $cust  = trim(($b->customer_name ?: '') . ($b->customer_email ? ' <' . $b->customer_email . '>' : ''));
+            $phone = $b->customer_phone ? MCLB_Phone::format_au($b->customer_phone) : '';
             $paid  = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
 
             echo '<tr>';
             printf('<td>%d</td>', (int) $b->id);
             printf('<td>%s</td>', esc_html($b->lane_name));
             printf('<td>%s</td>', esc_html($when));
-            printf('<td>%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mclb-lane-booking')));
+            printf('<td>%s%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mclb-lane-booking')), $phone !== '' ? '<br><small>' . esc_html($phone) . '</small>' : '');
             // A lapsed hold reads "Expired" regardless of whether the sweep cron
             // has run yet — availability already treats it as free (lazy expiry).
             if ($b->status === MCLB_Bookings::STATUS_HELD && $b->hold_expires_at && $b->hold_expires_at < $now_sql) {
@@ -443,6 +451,7 @@ class MCLB_Bookings_Admin {
             'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mclb-lane-booking')],
             'add_busy'           => ['error', __('The system was busy — please try again.', 'mclb-lane-booking')],
             'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mclb-lane-booking')],
+            'add_phone'          => ['error', __('A valid phone number is required for a manual booking.', 'mclb-lane-booking')],
             'add_coach_conflict' => ['error', __('That coach is already booked for an overlapping time — booking not added.', 'mclb-lane-booking')],
             'add_coach_no_rate'  => ['error', __('That coach has no hourly rate set — booking not added.', 'mclb-lane-booking')],
             'add_coach_invalid'  => ['error', __('That coach isn’t available for bookings — booking not added.', 'mclb-lane-booking')],

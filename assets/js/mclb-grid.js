@@ -45,6 +45,8 @@
     this.selections = [];      // committed selections for the current day
     this.drag = null;          // active mouse drag
     this.tapAnchor = null;     // pending touch tap-start cell
+    this.touch = null;         // pending touch gesture (decide tap vs swipe on up)
+    this.scrolledOnce = false; // hide the swipe hint after the first scroll
     this.bind();
     this.render();
   }
@@ -57,6 +59,8 @@
     this.grid.addEventListener('pointermove', function (e) { self.onPointerMove(e); });
     // pointerup can land outside a cell — listen on the document.
     document.addEventListener('pointerup', function (e) { self.onPointerUp(e); });
+    // The browser fires pointercancel when it takes over the gesture to pan/scroll.
+    document.addEventListener('pointercancel', function (e) { self.onPointerCancel(e); });
 
     // Scroll affordance: recompute the "swipe for more" cue as the grid scrolls
     // or the viewport resizes. A ResizeObserver also catches the grid gaining
@@ -151,25 +155,10 @@
     var available = this.isAvailable(cell);
 
     if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-      // Touch: per-cell tap. Tapping a selected cell removes it; otherwise
-      // tap-start / tap-end selects a range.
-      e.preventDefault();
-      if (selected) {
-        cell.classList.remove('mclb-cell--selected');
-        this.tapAnchor = null;
-        this.clearSelecting();
-        this.rebuild();
-        return;
-      }
-      if (!available) { return; }
-      if (!this.tapAnchor) {
-        this.tapAnchor = cell;
-        this.clearSelecting();
-        this.paint([cell], 'mclb-cell--selecting');
-      } else {
-        this.commit(this.run(this.tapAnchor, cell));
-        this.tapAnchor = null;
-      }
+      // Do NOT preventDefault — let the browser pan (horizontal grid scroll +
+      // vertical page scroll). Whether this is a tap or a swipe is decided on
+      // pointerup from how far the pointer moved and whether the grid scrolled.
+      this.touch = { cell: cell, x: e.clientX, y: e.clientY, sl: this.grid.scrollLeft, st: this.grid.scrollTop };
       return;
     }
 
@@ -209,7 +198,18 @@
     this.paint(this.run(this.drag.anchor, cell), 'mclb-cell--selecting');
   };
 
-  MclbGrid.prototype.onPointerUp = function () {
+  MclbGrid.prototype.onPointerUp = function (e) {
+    // Touch: act only on a GENUINE tap — not if the finger moved >10px or the
+    // grid scrolled between pointerdown and up (that was a pan/swipe).
+    if (this.touch) {
+      var t = this.touch; this.touch = null;
+      var moved = Math.abs(e.clientX - t.x) > 10 || Math.abs(e.clientY - t.y) > 10;
+      var scrolled = Math.abs(this.grid.scrollLeft - t.sl) > 2 || Math.abs(this.grid.scrollTop - t.st) > 2;
+      if (moved || scrolled) { return; }
+      var cell = (e.target && e.target.closest) ? e.target.closest('.mclb-cell') : null;
+      if (cell && cell === t.cell) { this.touchTap(cell); }
+      return;
+    }
     if (!this.drag) { return; }
     var mode = this.drag.mode;
     this.drag = null;
@@ -219,6 +219,32 @@
       else { this.clearSelecting(); }
     }
     // deselect is applied live during the drag — nothing to finalise.
+  };
+
+  // A confirmed touch tap: toggle/anchor exactly as the old pointerdown path did.
+  MclbGrid.prototype.touchTap = function (cell) {
+    if (this.isSelected(cell)) {
+      cell.classList.remove('mclb-cell--selected');
+      this.tapAnchor = null;
+      this.clearSelecting();
+      this.rebuild();
+      return;
+    }
+    if (!this.isAvailable(cell)) { return; }
+    if (!this.tapAnchor) {
+      this.tapAnchor = cell;
+      this.clearSelecting();
+      this.paint([cell], 'mclb-cell--selecting');
+    } else {
+      this.commit(this.run(this.tapAnchor, cell));
+      this.tapAnchor = null;
+    }
+  };
+
+  MclbGrid.prototype.onPointerCancel = function () {
+    // Browser took over for a pan/scroll — abandon any pending tap or drag.
+    this.touch = null;
+    if (this.drag) { this.drag = null; this.clearSelecting(); }
   };
 
   // ── Selection: grid is the source of truth ──────────────────────────────────
@@ -365,7 +391,11 @@
   MclbGrid.prototype.updateScrollHint = function () {
     if (!this.scrollWrap || !this.grid) { return; }
     var remaining = this.grid.scrollWidth - this.grid.clientWidth - this.grid.scrollLeft;
-    this.scrollWrap.classList.toggle('is-scrollable', remaining > 4);
+    var scrollable = remaining > 4;
+    this.scrollWrap.classList.toggle('is-scrollable', scrollable); // drives the right-edge fade
+    if (this.grid.scrollLeft > 0) { this.scrolledOnce = true; }    // hide the hint after the first scroll
+    var hint = this.wrap.querySelector('.mclb-grid__hint');
+    if (hint) { hint.hidden = !(scrollable && !this.scrolledOnce); }
   };
 
   // ── Add to cart (Phase 3 → Phase 4 handoff) ─────────────────────────────────

@@ -50,6 +50,10 @@ class MCLB_Bookings {
         // bookings (guest checkouts showed "Guest"). Runs in an admin request,
         // once per site, gated by its own option flag.
         add_action('admin_init', [__CLASS__, 'maybe_backfill_billing_names']);
+        // One-off v1.2.0 phone backfill — Action Scheduler batches (admin_init
+        // only ENQUEUES the first batch; no long loop runs on the request).
+        add_action(self::PHONE_BACKFILL_HOOK, [__CLASS__, 'run_phone_backfill_batch']);
+        add_action('admin_init', [__CLASS__, 'maybe_kick_phone_backfill']);
     }
 
     /** Fully-qualified table name. */
@@ -75,11 +79,14 @@ class MCLB_Bookings {
   customer_id bigint(20) unsigned DEFAULT NULL,
   customer_email varchar(191) DEFAULT NULL,
   customer_name varchar(191) DEFAULT NULL,
+  customer_phone varchar(32) DEFAULT NULL,
   price decimal(10,2) DEFAULT NULL,
+  price_original decimal(10,2) DEFAULT NULL,
   coach_requested tinyint(1) NOT NULL DEFAULT 0,
   coach_request_note text,
   assigned_coach_id bigint(20) unsigned DEFAULT NULL,
   admin_note text,
+  staff_note text,
   source varchar(10) NOT NULL DEFAULT 'online',
   coach_rate decimal(10,2) DEFAULT NULL,
   coach_fee decimal(10,2) DEFAULT NULL,
@@ -505,13 +512,16 @@ class MCLB_Bookings {
             'customer_id'       => isset($data['customer_id']) ? absint($data['customer_id']) : null,
             'customer_email'    => isset($data['customer_email']) ? sanitize_email($data['customer_email']) : null,
             'customer_name'     => isset($data['customer_name']) ? sanitize_text_field($data['customer_name']) : null,
+            'customer_phone'    => isset($data['customer_phone']) ? MCLB_Phone::clean($data['customer_phone']) : null,
             'price'             => isset($data['price']) ? (float) $data['price'] : null,
+            'price_original'    => isset($data['price_original']) ? (float) $data['price_original'] : null,
             'assigned_coach_id' => $coach_id ?: null,
             'coach_rate'        => isset($data['coach_rate']) ? (float) $data['coach_rate'] : null,
             'coach_fee'         => isset($data['coach_fee']) ? (float) $data['coach_fee'] : null,
             'counter_due'       => isset($data['counter_due']) ? (float) $data['counter_due'] : null,
             'source'            => isset($data['source']) ? sanitize_text_field($data['source']) : 'manual',
             'admin_note'        => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
+            'staff_note'        => isset($data['staff_note']) ? sanitize_textarea_field($data['staff_note']) : null,
             'created_at'        => $now,
             'updated_at'        => $now,
         ];
@@ -577,6 +587,7 @@ class MCLB_Bookings {
             }
         }
         $email = sanitize_email((string) $order->get_billing_email());
+        $phone = MCLB_Phone::clean($order->get_billing_phone());
 
         global $wpdb;
         $table = self::table();
@@ -596,6 +607,15 @@ class MCLB_Bookings {
             // Fill the email only when it is empty (never overwrite an existing one).
             $set[]  = "customer_email = CASE WHEN (customer_email IS NULL OR customer_email = '') THEN %s ELSE customer_email END";
             $args[] = $email;
+        }
+        if ($phone !== '') {
+            // Phone follows the name rule: billing wins at checkout; backfill only fills empty.
+            if ($overwrite_name) {
+                $set[] = 'customer_phone = %s';
+            } else {
+                $set[] = "customer_phone = CASE WHEN (customer_phone IS NULL OR customer_phone = '') THEN %s ELSE customer_phone END";
+            }
+            $args[] = $phone;
         }
         if (empty($set)) {
             return 0;
@@ -644,6 +664,110 @@ class MCLB_Bookings {
         update_option('mclb_billing_backfill_done', 1, false);
         update_option('mclb_billing_backfill_count', $updated, false);
         return $updated;
+    }
+
+    const PHONE_BACKFILL_HOOK = 'mclb_phone_backfill_batch';
+    const PHONE_BACKFILL_SIZE = 50;
+
+    /** Kick off the one-off phone backfill: enqueue one AS batch. No work here. */
+    public static function maybe_kick_phone_backfill() {
+        if (get_option('mclb_phone_backfill_done')) {
+            return;
+        }
+        if (!function_exists('as_enqueue_async_action') || !function_exists('as_next_scheduled_action')) {
+            return; // Action Scheduler not loaded yet — try again next admin request.
+        }
+        if (as_next_scheduled_action(self::PHONE_BACKFILL_HOOK) !== false) {
+            return; // a batch is already queued/running
+        }
+        as_enqueue_async_action(self::PHONE_BACKFILL_HOOK);
+    }
+
+    /**
+     * Process one batch (PHONE_BACKFILL_SIZE) of the phone backfill: fill
+     * customer_phone from the WC billing phone on existing online bookings with
+     * an empty phone, advancing a booking-id cursor so a number with no billing
+     * phone is never revisited, then queue the next batch or finish.
+     */
+    public static function run_phone_backfill_batch() {
+        if (get_option('mclb_phone_backfill_done')) {
+            return;
+        }
+        if (!function_exists('wc_get_order')) {
+            return; // WC not ready; a later admin_init re-kicks.
+        }
+        global $wpdb;
+        $table  = self::table();
+        $cursor = (int) get_option('mclb_phone_backfill_cursor', 0);
+        $rows   = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, order_id FROM {$table}
+              WHERE id > %d AND order_id IS NOT NULL AND order_id > 0
+                AND source = 'online'
+                AND (customer_phone IS NULL OR customer_phone = '')
+              ORDER BY id ASC LIMIT %d",
+            $cursor,
+            self::PHONE_BACKFILL_SIZE
+        ));
+        if (empty($rows)) {
+            update_option('mclb_phone_backfill_done', 1, false);
+            return;
+        }
+        $max = $cursor;
+        foreach ($rows as $r) {
+            self::fill_customer_from_order((int) $r->order_id, false); // empty-only
+            $max = max($max, (int) $r->id);
+        }
+        update_option('mclb_phone_backfill_cursor', $max, false);
+        if (count($rows) >= self::PHONE_BACKFILL_SIZE && function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::PHONE_BACKFILL_HOOK); // more to do
+        } else {
+            update_option('mclb_phone_backfill_done', 1, false);
+        }
+    }
+
+    /**
+     * Update editable customer fields (Phase 8a). Only keys present in $fields
+     * are written (customer_name, customer_email, customer_phone, staff_note);
+     * phone is cleaned. The caller records the audit line(s) in admin_note.
+     */
+    public static function update_customer($id, array $fields) {
+        global $wpdb;
+        $data = ['updated_at' => current_time('mysql')];
+        if (array_key_exists('customer_name', $fields))  { $data['customer_name']  = sanitize_text_field((string) $fields['customer_name']); }
+        if (array_key_exists('customer_email', $fields)) { $data['customer_email'] = sanitize_email((string) $fields['customer_email']); }
+        if (array_key_exists('customer_phone', $fields)) { $data['customer_phone'] = MCLB_Phone::clean($fields['customer_phone']); }
+        if (array_key_exists('staff_note', $fields))     { $data['staff_note']     = sanitize_textarea_field((string) $fields['staff_note']); }
+        return $wpdb->update(self::table(), $data, ['id' => (int) $id]) !== false;
+    }
+
+    /**
+     * Override a booking's LANE price (Phase 8a). The original lane price is kept
+     * in price_original (set once, on the first override); counter_due is
+     * recalculated as new lane price + coach_fee. coach_fee is never changed (it
+     * records coach pay). Callers gate this to unpaid, non-online bookings and
+     * record the audit line.
+     *
+     * @return array ok + old/new lane price, or an error key.
+     */
+    public static function override_lane_price($id, $new_price) {
+        global $wpdb;
+        $b = self::get((int) $id);
+        if (!$b) {
+            return ['ok' => false, 'error' => 'not_found'];
+        }
+        $new_price = round((float) $new_price, 2);
+        if ($new_price < 0) {
+            return ['ok' => false, 'error' => 'bad_price'];
+        }
+        $old      = (float) $b->price;
+        $original = ($b->price_original === null) ? $old : (float) $b->price_original;
+        $new_due  = round($new_price + (float) $b->coach_fee, 2);
+        $ok = $wpdb->update(
+            self::table(),
+            ['price' => $new_price, 'price_original' => $original, 'counter_due' => $new_due, 'updated_at' => current_time('mysql')],
+            ['id' => (int) $id]
+        );
+        return ['ok' => $ok !== false, 'old' => $old, 'new' => $new_price];
     }
 
     /**
