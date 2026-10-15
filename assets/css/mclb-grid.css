@@ -100,6 +100,25 @@
   background: linear-gradient(to right, transparent, var(--mclb-surface));
 }
 .mclb-grid__scroll.is-scrollable .mclb-grid__fade { opacity: 1; }
+/* Loading veil: while the grid is refreshing availability (is-loading on the
+   wrap) the cells are covered and made non-interactive, so a cache-stale server
+   render can never be seen or tapped before fresh data lands. */
+.mclb-grid__loading { display: none; }
+.mclb-grid-wrap.is-loading .mclb-grid { pointer-events: none; }
+.mclb-grid-wrap.is-loading .mclb-grid__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--mclb-surface) 82%, transparent);
+  color: var(--mclb-ink, inherit);
+  font-weight: 600;
+}
+@supports not (background: color-mix(in srgb, white 50%, transparent)) {
+  .mclb-grid-wrap.is-loading .mclb-grid__loading { background: rgba(255, 255, 255, 0.85); }
+}
 /* "Swipe for more lanes" hint sits ABOVE the grid (never over bookable cells),
    is informational only (pointer-events:none), and JS shows it only while the
    grid overflows and hides it after the first horizontal scroll (via [hidden]). */
@@ -268,6 +287,24 @@
 .mclb-selection__msg { margin: 8px 0 0; font-size: 0.85rem; min-height: 1em; }
 .mclb-selection__msg--ok { color: #1a7f37; }
 .mclb-selection__msg--err { color: var(--mclb-booked, #c94a55); }
+
+/* "Just booked by someone else" alert — shown above the summary when a refresh
+   removes a pick that was taken in the meantime. [hidden] keeps it out until JS
+   fills it. */
+.mclb-grid__notice[hidden] { display: none; }
+.mclb-grid__notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--mclb-booked, #c94a55);
+  background: color-mix(in srgb, var(--mclb-booked, #c94a55) 10%, var(--mclb-surface));
+  border: 1px solid var(--mclb-booked, #c94a55);
+  border-radius: 8px;
+}
+@supports not (background: color-mix(in srgb, white 50%, transparent)) {
+  .mclb-grid__notice { background: rgba(201, 74, 85, 0.08); }
+}
 
 /* Instruction line above the grid (small, muted, one line; touch vs mouse text
    chosen in JS by matchMedia('(pointer: coarse)')). */

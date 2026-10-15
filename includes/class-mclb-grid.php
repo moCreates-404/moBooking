@@ -87,6 +87,12 @@ class MCLB_Grid {
 
         ob_start();
         ?>
+        <?php // The server-rendered day below can be frozen in page cache (WP Rocket). The
+              // grid JS locks the grid (is-loading, set synchronously in its constructor) and
+              // re-pulls fresh availability before it becomes interactive. We deliberately do
+              // NOT hard-code is-loading here: if a stale cached copy of the JS ever loads
+              // against this newer markup, the grid must stay usable (server-side revalidation
+              // under lock is the double-book backstop), never frozen behind an un-clearable veil. ?>
         <div class="mclb-grid-wrap" data-type="<?php echo esc_attr($type); ?>" data-date="<?php echo esc_attr($today); ?>"<?php echo MCLB_License::can_book() ? '' : ' data-readonly="1"'; ?>>
           <?php if (!MCLB_License::can_book()) : ?>
             <p class="mclb-demo-notice" role="status"><?php echo esc_html(MCLB_License::demo_message()); ?></p>
@@ -103,6 +109,7 @@ class MCLB_Grid {
           <div class="mclb-grid__scroll">
             <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
             <div class="mclb-grid__fade" aria-hidden="true"></div>
+            <div class="mclb-grid__loading" aria-hidden="true"><span><?php esc_html_e('Checking availability…', 'mclb-lane-booking'); ?></span></div>
           </div>
 
           <div class="mclb-legend" aria-hidden="true">
@@ -110,6 +117,8 @@ class MCLB_Grid {
             <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--booked"></i><?php esc_html_e('Booked', 'mclb-lane-booking'); ?></span>
             <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--closed"></i><?php esc_html_e('Closed', 'mclb-lane-booking'); ?></span>
           </div>
+
+          <p class="mclb-grid__notice" role="alert" hidden></p>
 
           <aside class="mclb-selection" hidden>
             <h3 class="mclb-selection__title"><?php echo esc_html($labels['singular']); ?> <?php esc_html_e('selection', 'mclb-lane-booking'); ?></h3>
@@ -155,12 +164,18 @@ class MCLB_Grid {
         if ($date === '') {
             return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
         }
-        return rest_ensure_response([
+        $response = rest_ensure_response([
             'date'       => $date,
             'type'       => $type,
             'date_label' => self::date_label($date),
             'html'       => self::render_grid_html($type, $date),
         ]);
+        // Availability is live and must never be served stale — tell every layer
+        // (browser, WP Rocket, host/CDN cache) not to cache this response.
+        $response->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        $response->header('Pragma', 'no-cache');
+        $response->header('Expires', 'Wed, 11 Jan 1984 05:00:00 GMT');
+        return $response;
     }
 
     // ── The single grid renderer (initial paint + REST) ─────────────────────────

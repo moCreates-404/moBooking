@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.2.1
+Stable tag: 1.2.2
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,19 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.2.2 =
+* Customer booking grid: fixes stale availability on page-cached (WP Rocket)
+  pages. The grid now always re-fetches the current day from the REST API
+  (no-store + cache-buster) whenever it becomes visible (incl. the drawer
+  opening), when the tab regains focus, every 60s while visible, and after any
+  add-to-cart failure — keeping the customer's still-free picks. Until fresh
+  data lands the grid shows a "Checking availability…" veil and is
+  non-interactive, so a cache-stale slot can never be tapped. If a pick is
+  removed because it was just taken, a brief inline notice names the slot.
+  The availability REST response now sends no-cache headers.
+  (Add-to-cart already re-validates every slot server-side under a row lock, so
+  a stale UI can never create a double-booking.)
 
 = 1.2.1 =
 * Customer booking grid: new tap flow — tap a free slot to pre-select (light),

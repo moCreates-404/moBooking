@@ -46,17 +46,53 @@
     this.addBtn = wrap.querySelector('.mclb-add-to-cart');
     this.msg = wrap.querySelector('.mclb-selection__msg');
     this.minibar = wrap.querySelector('.mclb-grid__minibar');
+    this.notice = wrap.querySelector('.mclb-grid__notice');
+    this.noticeTimer = null;
     this.dateInput = wrap.querySelector('.mclb-grid__date');
     this.selections = [];      // committed runs (derived from --selected cells)
     this.light = null;         // the single touch pre-select cell, or null
     this.drag = null;          // active MOUSE drag
     this.touch = null;         // pending TOUCH gesture
     this.scrolledOnce = false;
+    this.refreshing = false;   // a fresh-availability fetch is in flight
+    this.visible = false;      // grid is on-screen (drawer open / in viewport)
+    this.poll = null;
+    this.setLoading(true);     // server-rendered cells may be cache-stale: lock until fresh
     this.bind();
     this.setInstructions();
     this.render();
     this.rebuild();
+    this.watchVisibility();    // triggers the first fresh fetch when visible
+    wrap.mclbGridInstance = this; // expose for console debugging on the live site
   }
+
+  // The server-rendered first day can be frozen in page cache (WP Rocket), so
+  // never trust it: pull fresh availability whenever the grid becomes visible
+  // (incl. the drawer opening), when the tab regains focus, and every 60s while
+  // visible. Cells stay non-interactive (is-loading) until a fresh day lands.
+  MclbGrid.prototype.watchVisibility = function () {
+    var self = this;
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && self.visible) { self.refresh(); }
+    });
+    if (window.IntersectionObserver) {
+      this.io = new IntersectionObserver(function (entries) {
+        var vis = !!(entries[0] && entries[0].isIntersecting);
+        if (vis && !self.visible) { self.visible = true; self.refresh(); self.startPolling(); }
+        else if (!vis && self.visible) { self.visible = false; self.stopPolling(); }
+      }, { threshold: 0.01 });
+      this.io.observe(this.wrap);
+    } else {
+      this.visible = true; this.refresh(); this.startPolling();
+    }
+  };
+  MclbGrid.prototype.startPolling = function () {
+    var self = this;
+    this.stopPolling();
+    this.poll = setInterval(function () { if (self.visible && !document.hidden) { self.refresh(); } }, 60000);
+  };
+  MclbGrid.prototype.stopPolling = function () { if (this.poll) { clearInterval(this.poll); this.poll = null; } };
+  MclbGrid.prototype.setLoading = function (on) { this.wrap.classList.toggle('is-loading', !!on); };
 
   // Pick the instruction text by input type (touch vs mouse).
   MclbGrid.prototype.setInstructions = function () {
@@ -410,6 +446,7 @@
           self.setMsg((res.body && res.body.message) || I18N.cartSoon || 'Could not add to cart.', false);
           if (self.addBtn) { self.addBtn.disabled = false; }
           if (mbAdd) { mbAdd.disabled = false; }
+          self.refresh(); // a slot was just taken: re-pull fresh, keeping the customer's still-free picks
         }
       })
       .catch(function () {
@@ -427,11 +464,26 @@
     this.loadDate(iso(d));
   };
 
-  MclbGrid.prototype.loadDate = function (date) {
-    if (!date) { return; }
+  // Navigate to a chosen day — a fresh day, so the selection resets.
+  MclbGrid.prototype.loadDate = function (date) { this.loadDay(date, 'nav'); };
+
+  // Re-pull the day currently shown and keep the customer's still-free picks.
+  MclbGrid.prototype.refresh = function () { this.loadDay(this.wrap.getAttribute('data-date'), 'refresh'); };
+
+  // Fetch a day's availability fresh (never cached: no-store + cache-buster) and
+  // swap it into the grid. mode 'nav' = jumped to a new day (selection resets);
+  // mode 'refresh' = same day re-checked (keep selections whose slots survive).
+  // While the request is in flight the grid is non-interactive (is-loading), so
+  // a cache-stale server render can never be tapped before fresh data lands.
+  MclbGrid.prototype.loadDay = function (date, mode) {
+    if (!date || this.refreshing) { return; }
     var self = this;
-    var url = CFG.restUrl + '?date=' + encodeURIComponent(date) + '&type=' + encodeURIComponent(this.type);
-    fetch(url, { headers: { 'X-WP-Nonce': CFG.nonce || '' } })
+    this.refreshing = true;
+    this.setLoading(true);
+    this.clearNotice();
+    var prev = (mode === 'refresh') ? this.selections.slice() : [];
+    var url = CFG.restUrl + '?date=' + encodeURIComponent(date) + '&type=' + encodeURIComponent(this.type) + '&_=' + Date.now();
+    fetch(url, { cache: 'no-store', headers: { 'X-WP-Nonce': CFG.nonce || '' } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
       .then(function (data) {
         self.wrap.setAttribute('data-date', data.date);
@@ -439,12 +491,61 @@
         var lbl = self.wrap.querySelector('.mclb-grid__datelabel');
         if (lbl && data.date_label) { lbl.textContent = data.date_label; }
         self.grid.innerHTML = data.html;
-        // Single-date-per-order: a fresh day has no selection and no light.
-        self.light = null;
+        self.light = null; // a fresh grid has no pre-select
+        if (mode === 'refresh') { self.showDroppedNotice(self.reapplySelections(prev)); }
         self.rebuild();
         self.render();
       })
-      .catch(function () { self.setMsg('Could not load that date.', false); });
+      .catch(function () { if (mode === 'nav') { self.setMsg('Could not load that date.', false); } })
+      .then(function () { self.setLoading(false); self.refreshing = false; });
+  };
+
+  // On a refresh, re-mark the previously selected runs whose every slot is still
+  // free on the fresh grid; return the runs that are now (partly) taken so the
+  // caller can tell the customer which picks were removed.
+  MclbGrid.prototype.reapplySelections = function (prev) {
+    var self = this;
+    var dropped = [];
+    prev.forEach(function (sel) {
+      var inRange = Array.prototype.slice.call(
+        self.grid.querySelectorAll('.mclb-cell--available[data-lane="' + sel.laneId + '"]')
+      ).filter(function (c) {
+        var s = +c.getAttribute('data-start-min');
+        return s >= sel.startMin && s < sel.endMin;
+      }).sort(function (a, b) {
+        return (+a.getAttribute('data-start-min')) - (+b.getAttribute('data-start-min'));
+      });
+      var ok = inRange.length > 0
+        && +inRange[0].getAttribute('data-start-min') === sel.startMin
+        && +inRange[inRange.length - 1].getAttribute('data-end-min') === sel.endMin;
+      if (ok) {
+        for (var i = 1; i < inRange.length; i++) {
+          if (+inRange[i].getAttribute('data-start-min') !== +inRange[i - 1].getAttribute('data-end-min')) { ok = false; break; }
+        }
+      }
+      if (ok) { inRange.forEach(function (c) { c.classList.add('mclb-cell--selected'); }); }
+      else { dropped.push(sel); }
+    });
+    return dropped;
+  };
+
+  // Brief inline alert above the summary when a refresh removes picks that were
+  // taken by someone else in the meantime. Auto-dismisses; cleared on next load.
+  MclbGrid.prototype.showDroppedNotice = function (dropped) {
+    if (!this.notice || !dropped || !dropped.length) { return; }
+    var labels = dropped.map(function (s) { return s.laneName + ' · ' + hm(s.startMin) + '–' + hm(s.endMin); });
+    var text = (labels.length === 1)
+      ? labels[0] + ' was just booked by someone else and has been removed.'
+      : 'These were just booked by someone else and have been removed: ' + labels.join('; ') + '.';
+    this.notice.textContent = text;
+    this.notice.hidden = false;
+    if (this.noticeTimer) { clearTimeout(this.noticeTimer); }
+    var self = this;
+    this.noticeTimer = setTimeout(function () { self.clearNotice(); }, 12000);
+  };
+  MclbGrid.prototype.clearNotice = function () {
+    if (this.noticeTimer) { clearTimeout(this.noticeTimer); this.noticeTimer = null; }
+    if (this.notice) { this.notice.hidden = true; this.notice.textContent = ''; }
   };
 
   // Re-assert prev-button disabled state at "today" + the scroll hint.

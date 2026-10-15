@@ -3,7 +3,7 @@
  * Plugin Name:       moBooking
  * Plugin URI:        https://mocreates.com.au/
  * Description:       Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid, checking out through WooCommerce. Generic and configurable per install.
- * Version:           1.2.1
+ * Version:           1.2.2
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            moCreates
@@ -26,7 +26,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MCLB_VERSION', '1.2.1'); // display/asset-fallback version only; DB migrations use MCLB_DB_VERSION.
+define('MCLB_VERSION', '1.2.2'); // display/asset-fallback version only; DB migrations use MCLB_DB_VERSION.
 define('MCLB_DB_VERSION', '4'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note. v3: bookings coach-fee/counter/source columns + coach_range index, source backfill, closures.event_type. v4: bookings customer_phone + staff_note + price_original (Phase 8a).
 define('MCLB_FILE', __FILE__);
 define('MCLB_DIR', plugin_dir_path(__FILE__));
