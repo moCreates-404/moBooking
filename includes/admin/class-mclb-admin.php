@@ -143,6 +143,19 @@ class MCLB_Admin {
         $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
         $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mclb-lane-booking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mclb-lane-booking'), 0, 720);
 
+        // General → Emails
+        add_settings_section('mclb_emails', __('Emails', 'mclb-lane-booking'), function () {
+            echo '<p>' . esc_html__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: lane bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mclb-lane-booking') . '</p>';
+        }, $g);
+        $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mclb-lane-booking'), __('e.g. bookings@yourclub.com — lane-booking admin emails + staff alerts', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_emails', 'email_reception', __('Reception / shop email', 'mclb-lane-booking'), __('e.g. reception@yourclub.com — shop-order admin emails', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'email_manual_confirmation', __('Manual booking confirmation', 'mclb-lane-booking'), __('Email the customer a confirmation when staff create a manual booking (if an address is on file)', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_self_cancel', __('Alert: customer self-cancel', 'mclb-lane-booking'), __('Email the Bookings address when a customer cancels their own booking', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mclb-lane-booking'), __('Email the Bookings address when an online booking asks for a coach', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mclb-lane-booking'), __('Email the Bookings address when staff create a manual booking', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mclb-lane-booking'), __('Email the Bookings address when staff move a booking', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_emails', 'email_test_recipient', __('Email test recipient', 'mclb-lane-booking'), __('Dev safety: when set, EVERY plugin email (incl. day sheets) is rerouted here. On a non-production site nothing is sent unless this is set.', 'mclb-lane-booking'));
+
         // General → hours
         add_settings_section('mclb_hours', __('Default opening hours', 'mclb-lane-booking'), function () {
             echo '<p>' . esc_html__('Seeded onto new resources as their default weekly hours. Per-resource overrides come in a later phase.', 'mclb-lane-booking') . '</p>';
@@ -199,7 +212,7 @@ class MCLB_Admin {
             printf('<input type="email" class="regular-text" name="%s" value="%s" placeholder="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_cc')), esc_attr($this->val('daysheet_cc')), esc_attr__('e.g. front desk', 'mclb-lane-booking'), esc_html__('optional; skipped when a test recipient is set', 'mclb-lane-booking'));
         }, $ds, 'mclb_ds');
         add_settings_field('daysheet_test_recipient', __('Test recipient', 'mclb-lane-booking'), function () {
-            printf('<input type="email" class="regular-text" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_test_recipient')), esc_attr($this->val('daysheet_test_recipient')), esc_html__('when set, EVERY sheet goes here instead of the coach', 'mclb-lane-booking'));
+            printf('<span class="description">%s</span>', esc_html__('Moved to General → Emails → “Email test recipient”, which now reroutes every plugin email (day sheets included).', 'mclb-lane-booking'));
         }, $ds, 'mclb_ds');
         add_settings_field('daysheet_expiry_hours', __('Link expiry', 'mclb-lane-booking'), function () {
             printf('<input type="number" min="1" max="720" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_expiry_hours')), esc_attr($this->val('daysheet_expiry_hours')), esc_html__('hours the “View my day” link stays valid', 'mclb-lane-booking'));

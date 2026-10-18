@@ -851,6 +851,14 @@
       actions.appendChild(actionBtn(I18N.move || 'Move…', function () {
         openMoveForm(b, { date: state.date, lane_id: b.lane_id, start_min: b.start_min, dur: b.end_min - b.start_min });
       }));
+      if (b.source === 'manual') {
+        var resendBtn = actionBtn(I18N.resendConfirmation || 'Resend confirmation', function (btn) {
+          if (!needInitials()) { return; }
+          runWrite(btn, err, api('/booking/' + b.id + '/resend-confirmation', { method: 'POST', body: { actor: ini.value.trim() } }));
+        });
+        if (!b.email) { resendBtn.disabled = true; resendBtn.title = I18N.noEmailOnFile || 'No email address on file'; }
+        actions.appendChild(resendBtn);
+      }
       coachSaveBtn = actionBtn('Save ' + (CFG.labels.staffSingular || 'coach'), function (btn) {
         if (!needInitials()) { return; }
         var coachId = parseInt(coach.value, 10) || 0;
@@ -966,6 +974,13 @@
       function syncReason() { reasonWrap.style.display = rNone.checked ? '' : 'none'; }
       rRefund.onchange = syncReason; rNone.onchange = syncReason;
 
+      // Notify-customer checkbox (default on) — staff can skip the "moved" email,
+      // e.g. when the customer is at the counter.
+      var notifyWrap = el('label', 'mclb-panel__override');
+      var notify = el('input'); notify.type = 'checkbox'; notify.checked = true;
+      notifyWrap.appendChild(notify); notifyWrap.appendChild(document.createTextNode(' ' + (I18N.notifyCustomer || 'Notify customer by email')));
+      panel.appendChild(notifyWrap);
+
       var ini = initialsField(panel);
       var err = errBox(panel);
       var save = el('button', 'button button-primary mclb-panel__save', I18N.moveSave || 'Move booking');
@@ -1015,7 +1030,7 @@
         initialsSet(ini.value.trim());
         var body = {
           lane_id: parseInt(laneSel.value, 10) || 0, date: dateIn.value, start: startIn.value, end: endTime(),
-          override: ov.checked ? 1 : 0, actor: ini.value.trim()
+          override: ov.checked ? 1 : 0, notify: notify.checked ? 1 : 0, actor: ini.value.trim()
         };
         if (refundWrap.style.display !== 'none') { body.refund_choice = rNone.checked ? 'none' : 'refund'; body.refund_reason = reason.value; }
         setBusy(save, true); if (err) { err.style.display = 'none'; }

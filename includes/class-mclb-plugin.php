@@ -44,6 +44,10 @@ class MCLB_Plugin {
         MCLB_Order::init();
         MCLB_Account::init();
 
+        // Emails + WooCommerce admin-email routing (Phase 8a-2).
+        MCLB_Mail::init();
+        MCLB_Emails::init();
+
         // Staff Manage view (Phase 7c): caps/role, the [mclb_manage] page + admin
         // Calendar screen, and the admin REST layer.
         MCLB_Caps::init();

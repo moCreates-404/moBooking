@@ -37,7 +37,9 @@ class MCLB_Daysheets {
     private static function target()    { return MCLB_Settings::get('daysheet_target') === 'today' ? 'today' : 'tomorrow'; }
     private static function names()     { $n = MCLB_Settings::get('daysheet_names'); return in_array($n, ['full', 'first_initial', 'none'], true) ? $n : 'full'; }
     private static function cc()        { return sanitize_email((string) MCLB_Settings::get('daysheet_cc')); }
-    private static function test_recipient() { return sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient')); }
+    // The global email test recipient now governs every plugin email (8a-2);
+    // this still falls back to the old day-sheet value until it's migrated across.
+    private static function test_recipient() { return MCLB_Mail::test_recipient(); }
     private static function expiry()    { $h = (int) MCLB_Settings::get('daysheet_expiry_hours'); return ($h >= 1 && $h <= 720) ? $h : 48; }
 
     /** The date (Y-m-d) a run covers, in site time. */

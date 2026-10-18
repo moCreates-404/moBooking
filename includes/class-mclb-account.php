@@ -193,6 +193,9 @@ class MCLB_Account {
             $msg = 'cancelled';
         }
 
+        /** Staff alert (Phase 8a-2): the customer cancelled their own booking. */
+        do_action('mclb_self_cancelled', (int) $b->id);
+
         wp_safe_redirect(add_query_arg('mclb_msg', $msg, $redirect));
         exit;
     }

@@ -75,6 +75,15 @@ class MCLB_Settings {
             'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
             'self_cancel_hours'       => 24, // logged-in self-cancel cutoff before booking start
             'refund_window_hours'     => 24, // cancel within this long after placing (and >cutoff before start) = real refund, else credit
+            // Emails (Phase 8a-2)
+            'email_test_recipient'      => '', // dev safety: reroutes EVERY plugin email (incl. day sheets) here
+            'email_bookings'            => '', // lane-order WC admin emails + staff alerts
+            'email_reception'           => '', // shop-order WC admin emails
+            'email_manual_confirmation' => 1,  // email the customer when staff create a manual booking
+            'alert_self_cancel'         => 1,  // staff alert on a customer self-cancel
+            'alert_coach_request'       => 1,  // staff alert when an online booking requests a coach
+            'alert_manual_created'      => 0,  // staff alert on a staff-created manual booking
+            'alert_move'                => 0,  // staff alert on a staff move
             'hours'                   => [
                 1 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
                 2 => ['open' => '10:00', 'close' => '22:00', 'closed' => 0],
@@ -186,6 +195,28 @@ class MCLB_Settings {
         }
         if (isset($in['manage_page_id'])) {
             $out['manage_page_id'] = absint($in['manage_page_id']);
+        }
+        // Emails (General tab). Address fields guarded by isset so another tab's
+        // save doesn't clear them; checkboxes carry a hidden companion so unchecked
+        // records 0. The test recipient absorbs the old day-sheet value once, so
+        // the single field becomes the source of truth going forward.
+        if (isset($in['email_bookings'])) {
+            $out['email_bookings'] = sanitize_email($in['email_bookings']);
+        }
+        if (isset($in['email_reception'])) {
+            $out['email_reception'] = sanitize_email($in['email_reception']);
+        }
+        if (isset($in['email_test_recipient'])) {
+            $v = sanitize_email($in['email_test_recipient']);
+            if ($v === '' && !empty($out['daysheet_test_recipient'])) {
+                $v = sanitize_email((string) $out['daysheet_test_recipient']); // migrate the old value across
+            }
+            $out['email_test_recipient'] = $v;
+        }
+        foreach (['email_manual_confirmation', 'alert_self_cancel', 'alert_coach_request', 'alert_manual_created', 'alert_move'] as $cb) {
+            if (isset($in[$cb])) {
+                $out[$cb] = empty($in[$cb]) ? 0 : 1;
+            }
         }
         // Day sheets. The tab posts a hidden marker so unchecked/empty fields are
         // distinguishable from another tab's save (same pattern as the checkbox).

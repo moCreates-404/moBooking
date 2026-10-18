@@ -1261,6 +1261,15 @@ class MCLB_Bookings {
         return $wpdb->update(self::table(), ['price' => round((float) $price, 2), 'updated_at' => current_time('mysql')], ['id' => (int) $id]) !== false;
     }
 
+    /** All booking rows linked to a WooCommerce order (any status), oldest first. */
+    public static function for_order($order_id) {
+        global $wpdb;
+        return $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM ' . self::table() . ' WHERE order_id = %d ORDER BY starts_at',
+            (int) $order_id
+        ));
+    }
+
     /** Release every held/confirmed row for an order (cancel/refund). */
     public static function cancel_by_order($order_id) {
         global $wpdb;

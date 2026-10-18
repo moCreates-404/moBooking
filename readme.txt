@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,25 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.3.2 =
+* WooCommerce admin order-email routing: New / Cancelled / Failed order emails are
+  routed by order type — lane bookings → the Bookings address, shop orders → the
+  Reception address, mixed → both (General → Emails). If an address is blank,
+  WooCommerce's own recipient is left unchanged for that type (nothing changes on
+  deploy until the addresses are set). Customer-facing order emails are untouched.
+* Manual-booking confirmation email to the customer (optional, when an address is
+  on file) with a "Resend confirmation" action on the booking panel; a "your
+  booking has moved" email on a move, with a per-move "Notify customer" toggle
+  (skips a no-change move). Both use WooCommerce's branded header/footer, include
+  the coach if assigned, and set Reply-To to the Bookings address.
+* Staff alerts (to the Bookings address, Reply-To the customer), each a setting:
+  customer self-cancel (on), online coach request (on), manual booking created
+  (off), booking moved (off).
+* One global "Email test recipient" (General → Emails) now governs EVERY plugin
+  email including day sheets: on a non-production site nothing sends unless it's
+  set, and when set every email reroutes there — so a dev site can never email a
+  real customer. The old day-sheet test recipient migrates into it.
 
 = 1.3.1 =
 * Customer booking window: a new setting "Customer booking window" (General →

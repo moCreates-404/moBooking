@@ -82,6 +82,11 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'booking_move_preview'],
         ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/resend-confirmation', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'booking_resend_confirmation'],
+        ]);
         register_rest_route(self::NS, '/admin/daysheet', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -394,7 +399,14 @@ class MCLB_REST_Admin {
             /* translators: 1: original price, 2: new price, 3: reason. */
             self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($price_original), self::money($price), $reason));
         }
-        return rest_ensure_response(['ok' => true, 'id' => $id]);
+        // Customer confirmation (if enabled + an email is on file) + optional staff alert (8a-2).
+        $emailed = false;
+        if (class_exists('MCLB_Emails')) {
+            $r = MCLB_Emails::send_manual_confirmation($id);
+            $emailed = !empty($r['ok']);
+            MCLB_Emails::alert_manual_created($id);
+        }
+        return rest_ensure_response(['ok' => true, 'id' => $id, 'emailed' => $emailed, 'has_email' => $email !== '']);
     }
 
     // ── POST /admin/booking/{id}/details (edit customer fields) ───────────────
@@ -643,8 +655,14 @@ class MCLB_REST_Admin {
             self::log($id, $actor, __('moved after counter payment taken — price difference may need manual adjustment', 'mclb-lane-booking'));
         }
 
-        // Placeholder for the "your booking has moved" email (v1.3.1).
-        do_action('mclb_booking_moved', $id, $res['old'], $res['new']);
+        // Customer "your booking has moved" email (v1.3.2) + optional staff alert.
+        // notify defaults ON; staff can untick it on the Move panel (e.g. the
+        // customer is at the counter). MCLB_Emails skips a no-change move.
+        $notify = ($request->get_param('notify') === null) ? true : filter_var($request->get_param('notify'), FILTER_VALIDATE_BOOLEAN);
+        do_action('mclb_booking_moved', $id, $res['old'], $res['new'], ['notify' => $notify, 'actor' => $actor]);
+        if (class_exists('MCLB_Emails')) {
+            MCLB_Emails::alert_move($id, $res['old'], $res['new']);
+        }
 
         $tz  = wp_timezone();
         $sdt = new DateTimeImmutable($new['starts_at'], $tz);
@@ -665,6 +683,32 @@ class MCLB_REST_Admin {
         $e  = new DateTimeImmutable((string) $ends_at, $tz);
         $tf = get_option('time_format') ?: 'g:i a';
         return sprintf('%s %s %s–%s', (string) $lane_name, wp_date('D j M', $s->getTimestamp()), wp_date($tf, $s->getTimestamp()), wp_date($tf, $e->getTimestamp()));
+    }
+
+    // ── POST /admin/booking/{id}/resend-confirmation ──────────────────────────
+
+    public static function booking_resend_confirmation($request) {
+        $actor = self::actor($request);
+        if ($actor === null) {
+            return self::need_initials();
+        }
+        $id = (int) $request['id'];
+        $b  = MCLB_Bookings::get($id);
+        if (!$b) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        if ((string) $b->source !== 'manual') {
+            return new WP_Error('mclb_not_manual', __('Only a manual booking sends this confirmation — online bookings use the WooCommerce order email.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        if (sanitize_email((string) $b->customer_email) === '') {
+            return new WP_Error('mclb_no_email', __('No email address is on file for this booking.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        $r = class_exists('MCLB_Emails') ? MCLB_Emails::send_manual_confirmation($id, true) : ['ok' => false];
+        if (empty($r['ok'])) {
+            return new WP_Error('mclb_send_failed', __('Could not send the confirmation — please try again.', 'mclb-lane-booking'), ['status' => 500]);
+        }
+        self::log($id, $actor, __('resent booking confirmation', 'mclb-lane-booking'));
+        return rest_ensure_response(['ok' => true]);
     }
 
     // ── POST /admin/booking/{id}/coach ────────────────────────────────────────
