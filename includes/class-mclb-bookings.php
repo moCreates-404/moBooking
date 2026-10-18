@@ -1026,6 +1026,241 @@ class MCLB_Bookings {
         return ['ok' => true];
     }
 
+    // ── Move a booking (Phase 1.3.0) ────────────────────────────────────────────
+
+    /**
+     * Minutes/hours between two site-local datetimes (DST-correct via wp_timezone).
+     */
+    private static function hours_between($starts_at, $ends_at) {
+        $tz = wp_timezone();
+        $s  = (new DateTimeImmutable((string) $starts_at, $tz))->getTimestamp();
+        $e  = (new DateTimeImmutable((string) $ends_at, $tz))->getTimestamp();
+        return max(0, $e - $s) / 3600;
+    }
+
+    /**
+     * Preview a move WITHOUT writing: availability (lane clash / coach clash /
+     * hours-closure-past) + the price delta, so the UI can show green/red and the
+     * money change before the staff member commits. Read-only, no locks.
+     *
+     * @return array{available:bool,reason?:string,conflict_id?:int,new_lane_price:float,
+     *               old_price:float,coach_fee_new:?float,mode:string,delta:float,online:bool,counter_paid:bool}
+     */
+    public static function preview_move($id, $new_lane_id, $starts_at, $ends_at, $override = false) {
+        global $wpdb;
+        $b = self::get((int) $id);
+        $out = ['available' => false, 'new_lane_price' => 0.0, 'old_price' => 0.0, 'coach_fee_new' => null, 'mode' => 'none', 'delta' => 0.0, 'online' => false, 'counter_paid' => false];
+        if (!$b) { $out['reason'] = 'not_found'; return $out; }
+
+        $new_lane_id = (int) $new_lane_id;
+        $t   = self::table();
+        $now = current_time('mysql');
+        $coach_id = (int) $b->assigned_coach_id;
+        $online   = ((string) $b->source === 'online');
+        $paid     = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+
+        // Lane clash (non-locking read; the authoritative guard is the FOR-UPDATE move).
+        $clash = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $t
+               WHERE lane_id = %d
+                 AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                 AND starts_at < %s AND ends_at > %s AND id <> %d
+               LIMIT 1",
+            $new_lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, (int) $id
+        ));
+        // Coach clash.
+        $coach_clash = null;
+        if ($coach_id > 0) {
+            $coach_clash = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $t
+                   WHERE assigned_coach_id = %d
+                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                     AND starts_at < %s AND ends_at > %s AND id <> %d
+                   LIMIT 1",
+                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, (int) $id
+            ));
+        }
+
+        $hours          = self::hours_between($starts_at, $ends_at);
+        $new_lane_price = round((float) MCLB_Lane::get_price($new_lane_id) * $hours, 2);
+        $old_price      = (float) $b->price;
+        $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $starts_at, $ends_at) : null;
+
+        $out['new_lane_price'] = $new_lane_price;
+        $out['old_price']      = $old_price;
+        $out['coach_fee_new']  = $coach_fee_new;
+        $out['online']         = $online;
+        $out['counter_paid']   = $paid;
+        $out['delta']          = round($new_lane_price - $old_price, 2);
+        $out['mode']           = self::money_mode($online, $paid, $out['delta']);
+
+        if ($b->status !== self::STATUS_CONFIRMED) { $out['reason'] = 'not_movable'; return $out; }
+        if ($clash)       { $out['reason'] = 'lane';  $out['conflict_id'] = (int) $clash;       return $out; }
+        if ($coach_clash) { $out['reason'] = 'coach'; $out['conflict_id'] = (int) $coach_clash; return $out; }
+        if (!$override && !MCLB_Availability::is_range_bookable_time($new_lane_id, $starts_at, $ends_at)) {
+            $out['reason'] = 'outside';
+            return $out; // override-able
+        }
+        $out['available'] = true;
+        return $out;
+    }
+
+    /** Which money branch a move falls into (see Phase 1.3.0 price rules). */
+    private static function money_mode($online, $paid, $delta) {
+        if ($paid) { return 'locked_paid'; }
+        if (abs($delta) < 0.001) { return 'same'; }
+        if (!$online) { return 'manual_recompute'; }
+        return $delta > 0 ? 'counter_up' : 'refund_or_none';
+    }
+
+    /**
+     * Move a confirmed booking to a new lane and/or time under one locked
+     * transaction, mirroring the hold/create double-book guard: the target booking
+     * row is locked and re-read, then the NEW lane's overlap range (and the coach's,
+     * if assigned) is checked FOR UPDATE excluding this booking — so a concurrent
+     * customer checkout or staff move of the same slot serialises and the loser gets
+     * a clean conflict. Money fields are recomputed per the agreed rules; the actual
+     * card refund + order-meta update happen AFTER commit, in the REST caller.
+     *
+     * @return array ok + old/new snapshots + a `money` sub-array, or an error/conflict.
+     */
+    public static function move_locked($id, $new_lane_id, $starts_at, $ends_at, array $opts = []) {
+        $id = (int) $id;
+        $b  = self::get($id);
+        if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->status !== self::STATUS_CONFIRMED) { return ['ok' => false, 'error' => 'not_confirmed']; }
+
+        $coach_id   = (int) $b->assigned_coach_id;
+        $lock_coach = ($coach_id > 0);
+        for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
+            if ($lock_coach && !self::acquire_coach_lock($coach_id)) {
+                usleep(mt_rand(40, 120) * 1000);
+                continue; // coach busy — retry
+            }
+            try {
+                $r = self::attempt_move($id, (int) $new_lane_id, (string) $starts_at, (string) $ends_at);
+            } finally {
+                if ($lock_coach) { self::release_coach_lock($coach_id); }
+            }
+            if ($r['ok'] || empty($r['lock_error'])) {
+                return $r;
+            }
+            usleep(mt_rand(40, 120) * 1000);
+        }
+        return ['ok' => false, 'lock_error' => true];
+    }
+
+    private static function attempt_move($id, $new_lane_id, $starts_at, $ends_at) {
+        global $wpdb;
+        $t   = self::table();
+        $now = current_time('mysql');
+
+        $wpdb->query('START TRANSACTION');
+
+        // Lock + re-read the target (guards a concurrent cancel / other move).
+        $b = $wpdb->get_row($wpdb->prepare("SELECT * FROM $t WHERE id = %d FOR UPDATE", $id));
+        if (self::is_lock_error($wpdb->last_error)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'lock_error' => true]; }
+        if (!$b) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_found']; }
+        if ($b->status !== self::STATUS_CONFIRMED) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_confirmed']; }
+
+        // Lane double-book guard on the TARGET lane/time, excluding this booking so a
+        // same-lane time nudge can't clash with its own current row.
+        $conflict = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $t
+               WHERE lane_id = %d
+                 AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                 AND starts_at < %s AND ends_at > %s AND id <> %d
+               LIMIT 1 FOR UPDATE",
+            $new_lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, $id
+        ));
+        if (self::is_lock_error($wpdb->last_error)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'lock_error' => true]; }
+        if ($conflict) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'lane', 'conflict_id' => (int) $conflict]; }
+
+        // Coach double-book guard (plain read — caller holds the coach's named lock).
+        $coach_id = (int) $b->assigned_coach_id;
+        if ($coach_id > 0) {
+            $busy = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $t
+                   WHERE assigned_coach_id = %d
+                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                     AND starts_at < %s AND ends_at > %s AND id <> %d
+                   LIMIT 1",
+                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, $id
+            ));
+            if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach', 'conflict_id' => (int) $busy]; }
+        }
+
+        $new_lane_name  = get_the_title($new_lane_id);
+        $hours          = self::hours_between($starts_at, $ends_at);
+        $new_lane_price = round((float) MCLB_Lane::get_price($new_lane_id) * $hours, 2);
+        $old_price      = (float) $b->price;
+        $online         = ((string) $b->source === 'online');
+        $paid           = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $starts_at, $ends_at) : null;
+        $delta          = round($new_lane_price - $old_price, 2);
+        $mode           = self::money_mode($online, $paid, $delta);
+
+        $upd = [
+            'lane_id'    => $new_lane_id,
+            'lane_name'  => $new_lane_name,
+            'starts_at'  => $starts_at,
+            'ends_at'    => $ends_at,
+            'updated_at' => $now,
+        ];
+        if ($coach_id > 0) { $upd['coach_fee'] = $coach_fee_new; }
+
+        // Money (see Phase 1.3.0 rules). A counter-PAID booking is money-locked:
+        // move the slot but leave price/counter_due alone (flagged for manual review).
+        if (!$paid) {
+            $coach_part = $coach_id > 0 ? (float) $coach_fee_new : 0.0;
+            if ($online) {
+                // Card-paid lane price stays as `price`; any shortfall (move up) is
+                // collected at the counter. A move down is refunded post-commit by
+                // the caller, which then lowers `price` to the net card amount.
+                $extra = max($new_lane_price - $old_price, 0);
+                $due   = round($coach_part + $extra, 2);
+                $upd['counter_due'] = $due > 0 ? $due : null;
+            } else {
+                // Manual: everything is collected at the counter; the lane price
+                // tracks the slot and any prior manual override is reset by the move.
+                $upd['price']          = $new_lane_price;
+                $upd['price_original'] = null;
+                $due = round($new_lane_price + $coach_part, 2);
+                $upd['counter_due'] = $due > 0 ? $due : null;
+            }
+        }
+
+        $ok = $wpdb->update($t, $upd, ['id' => $id]);
+        if ($ok === false) {
+            $lock = self::is_lock_error($wpdb->last_error);
+            $wpdb->query('ROLLBACK');
+            return $lock ? ['ok' => false, 'lock_error' => true] : ['ok' => false, 'error' => 'db'];
+        }
+        $wpdb->query('COMMIT');
+
+        return [
+            'ok'    => true,
+            'id'    => $id,
+            'online'        => $online,
+            'order_id'      => (int) $b->order_id,
+            'order_item_id' => (int) $b->order_item_id,
+            'coach_id'      => $coach_id,
+            'old'   => ['lane_id' => (int) $b->lane_id, 'lane_name' => (string) $b->lane_name, 'starts_at' => (string) $b->starts_at, 'ends_at' => (string) $b->ends_at, 'price' => $old_price, 'counter_due' => $b->counter_due],
+            'new'   => ['lane_id' => $new_lane_id, 'lane_name' => $new_lane_name, 'starts_at' => (string) $starts_at, 'ends_at' => (string) $ends_at],
+            'money' => ['mode' => $mode, 'new_lane_price' => $new_lane_price, 'old_price' => $old_price, 'delta' => $delta, 'coach_fee_new' => $coach_fee_new],
+        ];
+    }
+
+    /**
+     * Set a booking's lane price (and leave counter_due) — used only after a
+     * successful card refund on a move-down, to drop `price` to the net card amount
+     * so a later cancel/refund reconciles. No lock: the move already committed.
+     */
+    public static function set_price($id, $price) {
+        global $wpdb;
+        return $wpdb->update(self::table(), ['price' => round((float) $price, 2), 'updated_at' => current_time('mysql')], ['id' => (int) $id]) !== false;
+    }
+
     /** Release every held/confirmed row for an order (cancel/refund). */
     public static function cancel_by_order($order_id) {
         global $wpdb;

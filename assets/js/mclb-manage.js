@@ -430,7 +430,7 @@
       if (row.childNodes.length) { block.appendChild(row); }
     }
 
-    if (!b.cancelled) { block.onclick = function (e) { e.stopPropagation(); openDetail(b); }; }
+    if (!b.cancelled) { wireBlockMove(block, b, open); }
     return block;
   }
 
@@ -484,6 +484,112 @@
   function drawSel(marker, s, e, open) {
     marker.style.top = ((s - open) * PPM + TOP_PAD) + 'px';
     marker.style.height = ((e - s) * PPM) + 'px';
+  }
+
+  // ── drag a booking block to a new lane/time (same day) ────────────────────────
+  // Desktop: press-drag (a ≤6px press is a click → detail). Touch: long-press
+  // (~400ms) to arm, then drag; a tap or a scroll never moves the booking. The
+  // server stays authoritative — a drop opens the Move panel, which previews and
+  // confirms. The "Move…" button is the everywhere fallback.
+  var moveDrag = null;
+  function wireBlockMove(block, b, open) {
+    block.addEventListener('pointerdown', function (e) {
+      if (e.button != null && e.button !== 0) { return; }
+      if (!state.data || !state.data.grid) { return; }
+      moveDrag = {
+        b: b, block: block, openMin: state.data.grid.open_min, close: state.data.grid.close_min,
+        x0: e.clientX, y0: e.clientY, dur: b.end_min - b.start_min,
+        armed: e.pointerType !== 'touch', moved: false, ghost: null, outline: null, target: null, lp: null
+      };
+      if (e.pointerType === 'touch') {
+        block.classList.add('mclb-mblock--pressing');
+        moveDrag.lp = setTimeout(function () {
+          if (moveDrag && moveDrag.block === block) {
+            moveDrag.armed = true;
+            block.classList.remove('mclb-mblock--pressing');
+            block.classList.add('mclb-mblock--dragging');
+            if (navigator.vibrate) { try { navigator.vibrate(10); } catch (x) {} }
+          }
+        }, 400);
+      }
+      try { block.setPointerCapture(e.pointerId); } catch (x) {}
+    });
+    block.addEventListener('pointermove', function (e) {
+      if (!moveDrag || moveDrag.block !== block) { return; }
+      var dx = e.clientX - moveDrag.x0, dy = e.clientY - moveDrag.y0;
+      if (!moveDrag.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+        if (!moveDrag.armed) { clearMove(); return; } // touch moved before long-press = a scroll
+        moveDrag.moved = true;
+        state.dragging = true;
+        block.classList.add('mclb-mblock--dragging');
+        root.classList.add('is-moving'); // suppress text selection while dragging
+        var seln = window.getSelection && window.getSelection();
+        if (seln && seln.removeAllRanges) { try { seln.removeAllRanges(); } catch (x) {} }
+        makeGhost();
+      }
+      if (moveDrag.moved) { e.preventDefault(); updateMoveTarget(e.clientX, e.clientY); }
+    });
+    block.addEventListener('pointerup', function () {
+      if (!moveDrag || moveDrag.block !== block) { return; }
+      var wasDrag = moveDrag.moved, target = moveDrag.target;
+      finishMove();
+      if (!wasDrag) { openDetail(b); return; }
+      if (target && (target.lane_id !== b.lane_id || target.start !== b.start_min)) {
+        openMoveForm(b, { date: state.date, lane_id: target.lane_id, start_min: target.start, dur: b.end_min - b.start_min });
+      }
+    });
+    block.addEventListener('pointercancel', function () { if (moveDrag && moveDrag.block === block) { clearMove(); } });
+  }
+  function makeGhost() {
+    var g = el('div', 'mclb-move-ghost', '#' + moveDrag.b.id + ' ' + (moveDrag.b.customer || 'Guest'));
+    document.body.appendChild(g);
+    moveDrag.ghost = g;
+  }
+  function updateMoveTarget(x, y) {
+    if (moveDrag.ghost) { moveDrag.ghost.style.left = (x + 12) + 'px'; moveDrag.ghost.style.top = (y + 12) + 'px'; }
+    if (moveDrag.outline && moveDrag.outline.parentNode) { moveDrag.outline.parentNode.removeChild(moveDrag.outline); moveDrag.outline = null; }
+    var at = document.elementFromPoint(x, y);
+    var body = at ? at.closest('.mclb-cal__colbody') : null;
+    if (!body) { moveDrag.target = null; return; }
+    var laneId = parseInt(body.getAttribute('data-lane'), 10);
+    var lane = laneById(laneId);
+    var rect = body.getBoundingClientRect();
+    var open = moveDrag.openMin, close = moveDrag.close, dur = moveDrag.dur;
+    var raw = open + Math.round(((y - rect.top - TOP_PAD) / PPM) / INC) * INC;
+    var start = Math.max(open, Math.min(close - dur, raw));
+    var valid = !!lane && !rangeOutside(lane, start, start + dur) && !laneClash(laneId, start, start + dur, moveDrag.b.id);
+    moveDrag.target = { lane_id: laneId, laneName: lane ? lane.name : '', start: start, valid: valid };
+    var o = el('div', 'mclb-move-outline ' + (valid ? 'is-ok' : 'is-bad'));
+    o.style.top = ((start - open) * PPM + TOP_PAD) + 'px';
+    o.style.height = (dur * PPM - GAP) + 'px';
+    body.appendChild(o);
+    moveDrag.outline = o;
+  }
+  function finishMove() {
+    if (!moveDrag) { return; }
+    if (moveDrag.lp) { clearTimeout(moveDrag.lp); }
+    if (moveDrag.ghost && moveDrag.ghost.parentNode) { moveDrag.ghost.parentNode.removeChild(moveDrag.ghost); }
+    if (moveDrag.outline && moveDrag.outline.parentNode) { moveDrag.outline.parentNode.removeChild(moveDrag.outline); }
+    moveDrag.block.classList.remove('mclb-mblock--dragging', 'mclb-mblock--pressing');
+    root.classList.remove('is-moving');
+    state.dragging = false;
+    moveDrag = null;
+  }
+  function clearMove() { finishMove(); }
+  function laneById(id) {
+    var found = null;
+    (state.data.types || []).forEach(function (grp) { grp.lanes.forEach(function (l) { if (l.id === id) { found = l; } }); });
+    return found;
+  }
+  function allLanes() {
+    var out = [];
+    (state.data.types || []).forEach(function (grp) { grp.lanes.forEach(function (l) { out.push({ id: l.id, name: l.name, type: grp.type }); }); });
+    return out;
+  }
+  function laneClash(laneId, startMin, endMin, selfId) {
+    return (state.data.bookings || []).some(function (b) {
+      return b.lane_id === laneId && !b.cancelled && !b.held && b.id !== selfId && startMin < b.end_min && b.start_min < endMin;
+    });
   }
 
   // ── side panel ────────────────────────────────────────────────────────────────
@@ -742,6 +848,9 @@
 
       // actions
       var actions = el('div', 'mclb-panel__actions');
+      actions.appendChild(actionBtn(I18N.move || 'Move…', function () {
+        openMoveForm(b, { date: state.date, lane_id: b.lane_id, start_min: b.start_min, dur: b.end_min - b.start_min });
+      }));
       coachSaveBtn = actionBtn('Save ' + (CFG.labels.staffSingular || 'coach'), function (btn) {
         if (!needInitials()) { return; }
         var coachId = parseInt(coach.value, 10) || 0;
@@ -799,6 +908,139 @@
     // row stays on error (re-enabled) and vanishes with the panel on success.
     yes.onclick = function () { fn(yes); }; no.onclick = function () { box.remove(); };
     box.appendChild(yes); box.appendChild(no); container.appendChild(box);
+  }
+
+  // ── MOVE panel (drag-drop target, or the "Move…" button) ──────────────────────
+  function radio(name, val, checked) { var i = el('input'); i.type = 'radio'; i.name = name; i.value = val; i.checked = !!checked; return i; }
+  function durLabel(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60, out = [];
+    if (h) { out.push(h + ' hr'); }
+    if (m) { out.push(m + ' min'); }
+    return out.join(' ') || '0 min';
+  }
+  function hmToMin(v) { var p = (v || '').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
+
+  function openMoveForm(b, prefill) {
+    prefill = prefill || { date: state.date, lane_id: b.lane_id, start_min: b.start_min, dur: b.end_min - b.start_min };
+    openPanel(function (panel) {
+      panelHead(panel, (I18N.moveTitle || 'Move booking') + ' · #' + b.id);
+      panel.appendChild(el('p', 'mclb-panel__ctx', (b.customer || 'Guest') + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)));
+
+      var dateIn = mkInput('date'); dateIn.value = prefill.date; field(panel, I18N.moveDate || 'Date', dateIn);
+
+      var laneSel = el('select');
+      (state.data.types || []).forEach(function (grp) {
+        var og = document.createElement('optgroup'); og.label = grp.type || '';
+        grp.lanes.forEach(function (l) { var o = opt(String(l.id), l.name); if (l.id === prefill.lane_id) { o.selected = true; } og.appendChild(o); });
+        laneSel.appendChild(og);
+      });
+      field(panel, I18N.moveResource || 'Resource', laneSel);
+
+      var startIn = mkInput('time'); startIn.step = INC * 60; startIn.value = timeInput(prefill.start_min);
+      field(panel, I18N.moveStart || 'Start time', startIn);
+
+      var durSel = el('select');
+      for (var d = INC; d <= 8 * 60; d += INC) { var o = opt(String(d), durLabel(d)); if (d === prefill.dur) { o.selected = true; } durSel.appendChild(o); }
+      field(panel, I18N.moveDuration || 'Duration', durSel);
+
+      var ovWrap = el('label', 'mclb-panel__override');
+      var ov = el('input'); ov.type = 'checkbox';
+      ovWrap.appendChild(ov); ovWrap.appendChild(document.createTextNode(' ' + (I18N.moveOverride || 'Override hours / blockouts')));
+      panel.appendChild(ovWrap);
+
+      var preview = el('p', 'mclb-panel__preview', I18N.moveChecking || 'Checking…');
+      panel.appendChild(preview);
+
+      // Refund choice — revealed only for an online move to a cheaper slot.
+      var refundWrap = el('div', 'mclb-panel__refund'); refundWrap.style.display = 'none';
+      var rRefund = radio('mclb_refund', 'refund', true);
+      var rNone = radio('mclb_refund', 'none', false);
+      var refTextR = document.createTextNode('');
+      var lblR = el('label'); lblR.appendChild(rRefund); lblR.appendChild(refTextR);
+      var lblN = el('label'); lblN.appendChild(rNone); lblN.appendChild(document.createTextNode(' ' + (I18N.moveRefundNo || 'No refund')));
+      var reasonWrap = el('label', 'mclb-panel__field'); reasonWrap.style.display = 'none';
+      reasonWrap.appendChild(el('span', null, I18N.moveRefundReason || 'Reason for no refund'));
+      var reason = mkInput('text'); reasonWrap.appendChild(reason);
+      refundWrap.appendChild(lblR); refundWrap.appendChild(lblN); refundWrap.appendChild(reasonWrap);
+      panel.appendChild(refundWrap);
+      function syncReason() { reasonWrap.style.display = rNone.checked ? '' : 'none'; }
+      rRefund.onchange = syncReason; rNone.onchange = syncReason;
+
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+      var save = el('button', 'button button-primary mclb-panel__save', I18N.moveSave || 'Move booking');
+      panel.appendChild(save);
+
+      function endTime() { return timeInput(hmToMin(startIn.value) + (parseInt(durSel.value, 10) || INC)); }
+      var pvTimer = null;
+      function schedule() { if (pvTimer) { clearTimeout(pvTimer); } pvTimer = setTimeout(doPreview, 180); }
+      function doPreview() {
+        preview.className = 'mclb-panel__preview'; preview.textContent = I18N.moveChecking || 'Checking…';
+        save.disabled = true; refundWrap.style.display = 'none';
+        api('/booking/' + b.id + '/move-preview', { method: 'POST', body: {
+          lane_id: parseInt(laneSel.value, 10) || 0, date: dateIn.value, start: startIn.value, end: endTime(), override: ov.checked ? 1 : 0
+        } }).then(function (res) {
+          if (!res.ok) { preview.classList.add('is-bad'); preview.textContent = errText(res); return; }
+          renderPreview(res.body);
+        });
+      }
+      function renderPreview(p) {
+        if (!p.available) {
+          preview.classList.add('is-bad');
+          if (p.reason === 'lane') { preview.textContent = (I18N.moveClash || 'Clashes with') + ' ' + (p.conflict_label || 'another booking') + '.'; save.disabled = true; }
+          else if (p.reason === 'coach') { preview.textContent = (I18N.moveClash || 'Clashes with') + ' ' + (CFG.labels.staffSingular || 'coach') + (p.conflict_label ? ' (' + p.conflict_label + ')' : '') + '.'; save.disabled = true; }
+          else if (p.reason === 'outside') { preview.textContent = I18N.moveOutside || '⚠ Outside normal availability.'; save.disabled = !ov.checked; }
+          else { preview.textContent = 'Not available.'; save.disabled = true; }
+          return;
+        }
+        preview.classList.add('is-ok');
+        var absd = money(Math.abs(p.delta));
+        if (p.mode === 'counter_up') { preview.textContent = '+' + absd + ' ' + (I18N.movePriceUp || 'to collect at counter') + '.'; }
+        else if (p.mode === 'manual_recompute') { preview.textContent = (I18N.lanePrice || 'Lane price') + ' ' + money(p.old_price) + ' → ' + money(p.new_lane_price) + ' (' + (I18N.movePriceUp || 'at counter') + ').'; }
+        else if (p.mode === 'refund_or_none') {
+          preview.textContent = (I18N.moveRefundQ || 'This slot is cheaper. Refund the difference to the card?');
+          refTextR.textContent = ' ' + (I18N.moveRefundYes || 'Refund %s to card').replace('%s', absd);
+          refundWrap.style.display = ''; rRefund.checked = true; syncReason();
+        } else if (p.mode === 'locked_paid' && Math.abs(p.delta) > 0.001) { preview.textContent = I18N.moveLockedPaid || 'Counter payment taken — handled manually.'; }
+        else { preview.textContent = (state.data && '✓ ') + minToLabel(hmToMin(startIn.value)) + '–' + minToLabel(hmToMin(endTime())); }
+        save.disabled = false;
+      }
+      [dateIn, laneSel, startIn, durSel].forEach(function (f) { f.onchange = schedule; });
+      ov.onchange = schedule;
+      doPreview();
+
+      save.onclick = function () {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        if (refundWrap.style.display !== 'none' && rNone.checked && !reason.value.trim()) { showErr(err, I18N.reasonRequired || 'A reason is required.'); return; }
+        initialsSet(ini.value.trim());
+        var body = {
+          lane_id: parseInt(laneSel.value, 10) || 0, date: dateIn.value, start: startIn.value, end: endTime(),
+          override: ov.checked ? 1 : 0, actor: ini.value.trim()
+        };
+        if (refundWrap.style.display !== 'none') { body.refund_choice = rNone.checked ? 'none' : 'refund'; body.refund_reason = reason.value; }
+        setBusy(save, true); if (err) { err.style.display = 'none'; }
+        api('/booking/' + b.id + '/move', { method: 'POST', body: body }).then(function (res) {
+          if (res && res.ok) {
+            closePanel();
+            var label = (res.body && res.body.moved_to) || '';
+            var jumped = res.body && res.body.date && res.body.date !== state.date;
+            if (jumped) { toast((I18N.movedToast || 'Moved to %s').replace('%s', label), I18N.goToDay || 'Go to that day', function () { state.date = res.body.date; load(); }); }
+            else { toast((I18N.movedToast || 'Moved to %s').replace('%s', label)); }
+            load(true);
+          } else { setBusy(save, false); showErr(err, errText(res)); }
+        });
+      };
+    });
+  }
+
+  // Transient toast at the bottom of the calendar (e.g. after a cross-day move).
+  function toast(msg, linkText, linkFn) {
+    var t = el('div', 'mclb-toast');
+    t.appendChild(el('span', null, msg));
+    if (linkText && linkFn) { var a = el('button', 'mclb-toast__link', linkText); a.onclick = function () { t.remove(); linkFn(); }; t.appendChild(a); }
+    root.appendChild(t);
+    requestAnimationFrame(function () { t.classList.add('is-in'); });
+    setTimeout(function () { t.classList.remove('is-in'); setTimeout(function () { if (t.parentNode) { t.remove(); } }, 400); }, 7000);
   }
 
   // ── BLOCKOUT panel (click a blockout) ─────────────────────────────────────────

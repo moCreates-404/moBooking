@@ -174,3 +174,48 @@
   min-height: 36px; padding: 4px 8px; border: 1px solid var(--mclb-line);
   border-radius: 6px; background: #fff; color: var(--mclb-ink); box-sizing: border-box;
 }
+
+/* ── Move a booking (drag-drop + Move… panel) ─────────────────────────────── */
+/* The dragged block stays put; a ghost follows the pointer and a coloured
+   outline previews the drop. Works the same in the front-end page and the
+   wp-admin Calendar (ghost/panel/toast are viewport-fixed; the outline is
+   relative to the target column body). */
+.mclb-mblock--pressing { outline: 2px dashed var(--mclb-accent); outline-offset: -2px; }
+.mclb-mblock--dragging { opacity: .4; cursor: grabbing; }
+/* No text selection while a drag is in progress (blue-highlighting the block
+   label as you drag it). Set on the block itself and, during the gesture, on the
+   whole calendar so the pointer can't start a selection anywhere. */
+.mclb-mblock--pressing, .mclb-mblock--dragging { user-select: none; -webkit-user-select: none; }
+.mclb-manage.is-moving, .mclb-manage.is-moving * { user-select: none !important; -webkit-user-select: none !important; }
+.mclb-manage .mclb-move-ghost {
+  position: fixed; z-index: 100002; pointer-events: none; user-select: none; -webkit-user-select: none;
+  background: var(--mclb-accent); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 3px 8px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+  white-space: nowrap;
+}
+.mclb-move-outline {
+  position: absolute; left: 2px; right: 2px; border-radius: 6px; z-index: 6;
+  pointer-events: none; box-sizing: border-box;
+}
+.mclb-move-outline.is-ok  { border: 2px solid #16a34a; background: rgba(22, 163, 74, .15); }
+.mclb-move-outline.is-bad { border: 2px solid #e11d48; background: rgba(225, 29, 72, .12); }
+
+.mclb-panel__preview.is-ok  { color: #15803d; font-weight: 600; }
+.mclb-panel__preview.is-bad { color: #b91c1c; font-weight: 600; }
+.mclb-panel__refund { margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+.mclb-panel__refund label { display: flex; align-items: center; gap: 6px; }
+.mclb-panel__refund .mclb-panel__field { flex-direction: column; align-items: stretch; }
+
+/* Toast — centred at the bottom of the calendar container, over both contexts. */
+.mclb-manage .mclb-toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 16px);
+  z-index: 100002; display: flex; align-items: center; gap: 12px;
+  background: #1a1a1a; color: #fff; padding: 10px 16px; border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, .3); font-size: 14px; opacity: 0;
+  transition: opacity .3s ease, transform .3s ease; max-width: 92vw;
+}
+.mclb-manage .mclb-toast.is-in { opacity: 1; transform: translate(-50%, 0); }
+.mclb-toast__link {
+  background: none; border: 0; color: #93c5fd; font-weight: 600; cursor: pointer;
+  text-decoration: underline; padding: 0; font-size: 14px;
+}

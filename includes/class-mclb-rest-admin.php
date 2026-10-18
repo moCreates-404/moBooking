@@ -72,6 +72,16 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'booking_price'],
         ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/move', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'booking_move'],
+        ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/move-preview', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'booking_move_preview'],
+        ]);
         register_rest_route(self::NS, '/admin/daysheet', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -484,6 +494,177 @@ class MCLB_REST_Admin {
         /* translators: 1: old price, 2: new price, 3: reason. */
         self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($res['old']), self::money($res['new']), $reason));
         return rest_ensure_response(['ok' => true]);
+    }
+
+    // ── POST /admin/booking/{id}/move(-preview) ───────────────────────────────
+
+    /** Parse + validate the shared move params. Returns [lane_id,starts_at,ends_at,override] or a WP_Error. */
+    private static function move_params($request) {
+        $lane_id = (int) $request->get_param('lane_id');
+        $date    = self::sanitize_date((string) $request->get_param('date'));
+        $start   = (string) $request->get_param('start');
+        $end     = (string) $request->get_param('end');
+        $re      = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        $lane    = get_post($lane_id);
+        if (!$lane || $lane->post_type !== 'mclb_lane' || $date === '' || !preg_match($re, $start) || !preg_match($re, $end)) {
+            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $starts_at = "$date $start:00";
+        $ends_at   = "$date $end:00";
+        if ($ends_at <= $starts_at) {
+            return new WP_Error('mclb_invalid', __('The end time must be after the start.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        return [
+            'lane_id'   => $lane_id,
+            'starts_at' => $starts_at,
+            'ends_at'   => $ends_at,
+            'override'  => filter_var($request->get_param('override'), FILTER_VALIDATE_BOOLEAN),
+        ];
+    }
+
+    /** Read-only preview: availability + price delta before a move is committed. */
+    public static function booking_move_preview($request) {
+        $id = (int) $request['id'];
+        if (!MCLB_Bookings::get($id)) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        $p = self::move_params($request);
+        if (is_wp_error($p)) { return $p; }
+        $pre = MCLB_Bookings::preview_move($id, $p['lane_id'], $p['starts_at'], $p['ends_at'], $p['override']);
+
+        $conflict_label = '';
+        if (!empty($pre['conflict_id'])) {
+            $c = MCLB_Bookings::get((int) $pre['conflict_id']);
+            if ($c) { $conflict_label = trim((string) $c->customer_name) ?: ('#' . (int) $pre['conflict_id']); }
+        }
+        return rest_ensure_response([
+            'available'      => !empty($pre['available']),
+            'reason'         => $pre['reason'] ?? '',
+            'conflict_label' => $conflict_label,
+            'mode'           => $pre['mode'],
+            'delta'          => $pre['delta'],
+            'new_lane_price' => $pre['new_lane_price'],
+            'old_price'      => $pre['old_price'],
+            'coach_fee_new'  => $pre['coach_fee_new'],
+            'online'         => $pre['online'],
+            'counter_paid'   => $pre['counter_paid'],
+        ]);
+    }
+
+    public static function booking_move($request) {
+        if (!MCLB_License::can_book()) {
+            return new WP_Error('mclb_demo', MCLB_License::demo_message(), ['status' => 403]);
+        }
+        $actor = self::actor($request);
+        if ($actor === null) {
+            return self::need_initials();
+        }
+        $id = (int) $request['id'];
+        $b  = MCLB_Bookings::get($id);
+        if (!$b) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        if ($b->status !== MCLB_Bookings::STATUS_CONFIRMED) {
+            // Held (checkout in progress), cancelled or refunded — not movable.
+            return new WP_Error('mclb_not_movable', __('Only a confirmed booking can be moved.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        $p = self::move_params($request);
+        if (is_wp_error($p)) { return $p; }
+
+        // Override covers hours / closure / past only; a real clash is left to the
+        // FOR-UPDATE move so it surfaces cleanly as "slot taken".
+        if (!$p['override'] && !MCLB_Availability::is_range_bookable_time($p['lane_id'], $p['starts_at'], $p['ends_at'])) {
+            return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to move it there anyway.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+
+        // Price-down on an online-paid booking: the staff member picks refund vs no
+        // refund; "no refund" needs a reason (logged).
+        $refund_choice = ($request->get_param('refund_choice') === 'none') ? 'none' : 'refund';
+        $refund_reason = sanitize_text_field((string) $request->get_param('refund_reason'));
+
+        $old_label = self::move_label($b->lane_name, $b->starts_at, $b->ends_at);
+
+        $res = MCLB_Bookings::move_locked($id, $p['lane_id'], $p['starts_at'], $p['ends_at']);
+        if (empty($res['ok'])) {
+            if (!empty($res['conflict']) && !empty($res['conflict_id'])) {
+                $c  = MCLB_Bookings::get((int) $res['conflict_id']);
+                $nm = $c ? (trim((string) $c->customer_name) ?: ('#' . (int) $res['conflict_id'])) : '';
+                $reason = $res['reason'] ?? 'lane';
+                $msg = ($reason === 'coach')
+                    ? sprintf(__('That coach is already booked for an overlapping time (%s).', 'mclb-lane-booking'), $nm)
+                    : sprintf(__('That slot was just taken (%s). Refresh and try another.', 'mclb-lane-booking'), $nm);
+                return new WP_Error('mclb_move_conflict', $msg, ['status' => 409]);
+            }
+            return self::write_error($res);
+        }
+
+        $new    = $res['new'];
+        $money  = $res['money'];
+        $online = !empty($res['online']);
+        $new_label = self::move_label($new['lane_name'], $new['starts_at'], $new['ends_at']);
+
+        // Primary audit line in the agreed format.
+        /* translators: 1: from, 2: to. */
+        self::log($id, $actor, sprintf(__('moved %1$s → %2$s', 'mclb-lane-booking'), $old_label, $new_label));
+
+        // Money follow-through (the move transaction already set counter_due; the
+        // card refund + price drop for an online move-down happen here, post-commit).
+        if ($online) {
+            if ($money['mode'] === 'refund_or_none') {
+                $amount = round($money['old_price'] - $money['new_lane_price'], 2);
+                if ($refund_choice === 'refund') {
+                    $r = MCLB_Refunds::refund_delta(MCLB_Bookings::get($id), $amount, __('Booking moved to a lower-priced slot', 'mclb-lane-booking'));
+                    if (!empty($r['ok'])) {
+                        MCLB_Bookings::set_price($id, $money['new_lane_price']); // net card amount, so a later cancel reconciles
+                        /* translators: 1: amount, 2: old price, 3: new price. */
+                        self::log($id, $actor, sprintf(__('refunded %1$s to card (lane %2$s → %3$s)', 'mclb-lane-booking'), self::money($r['amount']), self::money($money['old_price']), self::money($money['new_lane_price'])));
+                    } else {
+                        self::log($id, $actor, __('move to lower-priced slot — automatic refund FAILED, refund manually', 'mclb-lane-booking'));
+                    }
+                } else {
+                    if ($refund_reason === '') {
+                        $refund_reason = __('no reason given', 'mclb-lane-booking');
+                    }
+                    /* translators: 1: amount, 2: reason. */
+                    self::log($id, $actor, sprintf(__('moved to lower-priced slot, no refund of %1$s (%2$s)', 'mclb-lane-booking'), self::money($amount), $refund_reason));
+                }
+            } elseif ($money['mode'] === 'counter_up') {
+                /* translators: %s: amount to collect. */
+                self::log($id, $actor, sprintf(__('lane price up — %s to collect at counter', 'mclb-lane-booking'), self::money($money['delta'])));
+            }
+            // Keep the WC order line + customer-facing meta in step (best-effort).
+            MCLB_Order::update_item_for_move(MCLB_Bookings::get($id));
+        } elseif ($money['mode'] === 'manual_recompute' && abs($money['delta']) > 0.001) {
+            /* translators: 1: old, 2: new. */
+            self::log($id, $actor, sprintf(__('lane price %1$s → %2$s', 'mclb-lane-booking'), self::money($money['old_price']), self::money($money['new_lane_price'])));
+        }
+
+        if ($money['mode'] === 'locked_paid' && abs($money['delta']) > 0.001) {
+            self::log($id, $actor, __('moved after counter payment taken — price difference may need manual adjustment', 'mclb-lane-booking'));
+        }
+
+        // Placeholder for the "your booking has moved" email (v1.3.1).
+        do_action('mclb_booking_moved', $id, $res['old'], $res['new']);
+
+        $tz  = wp_timezone();
+        $sdt = new DateTimeImmutable($new['starts_at'], $tz);
+        $edt = new DateTimeImmutable($new['ends_at'], $tz);
+        $tf  = get_option('time_format') ?: 'g:i a';
+        return rest_ensure_response([
+            'ok'         => true,
+            'id'         => $id,
+            'date'       => substr($new['starts_at'], 0, 10),
+            'moved_to'   => MCLB_Settings::friendly_date($sdt->getTimestamp()) . ', ' . wp_date($tf, $sdt->getTimestamp()) . ' – ' . wp_date($tf, $edt->getTimestamp()),
+        ]);
+    }
+
+    /** "Lane · Mon 15 Oct 4:00 pm – 5:00 pm" for the move audit line. */
+    private static function move_label($lane_name, $starts_at, $ends_at) {
+        $tz = wp_timezone();
+        $s  = new DateTimeImmutable((string) $starts_at, $tz);
+        $e  = new DateTimeImmutable((string) $ends_at, $tz);
+        $tf = get_option('time_format') ?: 'g:i a';
+        return sprintf('%s %s %s–%s', (string) $lane_name, wp_date('D j M', $s->getTimestamp()), wp_date($tf, $s->getTimestamp()), wp_date($tf, $e->getTimestamp()));
     }
 
     // ── POST /admin/booking/{id}/coach ────────────────────────────────────────

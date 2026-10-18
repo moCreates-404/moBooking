@@ -58,4 +58,37 @@ class MCLB_Order {
     public static function on_release($order_id) {
         MCLB_Bookings::cancel_by_order((int) $order_id);
     }
+
+    /**
+     * Rewrite an online booking's order line item after a staff MOVE so the order
+     * screen + customer emails show the new lane/time, and add an order note. The
+     * booking row (passed in) is already the source of truth — this keeps the WC
+     * copy in step, best-effort: a failure here never rolls back the move. Payment
+     * is untouched. HPOS-safe (CRUD only).
+     */
+    public static function update_item_for_move($b) {
+        if (empty($b) || !$b->order_id || !$b->order_item_id || !function_exists('wc_get_order')) {
+            return;
+        }
+        $order = wc_get_order((int) $b->order_id);
+        if (!$order) {
+            return;
+        }
+        $item = $order->get_item((int) $b->order_item_id);
+        $when = MCLB_Cart::when_label($b->starts_at, $b->ends_at);
+        if ($item) {
+            $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking');
+            $item->update_meta_data('_mclb_lane_id', (int) $b->lane_id);
+            $item->update_meta_data($res_label, (string) $b->lane_name);
+            $item->update_meta_data(__('When', 'mclb-lane-booking'), $when);
+            $item->save();
+        }
+        $order->add_order_note(sprintf(
+            /* translators: 1: booking id, 2: resource name, 3: when. */
+            __('moBooking: booking #%1$d moved to %2$s — %3$s.', 'mclb-lane-booking'),
+            (int) $b->id,
+            (string) $b->lane_name,
+            $when
+        ));
+    }
 }

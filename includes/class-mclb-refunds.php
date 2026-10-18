@@ -42,6 +42,69 @@ class MCLB_Refunds {
     }
 
     /**
+     * Refund a PARTIAL amount against a booking's order line — used when a move to
+     * a lower-priced slot refunds just the difference to the card. The amount is
+     * capped to what remains refundable on that line (so a second move or a prior
+     * refund can never over-refund). Returns ok + the amount actually refunded, or
+     * a flag that the gateway refund failed (an order note then prompts a manual
+     * refund). Never flips booking status — the booking stays confirmed on its new
+     * slot.
+     *
+     * @return array{ok:bool,amount?:float,failed?:bool}
+     */
+    public static function refund_delta($b, $amount, $reason = '') {
+        $amount = round((float) $amount, 2);
+        if ($amount <= 0 || !$b->order_id || !$b->order_item_id || !function_exists('wc_create_refund')) {
+            return ['ok' => false];
+        }
+        $order = wc_get_order((int) $b->order_id);
+        if (!$order) {
+            return ['ok' => false];
+        }
+        // Cap to the line's remaining refundable total.
+        $item = $order->get_item((int) $b->order_item_id);
+        if ($item) {
+            $line_total = (float) $order->get_line_total($item, true, false);
+            $already    = (float) $order->get_total_refunded_for_item((int) $b->order_item_id);
+            $remaining  = round($line_total - $already, 2);
+            if ($remaining <= 0) {
+                return ['ok' => false];
+            }
+            if ($amount > $remaining) {
+                $amount = $remaining;
+            }
+        }
+
+        $refund = wc_create_refund([
+            'amount'         => $amount,
+            'reason'         => $reason !== '' ? $reason : __('Lane booking moved to a lower-priced slot', 'mclb-lane-booking'),
+            'order_id'       => (int) $b->order_id,
+            'line_items'     => [(int) $b->order_item_id => ['qty' => 0, 'refund_total' => $amount]],
+            'refund_payment' => true,
+            'restock_items'  => false,
+        ]);
+
+        $money = function_exists('wc_price') ? wp_strip_all_tags(wc_price($amount)) : (string) $amount;
+        if (is_wp_error($refund)) {
+            $order->add_order_note(sprintf(
+                /* translators: 1: booking id, 2: amount, 3: error. */
+                __('moBooking: refund of %2$s for moved booking #%1$d FAILED (%3$s) — please refund manually.', 'mclb-lane-booking'),
+                (int) $b->id,
+                $money,
+                $refund->get_error_message()
+            ));
+            return ['ok' => false, 'failed' => true];
+        }
+        $order->add_order_note(sprintf(
+            /* translators: 1: booking id, 2: amount. */
+            __('moBooking: booking #%1$d moved to a lower-priced slot; %2$s refunded.', 'mclb-lane-booking'),
+            (int) $b->id,
+            $money
+        ));
+        return ['ok' => true, 'amount' => $amount];
+    }
+
+    /**
      * Refund the single order line for a booking (already claimed/cancelled).
      * Returns true on a successful WC refund, false if there's no order to refund
      * or the gateway refund failed (in which case an order note flags it).

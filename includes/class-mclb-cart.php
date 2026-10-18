@@ -395,12 +395,20 @@ class MCLB_Cart {
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static function format_when($m) {
+        return self::when_label($m['starts_at'], $m['ends_at']);
+    }
+
+    /**
+     * The human "When" string for an order line item, e.g.
+     * "Monday, 26 October 2026, 4:00 pm – 5:00 pm". Public so a staff move can
+     * rewrite the same meta the checkout wrote. Only new/changed line items
+     * snapshot this; untouched orders keep their stored text.
+     */
+    public static function when_label($starts_at, $ends_at) {
         $tz = wp_timezone();
-        $s  = new DateTimeImmutable($m['starts_at'], $tz);
-        $e  = new DateTimeImmutable($m['ends_at'], $tz);
+        $s  = new DateTimeImmutable((string) $starts_at, $tz);
+        $e  = new DateTimeImmutable((string) $ends_at, $tz);
         $tf = get_option('time_format') ?: 'g:i a';
-        // Friendly long date ("Monday, 26 October 2026"). Only new orders snapshot
-        // this into their line-item meta; existing orders keep their stored text.
         return MCLB_Settings::friendly_date($s->getTimestamp()) . ', ' . wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp());
     }
 

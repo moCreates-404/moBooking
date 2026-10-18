@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.2.2
+Stable tag: 1.3.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,23 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.3.0 =
+* Move a booking (staff Manage view + wp-admin Calendar). Drag a booking block to
+  another lane and/or start time (same day) with a live green/red drop preview, or
+  use the "Move…" button for any day (date + resource + start + duration). Touch:
+  long-press to drag; the Move… button is the everywhere fallback. Staff can
+  override opening hours / closures / past; a real double-booking is never allowed.
+* The move runs in one locked transaction (the same FOR UPDATE / overlap guard as
+  holds and manual creates, plus the per-coach lock when a coach is assigned), so a
+  staff move and a customer checkout of the same slot can never double-book — the
+  loser gets a clean "slot taken". The booking keeps its id, order link, source,
+  payment state, coach and notes; an audit line records the from → to.
+* Price differences: more → added to the counter "to collect" (never re-charges the
+  card); less on a counter-unpaid booking → counter reduced; less on a card-paid
+  booking → a choice to refund the difference (capped) or not (reason logged); same
+  price → no change. Online bookings also get their order "When"/resource meta
+  updated and an order note; payment is otherwise untouched.
 
 = 1.2.2 =
 * Customer booking grid: fixes stale availability on page-cached (WP Rocket)
