@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,19 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.3.1 =
+* Customer booking window: a new setting "Customer booking window" (General →
+  Booking rules, default 14 days; 0 = no limit) caps how far ahead customers can
+  book. Enforced server-side — the availability API marks days beyond the limit
+  not bookable, and add-to-cart + checkout reject them — with a friendly
+  "Online bookings open N days in advance." message (plus an optional
+  later-dates note, e.g. a phone number) instead of an all-closed grid. The grid's
+  date picker caps its max and the next-day arrow stops at the limit, computed from
+  the server's own "today" so a page-cached grid never drifts a day. Staff
+  (Booking Staff / admins) are never limited — on the staff calendar, wp-admin
+  Calendar, manual create, Move, or even the customer grid. Existing bookings
+  beyond the window are untouched.
 
 = 1.3.0 =
 * Move a booking (staff Manage view + wp-admin Calendar). Drag a booking block to

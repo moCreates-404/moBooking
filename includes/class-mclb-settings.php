@@ -58,6 +58,8 @@ class MCLB_Settings {
             'price_per_hour'          => '35',
             'booking_increment'       => 60, // minutes
             'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
+            'booking_window_days'     => 14, // how many days ahead CUSTOMERS can book (0 = no limit); staff never limited
+            'booking_window_note'     => '', // appended to the "open N days ahead" message (e.g. a phone number for later dates)
             'enable_coach_requests'   => 0,  // gates the Phase 3 "Request a coach" UI; off by default
             'staff_label_singular'    => 'Coach',  // what an assignable staff member is called (Coach, Pro, Instructor…)
             'staff_label_plural'      => 'Coaches',
@@ -154,6 +156,12 @@ class MCLB_Settings {
         if (isset($in['hold_minutes'])) {
             $v = absint($in['hold_minutes']);
             $out['hold_minutes'] = ($v >= 1 && $v <= 240) ? $v : 15;
+        }
+        if (isset($in['booking_window_days'])) {
+            $out['booking_window_days'] = min(3650, absint($in['booking_window_days'])); // 0 = no limit
+        }
+        if (isset($in['booking_window_note'])) {
+            $out['booking_window_note'] = sanitize_text_field($in['booking_window_note']);
         }
         if (isset($in['wc_product_id'])) {
             $out['wc_product_id'] = absint($in['wc_product_id']);

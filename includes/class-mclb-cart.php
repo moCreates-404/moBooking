@@ -53,7 +53,9 @@ class MCLB_Cart {
             return;
         }
         $now    = current_time('mysql');
+        $win    = MCLB_Grid::booking_window(); // re-check the window at checkout (covers older carts)
         $remove = []; // key => label
+        $beyond = []; // key => label
         foreach (WC()->cart->get_cart() as $key => $item) {
             if (empty($item[self::ITEM_KEY]['hold_id'])) {
                 continue;
@@ -65,12 +67,21 @@ class MCLB_Cart {
                 && ((string) $b->status !== MCLB_Bookings::STATUS_HELD || $b->hold_expires_at > $now);
             if (!$live) {
                 $remove[$key] = ($item[self::ITEM_KEY]['lane_name'] ?? '') . ' · ' . self::format_when($item[self::ITEM_KEY]);
+                continue;
+            }
+            if ($win['max_date'] !== null && substr((string) $b->starts_at, 0, 10) > $win['max_date']) {
+                $beyond[$key] = ($item[self::ITEM_KEY]['lane_name'] ?? '') . ' · ' . self::format_when($item[self::ITEM_KEY]);
             }
         }
         foreach ($remove as $key => $label) {
             WC()->cart->remove_cart_item($key); // on_item_removed cancels the (already dead) hold harmlessly
             /* translators: %s: lane + date/time of the expired hold. */
             wc_add_notice(sprintf(__('Your hold on %s expired — please re-select.', 'mclb-lane-booking'), $label), 'error');
+        }
+        foreach ($beyond as $key => $label) {
+            WC()->cart->remove_cart_item($key);
+            /* translators: 1: lane + date/time, 2: number of days. */
+            wc_add_notice(sprintf(_n('%1$s is beyond the %2$d-day booking window and was removed.', '%1$s is beyond the %2$d-day booking window and was removed.', $win['days'], 'mclb-lane-booking'), $label, $win['days']), 'error');
         }
     }
 
@@ -247,7 +258,15 @@ class MCLB_Cart {
             return new WP_Error('mclb_past', __('That time is in the past.', 'mclb-lane-booking'), ['status' => 400]);
         }
 
-        $date  = substr($starts, 0, 10);
+        $date = substr($starts, 0, 10);
+
+        // Customer booking window (staff are never limited — see MCLB_Grid::booking_window()).
+        $win = MCLB_Grid::booking_window();
+        if ($win['max_date'] !== null && $date > $win['max_date']) {
+            /* translators: %d: number of days ahead customers can book. */
+            return new WP_Error('mclb_window', sprintf(_n('Online bookings open %d day in advance — please pick an earlier date.', 'Online bookings open %d days in advance — please pick an earlier date.', $win['days'], 'mclb-lane-booking'), $win['days']), ['status' => 400]);
+        }
+
         $avail = MCLB_Availability::for_lane($lane_id, $date);
         if (empty($avail['is_open']) || !self::range_all_available($avail, $starts, $ends)) {
             $tf    = get_option('time_format') ?: 'g:i a';

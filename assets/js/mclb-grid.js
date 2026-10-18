@@ -490,6 +490,7 @@
         if (self.dateInput) { self.dateInput.value = data.date; }
         var lbl = self.wrap.querySelector('.mclb-grid__datelabel');
         if (lbl && data.date_label) { lbl.textContent = data.date_label; }
+        self.applyWindow(data); // date-picker min/max from the server's fresh "today"
         self.grid.innerHTML = data.html;
         self.light = null; // a fresh grid has no pre-select
         if (mode === 'refresh') { self.showDroppedNotice(self.reapplySelections(prev)); }
@@ -548,12 +549,27 @@
     if (this.notice) { this.notice.hidden = true; this.notice.textContent = ''; }
   };
 
-  // Re-assert prev-button disabled state at "today" + the scroll hint.
+  // Apply the customer booking window from the server's fresh response: date-picker
+  // min = today, max = last bookable date (so the picker can't choose beyond it),
+  // and remember the max for the › next-day arrow. Nothing is baked into page HTML,
+  // so a WP Rocket-cached page can't drift the limit by a day.
+  MclbGrid.prototype.applyWindow = function (data) {
+    this.maxDate = data && data.max_date ? data.max_date : null;
+    if (!this.dateInput) { return; }
+    if (data && data.today) { this.dateInput.min = data.today; }
+    if (this.maxDate) { this.dateInput.max = this.maxDate; }
+    else { this.dateInput.removeAttribute('max'); }
+  };
+
+  // Re-assert prev/next-button disabled state at the window edges + the scroll hint.
   MclbGrid.prototype.render = function () {
+    var date = this.wrap.getAttribute('data-date');
     var prev = this.wrap.querySelector('.mclb-nav--prev');
     if (prev && this.dateInput && this.dateInput.min) {
-      prev.disabled = this.wrap.getAttribute('data-date') <= this.dateInput.min;
+      prev.disabled = date <= this.dateInput.min;
     }
+    var next = this.wrap.querySelector('.mclb-nav--next');
+    if (next) { next.disabled = !!(this.maxDate && date >= this.maxDate); }
     this.updateScrollHint();
   };
 

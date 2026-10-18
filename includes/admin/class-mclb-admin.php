@@ -118,6 +118,8 @@ class MCLB_Admin {
         $this->price_field($g, 'mclb_booking', 'price_per_hour', __('Price per hour', 'mclb-lane-booking'));
         $this->increment_field($g, 'mclb_booking', 'booking_increment', __('Booking increment', 'mclb-lane-booking'));
         $this->number_field($g, 'mclb_booking', 'hold_minutes', __('Hold window', 'mclb-lane-booking'), __('minutes', 'mclb-lane-booking'), 1, 240);
+        $this->number_field($g, 'mclb_booking', 'booking_window_days', __('Customer booking window', 'mclb-lane-booking'), __('days ahead customers can book (0 = no limit). Staff are never limited.', 'mclb-lane-booking'), 0, 3650);
+        $this->text_field($g, 'mclb_booking', 'booking_window_note', __('Later-dates message', 'mclb-lane-booking'), __('Shown after “Online bookings open N days in advance.” — e.g. Call 08 9393 1000 for later dates.', 'mclb-lane-booking'));
 
         // General → coach requests
         add_settings_section('mclb_coach', __('Coach requests', 'mclb-lane-booking'), function () {

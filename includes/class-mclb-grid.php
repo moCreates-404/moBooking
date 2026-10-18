@@ -158,17 +158,56 @@ class MCLB_Grid {
         ]);
     }
 
+    /**
+     * The customer booking window: how far ahead a CUSTOMER may book. Staff
+     * (mclb_manage_bookings) are never limited, so they can book/move any date
+     * even through the customer grid. `today` + `max_date` are computed server-side
+     * in the site timezone; the client reads them from this fresh (no-store)
+     * response rather than any cache-frozen page HTML, so the limit never drifts.
+     *
+     * @return array{days:int,today:string,max_date:?string,staff:bool}
+     */
+    public static function booking_window() {
+        $days  = (int) MCLB_Settings::get('booking_window_days');
+        $staff = current_user_can(MCLB_Caps::MANAGE);
+        $tz    = wp_timezone();
+        $max   = null;
+        if (!$staff && $days > 0) {
+            $max = (new DateTimeImmutable('today', $tz))->modify('+' . $days . ' days')->format('Y-m-d');
+        }
+        return ['days' => $days, 'today' => wp_date('Y-m-d'), 'max_date' => $max, 'staff' => $staff];
+    }
+
+    /** The friendly "come back later" block shown for a day beyond the window. */
+    public static function window_message_html() {
+        $days = (int) MCLB_Settings::get('booking_window_days');
+        $note = trim((string) MCLB_Settings::get('booking_window_note'));
+        /* translators: %d: number of days. */
+        $msg  = sprintf(_n('Online bookings open %d day in advance.', 'Online bookings open %d days in advance.', $days, 'mclb-lane-booking'), $days);
+        if ($note !== '') {
+            $msg .= ' ' . $note;
+        }
+        $msg = (string) apply_filters('mclb_booking_window_message', $msg, $days, $note);
+        return '<p class="mclb-grid__window" role="status">' . esc_html($msg) . '</p>';
+    }
+
     public static function rest_availability($request) {
         $date = self::sanitize_date((string) $request->get_param('date'));
         $type = sanitize_text_field((string) $request->get_param('type'));
         if ($date === '') {
             return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
         }
+        $win    = self::booking_window();
+        $beyond = ($win['max_date'] !== null && $date > $win['max_date']);
         $response = rest_ensure_response([
-            'date'       => $date,
-            'type'       => $type,
-            'date_label' => self::date_label($date),
-            'html'       => self::render_grid_html($type, $date),
+            'date'        => $date,
+            'type'        => $type,
+            'date_label'  => self::date_label($date),
+            'today'       => $win['today'],
+            'window_days' => $win['days'],
+            'max_date'    => $win['max_date'],
+            'bookable'    => !$beyond,
+            'html'        => $beyond ? self::window_message_html() : self::render_grid_html($type, $date),
         ]);
         // Availability is live and must never be served stale — tell every layer
         // (browser, WP Rocket, host/CDN cache) not to cache this response.

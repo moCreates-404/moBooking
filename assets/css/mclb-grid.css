@@ -216,6 +216,21 @@
 .mclb-cell--available:focus-visible { outline: 2px solid var(--mclb-accent, #f4c430); outline-offset: -2px; }
 
 .mclb-grid__empty { padding: 1rem; color: var(--mclb-ink-muted); }
+/* Friendly "booking window" notice shown for a day beyond the customer limit,
+   in place of an all-closed grid. */
+.mclb-grid__window {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--mclb-line, rgba(0, 0, 0, 0.14));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mclb-accent, #f4c430) 12%, var(--mclb-surface, #fff));
+  color: var(--mclb-ink, inherit);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+@supports not (background: color-mix(in srgb, white 50%, transparent)) {
+  .mclb-grid__window { background: rgba(244, 196, 48, 0.12); }
+}
 
 /* Demo / read-only mode banner (shown when the licence gate is closed). */
 .mclb-demo-notice {
