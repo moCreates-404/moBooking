@@ -178,6 +178,16 @@ class MCLB_Grid {
         return ['days' => $days, 'today' => wp_date('Y-m-d'), 'max_date' => $max, 'staff' => $staff];
     }
 
+    /**
+     * THE single beyond-the-window test, shared by all three enforcement layers
+     * (grid REST, add-to-cart, cart/checkout validation) so they can never drift.
+     * Pure: a null max (staff / no limit) is never beyond; the last bookable date
+     * itself is allowed (inclusive). $date is a 'Y-m-d' string.
+     */
+    public static function is_beyond_window($date, $max_date) {
+        return $max_date !== null && (string) $date > (string) $max_date;
+    }
+
     /** The friendly "come back later" block shown for a day beyond the window. */
     public static function window_message_html() {
         $days = (int) MCLB_Settings::get('booking_window_days');
@@ -198,7 +208,7 @@ class MCLB_Grid {
             return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
         }
         $win    = self::booking_window();
-        $beyond = ($win['max_date'] !== null && $date > $win['max_date']);
+        $beyond = self::is_beyond_window($date, $win['max_date']);
         $response = rest_ensure_response([
             'date'        => $date,
             'type'        => $type,

@@ -69,7 +69,7 @@ class MCLB_Cart {
                 $remove[$key] = ($item[self::ITEM_KEY]['lane_name'] ?? '') . ' · ' . self::format_when($item[self::ITEM_KEY]);
                 continue;
             }
-            if ($win['max_date'] !== null && substr((string) $b->starts_at, 0, 10) > $win['max_date']) {
+            if (MCLB_Grid::is_beyond_window(substr((string) $b->starts_at, 0, 10), $win['max_date'])) {
                 $beyond[$key] = ($item[self::ITEM_KEY]['lane_name'] ?? '') . ' · ' . self::format_when($item[self::ITEM_KEY]);
             }
         }
@@ -262,7 +262,7 @@ class MCLB_Cart {
 
         // Customer booking window (staff are never limited — see MCLB_Grid::booking_window()).
         $win = MCLB_Grid::booking_window();
-        if ($win['max_date'] !== null && $date > $win['max_date']) {
+        if (MCLB_Grid::is_beyond_window($date, $win['max_date'])) {
             /* translators: %d: number of days ahead customers can book. */
             return new WP_Error('mclb_window', sprintf(_n('Online bookings open %d day in advance — please pick an earlier date.', 'Online bookings open %d days in advance — please pick an earlier date.', $win['days'], 'mclb-lane-booking'), $win['days']), ['status' => 400]);
         }
