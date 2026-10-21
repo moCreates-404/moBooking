@@ -47,6 +47,21 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'create_booking'],
         ]);
+        register_rest_route(self::NS, '/admin/series-preview', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'series_preview'],
+        ]);
+        register_rest_route(self::NS, '/admin/series', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'create_series'],
+        ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/cancel-series', [
+            'methods'             => 'POST',
+            'permission_callback' => $manage,
+            'callback'            => [__CLASS__, 'cancel_series'],
+        ]);
         register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/coach', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -229,7 +244,20 @@ class MCLB_REST_Admin {
                 'staff_note'  => (string) $b->staff_note,
                 'badges'      => $held ? [] : self::badges($b, $paid, $cancelled),
                 'refundable'  => (!$held && !$cancelled && (string) $b->source === 'online' && $b->order_id),
+                'series_id'   => $b->series_id ? (int) $b->series_id : 0,
             ];
+        }
+        // Series position (N of M) for any booking in a series — one extra query.
+        $series_ids = array_values(array_filter(array_map(function ($r) { return (int) $r['series_id']; }, $bookings)));
+        if (!empty($series_ids)) {
+            $pos = MCLB_Bookings::series_positions($series_ids);
+            foreach ($bookings as &$row) {
+                if ($row['series_id'] && isset($pos[$row['id']])) {
+                    $row['series_n'] = $pos[$row['id']][0];
+                    $row['series_m'] = $pos[$row['id']][1];
+                }
+            }
+            unset($row);
         }
 
         // Blockouts (one-off + recurring resolved for this date).
@@ -349,9 +377,7 @@ class MCLB_REST_Admin {
             return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to book it anyway.', 'mclb-lane-booking'), ['status' => 409]);
         }
 
-        $tz       = wp_timezone();
-        $duration = ((new DateTimeImmutable($ends_at, $tz))->getTimestamp() - (new DateTimeImmutable($starts_at, $tz))->getTimestamp()) / 3600;
-        $lane_price = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
+        $lane_price = MCLB_Bookings::lane_price($lane_id, $starts_at, $ends_at); // ONE pricing seam
 
         // Optional lane-price override at creation (reason required when it changes
         // the price). coach_fee is never overridden; counter_due = price + fee is
@@ -407,6 +433,245 @@ class MCLB_REST_Admin {
             MCLB_Emails::alert_manual_created($id);
         }
         return rest_ensure_response(['ok' => true, 'id' => $id, 'emailed' => $emailed, 'has_email' => $email !== '']);
+    }
+
+    // ── Recurring series (Phase 1.4.0) ──────────────────────────────────────────
+
+    /** Parse + validate the series params. Returns the shared data + the slot list, or a WP_Error. */
+    private static function parse_series($request) {
+        $lane_id = (int) $request->get_param('lane_id');
+        $date    = self::sanitize_date((string) $request->get_param('date'));
+        $start   = (string) $request->get_param('start');
+        $end     = (string) $request->get_param('end');
+        $repeat  = ($request->get_param('repeat') === 'fortnightly') ? 'fortnightly' : 'weekly';
+        $mode    = ($request->get_param('mode') === 'until') ? 'until' : 'count';
+        $re      = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        $lane    = get_post($lane_id);
+        if (!$lane || $lane->post_type !== 'mclb_lane' || $date === '' || !preg_match($re, $start) || !preg_match($re, $end) || $end <= $start) {
+            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $interval = ($repeat === 'fortnightly') ? 14 : 7;
+        $tz  = wp_timezone();
+        $cur = new DateTimeImmutable("$date $start:00", $tz);
+
+        $slots = [];
+        if ($mode === 'until') {
+            $until = self::sanitize_date((string) $request->get_param('until'));
+            if ($until === '' || $until < $date) {
+                return new WP_Error('mclb_invalid', __('Choose an “until” date on or after the first date.', 'mclb-lane-booking'), ['status' => 400]);
+            }
+            while ($cur->format('Y-m-d') <= $until && count($slots) < 52) {
+                $d = $cur->format('Y-m-d');
+                $slots[] = ['starts_at' => "$d $start:00", 'ends_at' => "$d $end:00"];
+                $cur = $cur->modify("+{$interval} days");
+            }
+        } else {
+            $count = max(1, min(52, (int) $request->get_param('count')));
+            for ($i = 0; $i < $count; $i++) {
+                $d = $cur->format('Y-m-d');
+                $slots[] = ['starts_at' => "$d $start:00", 'ends_at' => "$d $end:00"];
+                $cur = $cur->modify("+{$interval} days");
+            }
+        }
+        if (empty($slots)) {
+            return new WP_Error('mclb_invalid', __('That repeat produced no dates.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+
+        $price = MCLB_Bookings::lane_price($lane_id, "$date $start:00", "$date $end:00"); // ONE pricing seam
+        return [
+            'lane_id'   => $lane_id,
+            'lane_name' => get_the_title($lane_id),
+            'start'     => $start,
+            'end'       => $end,
+            'slots'     => $slots,
+            'coach_id'  => (int) $request->get_param('coach_id'),
+            'override'  => filter_var($request->get_param('override'), FILTER_VALIDATE_BOOLEAN),
+            'price'     => $price,
+        ];
+    }
+
+    public static function series_preview($request) {
+        $p = self::parse_series($request);
+        if (is_wp_error($p)) { return $p; }
+        $tz = wp_timezone();
+        $tf = get_option('time_format') ?: 'g:i a';
+        $dates = [];
+        $available = 0;
+        foreach ($p['slots'] as $slot) {
+            $a = MCLB_Bookings::slot_available($p['lane_id'], $p['coach_id'], $slot['starts_at'], $slot['ends_at'], $p['override']);
+            if (!empty($a['available'])) { $available++; }
+            $ts = (new DateTimeImmutable($slot['starts_at'], $tz))->getTimestamp();
+            $dates[] = [
+                'date'      => substr($slot['starts_at'], 0, 10),
+                'label'     => wp_date('D j M Y', $ts),
+                'available' => !empty($a['available']),
+                'reason'    => $a['reason'],
+            ];
+        }
+        // Per-session due = lane_price + coach fee (same as the per-booking
+        // "Lane + Coach = Due" line); coach fee from the shared MCLB_Coaches::fee().
+        $s0 = $p['slots'][0];
+        $coach_fee = 0.0;
+        if ($p['coach_id'] > 0) {
+            $rate = MCLB_Coaches::rate($p['coach_id']);
+            if ($rate !== null) { $coach_fee = MCLB_Coaches::fee((float) $rate, $s0['starts_at'], $s0['ends_at']); }
+        }
+        $per_due = round($p['price'] + $coach_fee, 2);
+        return rest_ensure_response([
+            'ok'        => true,
+            'dates'     => $dates,
+            'count'     => count($dates),
+            'available' => $available,
+            'per_lane'  => $p['price'],
+            'per_coach' => $coach_fee,
+            'per_due'   => $per_due,
+            'per_price' => $per_due, // back-compat: the amount collected per session
+            'total'     => round($per_due * $available, 2),
+            'time'      => wp_date($tf, (new DateTimeImmutable($s0['starts_at'], $tz))->getTimestamp()) . '–' . wp_date($tf, (new DateTimeImmutable($s0['ends_at'], $tz))->getTimestamp()),
+        ]);
+    }
+
+    public static function create_series($request) {
+        if (!MCLB_License::can_book()) {
+            return new WP_Error('mclb_demo', MCLB_License::demo_message(), ['status' => 403]);
+        }
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+
+        $p = self::parse_series($request);
+        if (is_wp_error($p)) { return $p; }
+
+        $name  = sanitize_text_field((string) $request->get_param('name'));
+        $email = sanitize_email((string) $request->get_param('email'));
+        $phone = MCLB_Phone::clean((string) $request->get_param('phone'));
+        $note  = sanitize_textarea_field((string) $request->get_param('note'));
+        if (!MCLB_Phone::valid($phone)) {
+            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $paid_upfront = filter_var($request->get_param('paid_upfront'), FILTER_VALIDATE_BOOLEAN);
+
+        $base = [
+            'lane_id'        => $p['lane_id'],
+            'lane_name'      => $p['lane_name'],
+            'price'          => $p['price'],
+            'customer_name'  => $name,
+            'customer_email' => $email,
+            'customer_phone' => $phone,
+            'staff_note'     => $note,
+            'coach_id'       => $p['coach_id'],
+        ];
+        $res       = MCLB_Bookings::create_series($base, $p['slots'], $p['override']);
+        $created   = $res['created'];
+        $skipped   = $res['skipped'];
+        $series_id = $res['series_id'];
+        $m         = count($created);
+
+        // Audit each occurrence + (optionally) record the whole-series prepayment.
+        $total = 0.0;
+        foreach ($created as $i => $bid) {
+            $b = MCLB_Bookings::get($bid);
+            $total += ($b && $b->counter_due !== null) ? (float) $b->counter_due : 0.0;
+            /* translators: 1: n, 2: m. */
+            self::log($bid, $actor, sprintf(__('created (series %1$d of %2$d)', 'mclb-lane-booking'), $i + 1, $m));
+        }
+        if ($paid_upfront && $m > 0) {
+            foreach ($created as $bid) {
+                MCLB_Bookings::mark_counter_paid($bid);
+                /* translators: 1: total amount, 2: number of sessions, 3: initials. */
+                self::log($bid, $actor, sprintf(__('Paid upfront %1$s for %2$d sessions, %3$s', 'mclb-lane-booking'), self::money($total), $m, $actor));
+            }
+        }
+
+        // ONE summary email to the customer + ONE staff alert (per-occurrence
+        // confirmations/alerts are intentionally not sent during a series).
+        $emailed = false;
+        if (class_exists('MCLB_Emails') && $series_id) {
+            $r = MCLB_Emails::send_series_confirmation($series_id, $skipped);
+            $emailed = !empty($r['ok']);
+            MCLB_Emails::alert_series_created($series_id, $skipped);
+        }
+
+        return rest_ensure_response([
+            'ok'        => true,
+            'series_id' => $series_id,
+            'created'   => $m,
+            'skipped'   => array_map(function ($s) {
+                $ts = (new DateTimeImmutable($s['date'] . ' 00:00:00', wp_timezone()))->getTimestamp();
+                return ['date' => $s['date'], 'label' => wp_date('D j M Y', $ts), 'reason' => $s['reason']];
+            }, $skipped),
+            'total'     => round($total, 2),
+            'paid_upfront' => $paid_upfront,
+            'emailed'   => $emailed,
+            'has_email' => $email !== '',
+        ]);
+    }
+
+    public static function cancel_series($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $id = (int) $request['id'];
+        $b  = MCLB_Bookings::get($id);
+        if (!$b || empty($b->series_id)) {
+            return new WP_Error('mclb_invalid', __('That booking is not part of a series.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        $mode    = ($request->get_param('mode') === 'whole') ? 'whole' : 'following';
+        $confirm = filter_var($request->get_param('confirm_paid'), FILTER_VALIDATE_BOOLEAN);
+        $dry     = filter_var($request->get_param('dry_run'), FILTER_VALIDATE_BOOLEAN);
+        // Future-only: "whole" from now, "following" from this occurrence's start.
+        $from    = ($mode === 'whole') ? current_time('mysql') : (string) $b->starts_at;
+        $targets = MCLB_Bookings::series_future((int) $b->series_id, $from);
+        $tz      = wp_timezone();
+        $now     = current_time('mysql');
+
+        // Paid OR past occurrences are sensitive (no auto-refund; staff handle the
+        // money / a session that already happened) and are named in the one confirm.
+        $sensitive = array_filter($targets, function ($r) use ($now) {
+            $paid = $r->counter_paid_at !== null && $r->counter_paid_at !== '0000-00-00 00:00:00';
+            $past = (string) $r->starts_at < $now;
+            return $paid || $past;
+        });
+        $sensitive_dates = array_values(array_map(function ($r) use ($tz, $now) {
+            $paid = $r->counter_paid_at !== null && $r->counter_paid_at !== '0000-00-00 00:00:00';
+            $past = (string) $r->starts_at < $now;
+            $tag  = $paid && $past ? ' (paid, past)' : ($paid ? ' (paid)' : ' (past)');
+            return wp_date('D j M Y', (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp()) . $tag;
+        }, $sensitive));
+
+        // Dry run: the UI asks first so ONE confirm can state exactly what will go.
+        if ($dry) {
+            $flabel = $targets ? wp_date('D j M Y', (new DateTimeImmutable($targets[0]->starts_at, $tz))->getTimestamp()) : '';
+            $llabel = $targets ? wp_date('D j M Y', (new DateTimeImmutable($targets[count($targets) - 1]->starts_at, $tz))->getTimestamp()) : '';
+            return rest_ensure_response([
+                'ok'              => true,
+                'dry_run'         => true,
+                'count'           => count($targets),
+                'first'           => $flabel,
+                'last'            => $llabel,
+                'sensitive_count' => count($sensitive),
+                'sensitive_dates' => $sensitive_dates,
+            ]);
+        }
+
+        // Safety net if ever called without the dry-run confirm: still gate paid/past.
+        if (!empty($sensitive) && !$confirm) {
+            return rest_ensure_response([
+                'ok'            => false,
+                'needs_confirm' => true,
+                'paid_count'    => count($sensitive),
+                'paid_dates'    => $sensitive_dates,
+                'total'         => count($targets),
+            ]);
+        }
+
+        $cancelled = 0;
+        foreach ($targets as $r) {
+            if (MCLB_Bookings::claim_cancel((int) $r->id)) {
+                $cancelled++;
+                $label = ($mode === 'whole') ? __('cancelled (whole series)', 'mclb-lane-booking') : __('cancelled (this and following)', 'mclb-lane-booking');
+                self::log((int) $r->id, $actor, $label);
+            }
+        }
+        return rest_ensure_response(['ok' => true, 'cancelled' => $cancelled]);
     }
 
     // ── POST /admin/booking/{id}/details (edit customer fields) ───────────────

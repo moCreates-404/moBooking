@@ -219,3 +219,17 @@
   background: none; border: 0; color: #93c5fd; font-weight: 600; cursor: pointer;
   text-decoration: underline; padding: 0; font-size: 14px;
 }
+
+/* ── Recurring series ─────────────────────────────────────────────────────── */
+.mclb-mblock__series { display: block; font-size: 11px; color: var(--mclb-muted); margin-top: 1px; }
+.mclb-series-opts { margin: 4px 0 2px; padding: 8px 10px; border: 1px solid var(--mclb-line); border-radius: 8px; background: rgba(0, 0, 0, 0.02); }
+.mclb-series-result { margin-top: 10px; }
+.mclb-series-result__head { font-weight: 600; margin: 0 0 6px; }
+.mclb-series-result__per { margin: 0 0 6px; font-size: 13px; color: var(--mclb-ink); }
+.mclb-series-result__skipped { margin: 6px 0; font-size: 13px; color: var(--mclb-booked, #b91c1c); }
+.mclb-series-list { max-height: 220px; overflow-y: auto; border: 1px solid var(--mclb-line); border-radius: 8px; margin-bottom: 8px; }
+.mclb-series-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 10px; font-size: 13px; border-bottom: 1px solid var(--mclb-line); }
+.mclb-series-row:last-child { border-bottom: 0; }
+.mclb-series-row.is-ok .mclb-series-row__state { color: #15803d; font-weight: 600; }
+.mclb-series-row.is-bad { color: var(--mclb-muted); }
+.mclb-series-row.is-bad .mclb-series-row__state { color: #b91c1c; }

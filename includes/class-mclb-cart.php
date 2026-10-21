@@ -276,7 +276,7 @@ class MCLB_Cart {
         }
 
         $duration = ($e->getTimestamp() - $s->getTimestamp()) / 3600.0;
-        $price    = round((float) MCLB_Lane::get_price($lane_id) * $duration, 2);
+        $price    = MCLB_Bookings::lane_price($lane_id, $starts, $ends); // ONE pricing seam (forward-compat for v1.5.0 passes)
 
         return [
             'lane_id'   => $lane_id,

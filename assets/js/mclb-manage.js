@@ -216,7 +216,11 @@
 
   function collectStrip() {
     var strip = el('div', 'mclb-cal__collect');
-    strip.appendChild(el('strong', null, (I18N.toCollect || 'To collect today') + ': '));
+    // "To collect today" only when viewing today; otherwise name the date.
+    var collectLabel = (state.date === CFG.today)
+      ? (I18N.toCollect || 'To collect today')
+      : (I18N.toCollectOn || 'To collect') + ' · ' + ((state.data && state.data.date_label) || state.date);
+    strip.appendChild(el('strong', null, collectLabel + ': '));
     var items = (state.data.bookings || []).filter(function (b) {
       return !b.held && b.badges.some(function (x) { return x.kind === 'due' || x.kind === 'refund'; });
     });
@@ -408,6 +412,12 @@
     // detail panel; the block only carries the colour.
     var titleText = '#' + b.id + ' ' + (b.customer || 'Guest');
     block.appendChild(el('span', 'mclb-mblock__title', titleText));
+    var seriesLabel = (b.series_id && b.series_m > 1)
+      ? (I18N.series || 'Series') + ' · ' + (I18N.ofN || '%n of %m').replace('%n', b.series_n).replace('%m', b.series_m)
+      : '';
+    if (seriesLabel && (b.end_min - b.start_min) > 30) {
+      block.appendChild(el('span', 'mclb-mblock__series', seriesLabel));
+    }
 
     // Prefer the actionable pill (Due/Refund), else the paid state.
     var pill = b.badges.filter(function (x) { return x.kind === 'due' || x.kind === 'refund'; })[0]
@@ -416,6 +426,7 @@
     // Full detail lives in the tooltip (essential for short blocks).
     block.title = titleText + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)
       + ' · ' + (b.source === 'online' ? 'Online' : 'Manual')
+      + (seriesLabel ? ' · ' + seriesLabel : '')
       + (b.coach_label ? ' · ' + b.coach_label : '')
       + (b.phone ? ' · ' + b.phone : '')
       + (pill ? ' · ' + pill.label : '')
@@ -695,21 +706,127 @@
       ov.onchange = syncWarn;
       syncWarn();
 
+      // -- recurring (series) --
+      var repeat = el('select');
+      [['', I18N.repeatNone || 'Does not repeat'], ['weekly', I18N.repeatWeekly || 'Weekly'], ['fortnightly', I18N.repeatFortnightly || 'Fortnightly']].forEach(function (o) { repeat.appendChild(opt(o[0], o[1])); });
+      field(bookBody, I18N.repeat || 'Repeat', repeat);
+      var sOpts = el('div', 'mclb-series-opts'); sOpts.style.display = 'none'; bookBody.appendChild(sOpts);
+      var endMode = el('select'); endMode.appendChild(opt('count', I18N.forN || 'For a number of times')); endMode.appendChild(opt('until', I18N.untilDate || 'Until a date'));
+      field(sOpts, I18N.ends || 'Ends', endMode);
+      var countLbl = el('label', 'mclb-panel__field'); countLbl.appendChild(el('span', null, I18N.occurrences || 'Occurrences (max 52)'));
+      var countIn = mkInput('number'); countIn.min = '1'; countIn.max = '52'; countIn.value = '8'; countLbl.appendChild(countIn); sOpts.appendChild(countLbl);
+      var untilLbl = el('label', 'mclb-panel__field'); untilLbl.style.display = 'none'; untilLbl.appendChild(el('span', null, I18N.untilDate || 'Until date'));
+      var untilIn = mkInput('date'); untilLbl.appendChild(untilIn); sOpts.appendChild(untilLbl);
+      var paidWrap = el('label', 'mclb-panel__override'); var paidUp = el('input'); paidUp.type = 'checkbox';
+      paidWrap.appendChild(paidUp); paidWrap.appendChild(document.createTextNode(' ' + (I18N.paidUpfront || 'Paid upfront for whole series'))); sOpts.appendChild(paidWrap);
+      endMode.onchange = function () { countLbl.style.display = endMode.value === 'count' ? '' : 'none'; untilLbl.style.display = endMode.value === 'until' ? '' : 'none'; };
+
       var ini = initialsField(bookBody);
       var err = errBox(bookBody);
       var save = el('button', 'button button-primary mclb-panel__save', 'Create booking');
       bookBody.appendChild(save);
+      var seriesBox = el('div', 'mclb-series-result'); seriesBox.style.display = 'none'; bookBody.appendChild(seriesBox);
+
+      repeat.onchange = function () {
+        sOpts.style.display = repeat.value ? '' : 'none';
+        save.textContent = repeat.value ? (I18N.previewSeries || 'Preview series') : 'Create booking';
+        seriesBox.style.display = 'none';
+      };
+
+      function seriesBody() {
+        return {
+          lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
+          repeat: repeat.value, mode: endMode.value, count: countIn.value, until: untilIn.value,
+          coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0
+        };
+      }
+
       save.onclick = function () {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
         if (!phone.value.trim()) { showErr(err, I18N.phoneRequired || 'A phone number is required.'); return; }
         initialsSet(ini.value.trim());
-        runWrite(save, err, api('/booking', { method: 'POST', body: {
-          lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
-          name: name.value, email: email.value, phone: phone.value, note: note.value,
-          coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0,
-          override_price: priceIn.value, price_reason: reason.value, actor: ini.value.trim()
-        } }));
+
+        if (!repeat.value) {
+          runWrite(save, err, api('/booking', { method: 'POST', body: {
+            lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
+            name: name.value, email: email.value, phone: phone.value, note: note.value,
+            coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0,
+            override_price: priceIn.value, price_reason: reason.value, actor: ini.value.trim()
+          } }));
+          return;
+        }
+
+        // Series: preview first, then a confirm button books the available dates.
+        setBusy(save, true); err.style.display = 'none';
+        api('/series-preview', { method: 'POST', body: seriesBody() }).then(function (res) {
+          setBusy(save, false);
+          if (!res.ok) { showErr(err, errText(res)); return; }
+          renderSeriesPreview(res.body);
+        });
       };
+
+      function renderSeriesPreview(p) {
+        seriesBox.innerHTML = '';
+        seriesBox.style.display = '';
+        // Per-session breakdown (Lane + Coach = Due), matching the single-booking line.
+        var perLine = (I18N.perSessionLane || 'Lane') + ' ' + money(p.per_lane)
+          + (p.per_coach > 0 ? (' + ' + (I18N.perSessionCoach || 'Coach') + ' ' + money(p.per_coach)) : '')
+          + ' = ' + money(p.per_due) + ' ' + (I18N.perSession || 'per session');
+        seriesBox.appendChild(el('p', 'mclb-series-result__per', perLine));
+        var head = el('p', 'mclb-series-result__head', (p.available + ' / ' + p.count + ' ' + (I18N.datesAvailable || 'dates available') + ' · ' + money(p.total) + ' ' + (I18N.total || 'total')));
+        seriesBox.appendChild(head);
+        var list = el('div', 'mclb-series-list');
+        p.dates.forEach(function (d) {
+          var row = el('div', 'mclb-series-row ' + (d.available ? 'is-ok' : 'is-bad'));
+          row.appendChild(el('span', 'mclb-series-row__date', d.label));
+          row.appendChild(el('span', 'mclb-series-row__state', d.available ? '✓' : ('✗ ' + seriesReason(d.reason))));
+          list.appendChild(row);
+        });
+        seriesBox.appendChild(list);
+        var book = el('button', 'button button-primary mclb-panel__save', (I18N.bookAvailable || 'Book available dates only') + ' (' + p.available + ')');
+        book.disabled = p.available === 0;
+        seriesBox.appendChild(book);
+        book.onclick = function () {
+          var body = seriesBody();
+          body.name = name.value; body.email = email.value; body.phone = phone.value; body.note = note.value;
+          body.paid_upfront = paidUp.checked ? 1 : 0; body.actor = ini.value.trim();
+          setBusy(book, true);
+          api('/series', { method: 'POST', body: body }).then(function (res) {
+            if (res && res.ok) {
+              // Keep the panel open on the summary until "Done" — do NOT load() here,
+              // since render() rebuilds root and would wipe the panel. The grid is
+              // refreshed when the staff member dismisses the summary.
+              renderSeriesResult(res.body);
+            } else { setBusy(book, false); showErr(err, errText(res)); }
+          });
+        };
+      }
+      function seriesReason(r) {
+        if (r === 'lane') { return I18N.reasonLane || 'taken'; }
+        if (r === 'coach') { return I18N.reasonCoach || 'coach busy'; }
+        if (r === 'outside') { return I18N.reasonOutside || 'closed/out of hours'; }
+        if (r === 'busy') { return I18N.reasonBusy || 'busy, retry'; }
+        return r || '';
+      }
+      // Persistent result summary (stays until dismissed) — replaces the preview.
+      function renderSeriesResult(b) {
+        var planned = b.created + b.skipped.length;
+        seriesBox.innerHTML = '';
+        seriesBox.style.display = '';
+        var head = el('p', 'mclb-series-result__head',
+          (I18N.createdNofM || 'Created %n of %m sessions').replace('%n', b.created).replace('%m', planned));
+        seriesBox.appendChild(head);
+        if (b.skipped.length) {
+          var sk = el('p', 'mclb-series-result__skipped',
+            (I18N.skippedColon || 'Skipped:') + ' ' + b.skipped.map(function (s) {
+              return (s.label || s.date) + ' (' + seriesReason(s.reason) + ')';
+            }).join(', '));
+          seriesBox.appendChild(sk);
+        }
+        var done = el('button', 'button button-primary mclb-panel__save', I18N.done || 'Done');
+        done.onclick = function () { closePanel(); load(true); }; // refresh the grid now the summary is dismissed
+        seriesBox.appendChild(done);
+      }
 
       // -- blockout tab --
       blockBody.appendChild(buildBlockoutForm(lane, startMin, endMin));
@@ -752,6 +869,9 @@
       if (b.phone) { panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.phone || 'Phone') + ': ' + b.phone)); }
       if (b.price_original != null) {
         panel.appendChild(el('p', 'mclb-panel__warn', (I18N.priceOverridden || 'Price overridden') + ' (' + (I18N.was || 'was') + ' ' + money(b.price_original) + ')'));
+      }
+      if (b.series_id && b.series_m > 1) {
+        panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.series || 'Series') + ' · ' + (I18N.ofN || '%n of %m').replace('%n', b.series_n).replace('%m', b.series_m)));
       }
 
       // ── Edit details (name / email / phone / staff note) — the audit log below
@@ -902,6 +1022,34 @@
             runWrite(yesBtn, err, api('/booking/' + b.id + '/cancel', { method: 'POST', body: { mode: 'refund', actor: ini.value.trim() } }));
           });
         }, 'is-danger'));
+      }
+      // Series cancel (future-only). "Cancel only" above already handles "this one".
+      // Flow: a dry-run fetches the count + date range + any sensitive (paid/past)
+      // sessions, so a SINGLE confirm states exactly what will go; confirming then
+      // cancels in one call (no stacked second confirm).
+      if (b.series_id && b.series_m > 1) {
+        function seriesCancelBtn(mode, label) {
+          return actionBtn(label, function (btn) {
+            if (!needInitials()) { return; }
+            setBusy(btn, true);
+            api('/booking/' + b.id + '/cancel-series', { method: 'POST', body: { mode: mode, dry_run: 1, actor: ini.value.trim() } }).then(function (res) {
+              setBusy(btn, false);
+              if (!(res && res.ok && res.body && res.body.dry_run)) { showErr(err, errText(res)); return; }
+              var d = res.body;
+              if (d.count === 0) { showErr(err, I18N.noneToCancel || 'No future sessions to cancel.'); return; }
+              var range = d.count === 1 ? d.first : (d.first + ' – ' + d.last);
+              var q = (I18N.confirmCancelN || 'Cancel %n sessions (%r)?').replace('%n', d.count).replace('%r', range);
+              if (d.sensitive_count > 0) {
+                q += ' ' + (I18N.seriesPaidWarn || '%n prepaid or past session(s) will be cancelled with no automatic refund:').replace('%n', d.sensitive_count) + ' ' + d.sensitive_dates.join(', ');
+              }
+              confirmStep(actions, q, function (yes) {
+                runWrite(yes, err, api('/booking/' + b.id + '/cancel-series', { method: 'POST', body: { mode: mode, confirm_paid: 1, actor: ini.value.trim() } }));
+              });
+            });
+          }, 'is-danger');
+        }
+        actions.appendChild(seriesCancelBtn('following', I18N.cancelFollowing || 'Cancel this & following'));
+        actions.appendChild(seriesCancelBtn('whole', I18N.cancelWhole || 'Cancel whole series (future)'));
       }
       panel.appendChild(actions);
     });

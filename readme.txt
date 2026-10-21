@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.3.2
+Stable tag: 1.4.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,29 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.4.0 =
+* Recurring bookings (staff only): the manual-create panel (front Manage +
+  wp-admin Calendar) gains a Repeat option — weekly or fortnightly, for a number
+  of times or until a date (max 52). A preview lists every date as available or a
+  clash (lane / coach / closure / hours) with the series total; staff book the
+  available dates only (skip-only — any date that clashes at save is skipped and
+  reported, never aborting the rest). Each occurrence is a normal booking (own
+  price, counter, coach, notes, History, movable) linked by a series id; blocks
+  and the panel show "Series · N of M". DB v5 adds the series_id column
+  (dbDelta + self-heal).
+* Series cancel from the panel: "This one" (the existing cancel), "This and
+  following", or "Whole series" (future-only; a second confirm is required for any
+  prepaid session and nothing is auto-refunded). Each cancel is audited.
+* Optional "Paid upfront for whole series" marks every occurrence counter-paid and
+  records "Paid upfront $X for N sessions, XX" on each, so the counter sees it was
+  prepaid on the day.
+* One email, not 52: the customer gets a single confirmation listing all booked
+  dates (and any skipped), and staff get at most one "created" alert for the
+  series. Both reuse the branded mailer (Reply-To Bookings).
+* The customer booking-window check now runs through one shared helper across the
+  grid, add-to-cart and cart/checkout validation so the three layers can't drift
+  (staff exempt everywhere); covered by tests/test-window.php.
 
 = 1.3.2 =
 * WooCommerce admin order-email routing: New / Cancelled / Failed order emails are

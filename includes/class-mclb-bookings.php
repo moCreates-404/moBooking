@@ -93,6 +93,7 @@ class MCLB_Bookings {
   counter_due decimal(10,2) DEFAULT NULL,
   counter_paid_at datetime DEFAULT NULL,
   counter_paid_by bigint(20) unsigned DEFAULT NULL,
+  series_id bigint(20) unsigned DEFAULT NULL,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -100,7 +101,8 @@ class MCLB_Bookings {
   KEY coach_range (assigned_coach_id,starts_at,ends_at),
   KEY status (status),
   KEY order_id (order_id),
-  KEY hold_expires_at (hold_expires_at)
+  KEY hold_expires_at (hold_expires_at),
+  KEY series (series_id)
 ) ENGINE=InnoDB {$charset_collate};";
     }
 
@@ -488,15 +490,7 @@ class MCLB_Bookings {
         // read: the caller holds this coach's named lock (see insert_confirmed_locked)
         // so no other writer can assign the coach concurrently.
         if ($coach_id > 0) {
-            $busy = $wpdb->get_var($wpdb->prepare(
-                'SELECT id FROM ' . self::table() . '
-                   WHERE assigned_coach_id = %d
-                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                     AND starts_at < %s AND ends_at > %s
-                   LIMIT 1',
-                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $data['ends_at'], $data['starts_at']
-            ));
-            if ($busy) {
+            if (self::coach_conflict($coach_id, $data['starts_at'], $data['ends_at'])) {
                 $wpdb->query('ROLLBACK');
                 return ['ok' => false, 'conflict' => true, 'reason' => 'coach'];
             }
@@ -920,16 +914,10 @@ class MCLB_Bookings {
 
         // Coach double-book guard. Plain read — the caller holds this coach's named
         // lock, so no other writer can assign the coach concurrently.
-        $busy = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $t
-               WHERE assigned_coach_id = %d
-                 AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                 AND starts_at < %s AND ends_at > %s
-                 AND id <> %d
-               LIMIT 1",
-            $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $b->ends_at, $b->starts_at, $booking_id
-        ));
-        if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach']; }
+        if (self::coach_conflict($coach_id, $b->starts_at, $b->ends_at, $booking_id)) {
+            $wpdb->query('ROLLBACK');
+            return ['ok' => false, 'conflict' => true, 'reason' => 'coach'];
+        }
 
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
         if ($paid) {
@@ -1069,20 +1057,9 @@ class MCLB_Bookings {
             $new_lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, (int) $id
         ));
         // Coach clash.
-        $coach_clash = null;
-        if ($coach_id > 0) {
-            $coach_clash = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM $t
-                   WHERE assigned_coach_id = %d
-                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                     AND starts_at < %s AND ends_at > %s AND id <> %d
-                   LIMIT 1",
-                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, (int) $id
-            ));
-        }
+        $coach_clash = $coach_id > 0 ? self::coach_conflict($coach_id, $starts_at, $ends_at, (int) $id) : null;
 
-        $hours          = self::hours_between($starts_at, $ends_at);
-        $new_lane_price = round((float) MCLB_Lane::get_price($new_lane_id) * $hours, 2);
+        $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at);
         $old_price      = (float) $b->price;
         $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $starts_at, $ends_at) : null;
 
@@ -1179,20 +1156,12 @@ class MCLB_Bookings {
         // Coach double-book guard (plain read — caller holds the coach's named lock).
         $coach_id = (int) $b->assigned_coach_id;
         if ($coach_id > 0) {
-            $busy = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM $t
-                   WHERE assigned_coach_id = %d
-                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                     AND starts_at < %s AND ends_at > %s AND id <> %d
-                   LIMIT 1",
-                $coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at, $id
-            ));
+            $busy = self::coach_conflict($coach_id, $starts_at, $ends_at, $id);
             if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach', 'conflict_id' => (int) $busy]; }
         }
 
         $new_lane_name  = get_the_title($new_lane_id);
-        $hours          = self::hours_between($starts_at, $ends_at);
-        $new_lane_price = round((float) MCLB_Lane::get_price($new_lane_id) * $hours, 2);
+        $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at);
         $old_price      = (float) $b->price;
         $online         = ((string) $b->source === 'online');
         $paid           = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
@@ -1259,6 +1228,162 @@ class MCLB_Bookings {
     public static function set_price($id, $price) {
         global $wpdb;
         return $wpdb->update(self::table(), ['price' => round((float) $price, 2), 'updated_at' => current_time('mysql')], ['id' => (int) $id]) !== false;
+    }
+
+    // ── Shared seams (ONE place each; forward-compat for v1.4.1 / v1.5.0) ────────
+
+    /**
+     * THE coach double-book check — the single place that knows how a coach's
+     * occupied time is derived from a booking. Every create / move / assign /
+     * series path calls this, so v1.4.1 (partial coach time: coach_starts_at /
+     * coach_ends_at) changes the range logic here in one spot. Returns an
+     * overlapping booking id for this coach, or null. Plain read: callers needing
+     * a hard guarantee hold the coach's named GET_LOCK around their transaction.
+     *
+     * @param int $exclude_id a booking id to ignore (the row being moved/edited).
+     */
+    public static function coach_conflict($coach_id, $starts_at, $ends_at, $exclude_id = 0) {
+        global $wpdb;
+        $coach_id = (int) $coach_id;
+        if ($coach_id <= 0) {
+            return null;
+        }
+        $sql  = 'SELECT id FROM ' . self::table() . '
+                   WHERE assigned_coach_id = %d
+                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
+                     AND starts_at < %s AND ends_at > %s';
+        $args = [$coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, current_time('mysql'), $ends_at, $starts_at];
+        if ((int) $exclude_id > 0) {
+            $sql .= ' AND id <> %d';
+            $args[] = (int) $exclude_id;
+        }
+        $sql .= ' LIMIT 1';
+        $id = $wpdb->get_var($wpdb->prepare($sql, $args));
+        return $id ? (int) $id : null;
+    }
+
+    /**
+     * THE occurrence price — lane hourly rate × hours. The single place occurrence
+     * pricing lives, so v1.5.0's prepaid lane-hour passes can be applied here
+     * without touching the create / series / move / cart paths.
+     */
+    public static function lane_price($lane_id, $starts_at, $ends_at) {
+        return round((float) MCLB_Lane::get_price((int) $lane_id) * self::hours_between($starts_at, $ends_at), 2);
+    }
+
+    // ── Recurring bookings (Phase 1.4.0) ────────────────────────────────────────
+
+    /**
+     * Non-locking availability check for a prospective slot — used by the series
+     * preview (the authoritative guard is still the FOR-UPDATE insert at save).
+     * Mirrors the manual-create gate: outside hours / closure / past is
+     * override-able; a lane or coach clash is not.
+     *
+     * @return array{available:bool,reason:string}
+     */
+    public static function slot_available($lane_id, $coach_id, $starts_at, $ends_at, $override = false) {
+        global $wpdb;
+        $t   = self::table();
+        $now = current_time('mysql');
+        if (!$override && !MCLB_Availability::is_range_bookable_time((int) $lane_id, $starts_at, $ends_at)) {
+            return ['available' => false, 'reason' => 'outside'];
+        }
+        $clash = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $t WHERE lane_id = %d AND (status = %s OR (status = %s AND hold_expires_at > %s)) AND starts_at < %s AND ends_at > %s LIMIT 1",
+            (int) $lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at
+        ));
+        if ($clash) { return ['available' => false, 'reason' => 'lane']; }
+        if (self::coach_conflict($coach_id, $starts_at, $ends_at)) {
+            return ['available' => false, 'reason' => 'coach'];
+        }
+        return ['available' => true, 'reason' => ''];
+    }
+
+    /**
+     * Create a whole series, skip-only: each occurrence goes through the SAME
+     * locked insert as a single manual booking (lane FOR UPDATE + coach GET_LOCK),
+     * and anything that clashes (or is outside hours/closure without override) at
+     * save is skipped and reported — never aborting the rest. Created rows are
+     * linked by series_id (= the first created id) so even a partial run is linked.
+     * Per-occurrence emails/alerts are NOT sent here — the caller sends one summary.
+     *
+     * @param array $base  shared booking data (lane_id, lane_name, price, customer_*,
+     *                     staff_note, coach_id) — no starts/ends.
+     * @param array $slots list of ['starts_at','ends_at'].
+     * @return array{series_id:?int,created:int[],skipped:array<int,array{date:string,starts_at:string,reason:string}>}
+     */
+    public static function create_series(array $base, array $slots, $override = false) {
+        global $wpdb;
+        $created = [];
+        $skipped = [];
+        foreach ($slots as $slot) {
+            $s = (string) $slot['starts_at'];
+            $e = (string) $slot['ends_at'];
+            if (!$override && !MCLB_Availability::is_range_bookable_time((int) $base['lane_id'], $s, $e)) {
+                $skipped[] = ['date' => substr($s, 0, 10), 'starts_at' => $s, 'reason' => 'outside'];
+                continue;
+            }
+            $data = $base;
+            $data['starts_at'] = $s;
+            $data['ends_at']   = $e;
+            $r = self::insert_confirmed_locked($data);
+            if (!empty($r['ok'])) {
+                $created[] = (int) $r['id'];
+            } else {
+                $reason = !empty($r['lock_error']) ? 'busy' : (string) ($r['reason'] ?? ($r['error'] ?? 'unavailable'));
+                $skipped[] = ['date' => substr($s, 0, 10), 'starts_at' => $s, 'reason' => $reason];
+            }
+        }
+        $series_id = null;
+        if (!empty($created)) {
+            $series_id = min($created);
+            $in = implode(',', array_map('intval', $created));
+            $wpdb->query($wpdb->prepare("UPDATE " . self::table() . " SET series_id = %d, updated_at = %s WHERE id IN ($in)", $series_id, current_time('mysql')));
+        }
+        return ['series_id' => $series_id, 'created' => $created, 'skipped' => $skipped];
+    }
+
+    /** All rows in a series, oldest first. */
+    public static function for_series($series_id) {
+        global $wpdb;
+        return $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE series_id = %d ORDER BY starts_at, id', (int) $series_id));
+    }
+
+    /** [n, m] — this booking's chronological rank and the series size (all statuses, stable). */
+    public static function series_position($booking) {
+        if (empty($booking->series_id)) { return [0, 0]; }
+        $rows = self::for_series((int) $booking->series_id);
+        $m = count($rows);
+        foreach ($rows as $i => $r) {
+            if ((int) $r->id === (int) $booking->id) { return [$i + 1, $m]; }
+        }
+        return [0, $m];
+    }
+
+    /** id => [n, m] for every booking in the given series ids (one query; for the day payload). */
+    public static function series_positions(array $series_ids) {
+        global $wpdb;
+        $ids = array_values(array_unique(array_filter(array_map('intval', $series_ids))));
+        if (empty($ids)) { return []; }
+        $in   = implode(',', $ids);
+        $rows = $wpdb->get_results("SELECT id, series_id FROM " . self::table() . " WHERE series_id IN ($in) ORDER BY series_id, starts_at, id");
+        $byseries = [];
+        foreach ($rows as $r) { $byseries[(int) $r->series_id][] = (int) $r->id; }
+        $out = [];
+        foreach ($byseries as $members) {
+            $m = count($members);
+            foreach ($members as $i => $bid) { $out[$bid] = [$i + 1, $m]; }
+        }
+        return $out;
+    }
+
+    /** Future, still-confirmed occurrences of a series from a cut point (inclusive). */
+    public static function series_future($series_id, $from_starts_at) {
+        global $wpdb;
+        return $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM ' . self::table() . ' WHERE series_id = %d AND starts_at >= %s AND status = %s ORDER BY starts_at, id',
+            (int) $series_id, (string) $from_starts_at, self::STATUS_CONFIRMED
+        ));
     }
 
     /** All booking rows linked to a WooCommerce order (any status), oldest first. */

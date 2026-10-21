@@ -192,6 +192,88 @@ class MCLB_Emails {
         self::staff_alert(__('Booking moved', 'mclb-lane-booking'), $html, $b, 'alert-move');
     }
 
+    /** ONE confirmation for a whole series (not one per occurrence). */
+    public static function send_series_confirmation($series_id, $skipped = []) {
+        $rows = MCLB_Bookings::for_series((int) $series_id);
+        if (empty($rows)) { return ['ok' => false, 'result' => 'empty']; }
+        $first = $rows[0];
+        if (!self::on('email_manual_confirmation')) { return ['ok' => false, 'result' => 'disabled']; }
+        $email = sanitize_email((string) $first->customer_email);
+        if ($email === '') { return ['ok' => false, 'result' => 'no-email']; }
+
+        $heading = __('Your recurring booking is confirmed', 'mclb-lane-booking');
+        $html  = '<p>' . sprintf(esc_html__('Hi %s,', 'mclb-lane-booking'), esc_html(self::first_name($first->customer_name))) . '</p>';
+        /* translators: %d: number of sessions. */
+        $html .= '<p>' . sprintf(esc_html(_n('Your booking is confirmed for %d session:', 'Your booking is confirmed for %d sessions:', count($rows), 'mclb-lane-booking')), count($rows)) . '</p>';
+        $html .= self::dates_table($rows);
+        if (!empty($skipped)) {
+            $html .= '<p style="color:#666;">' . esc_html__('These dates were already taken and could not be booked:', 'mclb-lane-booking') . '</p><ul>';
+            foreach ($skipped as $s) { $html .= '<li>' . esc_html(self::nice_date($s['date'])) . '</li>'; }
+            $html .= '</ul>';
+        }
+        // Total across the series: "Paid upfront" when every occurrence is already
+        // counter-paid (the whole-series prepayment), otherwise due at the counter.
+        $total   = 0.0; $allPaid = true;
+        foreach ($rows as $x) {
+            $total += ($x->counter_due !== null) ? (float) $x->counter_due : 0.0;
+            if ($x->counter_paid_at === null || $x->counter_paid_at === '0000-00-00 00:00:00') { $allPaid = false; }
+        }
+        $money = class_exists('MCLB_Coaches') ? MCLB_Coaches::money($total) : number_format($total, 2);
+        $html .= '<p style="font-weight:bold;">' . ($allPaid
+            ? sprintf(esc_html__('Paid upfront: %s', 'mclb-lane-booking'), esc_html($money))
+            : sprintf(esc_html__('Total due at the counter: %s', 'mclb-lane-booking'), esc_html($money))) . '</p>';
+        $html .= '<p>' . ($allPaid ? esc_html__('Thanks — see you then!', 'mclb-lane-booking') : esc_html__('Payment is taken at the counter. See you then!', 'mclb-lane-booking')) . '</p>';
+
+        return MCLB_Mail::send($email, self::subject($heading), $html, [
+            'heading'  => $heading,
+            'branded'  => true,
+            'reply_to' => self::bookings_addr(),
+            'tag'      => 'series-confirmation',
+        ]);
+    }
+
+    /** ONE staff alert for a whole series (gated by the manual-created toggle). */
+    public static function alert_series_created($series_id, $skipped = []) {
+        if (!self::on('alert_manual_created')) { return; }
+        $rows = MCLB_Bookings::for_series((int) $series_id);
+        if (empty($rows)) { return; }
+        $first = $rows[0];
+        /* translators: %d: number of sessions. */
+        $html  = '<p>' . sprintf(esc_html(_n('A recurring booking (%d session) was created:', 'A recurring booking (%d sessions) was created:', count($rows), 'mclb-lane-booking')), count($rows)) . '</p>';
+        $html .= '<p>' . esc_html(trim((string) $first->customer_name) ?: 'Guest') . '</p>';
+        $html .= self::dates_table($rows);
+        if (!empty($skipped)) {
+            $html .= '<p style="color:#666;">' . esc_html__('Skipped:', 'mclb-lane-booking') . ' ' . esc_html(implode(', ', array_map(function ($s) { return self::nice_date($s['date']); }, $skipped))) . '</p>';
+        }
+        self::staff_alert(__('Recurring booking created', 'mclb-lane-booking'), $html, $first, 'alert-series-created');
+    }
+
+    private static function nice_date($ymd) {
+        $tz = wp_timezone();
+        return wp_date('D j M Y', (new DateTimeImmutable((string) $ymd . ' 00:00:00', $tz))->getTimestamp());
+    }
+
+    /** A compact table of a series' occurrences (date + time, coach once if set). */
+    private static function dates_table($rows) {
+        $tz   = wp_timezone();
+        $tf   = get_option('time_format') ?: 'g:i a';
+        $cell = 'style="padding:5px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#222;"';
+        $out  = '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0;">';
+        foreach ($rows as $r) {
+            $s = (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp();
+            $e = (new DateTimeImmutable($r->ends_at, $tz))->getTimestamp();
+            $out .= '<tr><td ' . $cell . '>' . esc_html(wp_date('D j M Y', $s)) . '</td><td ' . $cell . '>' . esc_html(wp_date($tf, $s) . ' – ' . wp_date($tf, $e)) . '</td></tr>';
+        }
+        $out .= '</table>';
+        $first = $rows[0];
+        if ((int) $first->assigned_coach_id > 0 && class_exists('MCLB_Coaches')) {
+            $out .= '<p>' . esc_html(MCLB_Coaches::label_singular()) . ': ' . esc_html(MCLB_Coaches::label((int) $first->assigned_coach_id)) . ' · ' . esc_html($first->lane_name) . '</p>';
+        } else {
+            $out .= '<p>' . esc_html($first->lane_name) . '</p>';
+        }
+        return $out;
+    }
+
     private static function staff_alert($heading, $html, $booking, $tag) {
         $to = self::bookings_addr();
         if ($to === '') { return; } // no Bookings address configured → nothing to alert

@@ -106,11 +106,18 @@ class MCLB_Mail {
         return ['ok' => (bool) $ok, 'result' => $ok ? 'sent' : 'failed', 'recipient' => $real];
     }
 
-    /** Wrap inner HTML in WooCommerce's branded header/footer + inline its CSS. */
+    /** Wrap inner HTML in WooCommerce's branded header/footer + inline its CSS,
+     *  exactly as WooCommerce does when it sends its own order emails (so our
+     *  customer emails match). style_inline() runs WC's Emogrifier pass — without
+     *  it the template's <style> block is stripped by mail clients and the email
+     *  renders as unstyled serif text. */
     public static function wrap_wc($heading, $html) {
         if (function_exists('WC') && WC() && method_exists(WC()->mailer(), 'wrap_message')) {
             $wrapped = WC()->mailer()->wrap_message((string) $heading, $html);
-            // The woocommerce_mail_content filter runs the style-inliner.
+            if (class_exists('WC_Email')) {
+                $inliner = new WC_Email();
+                return (string) $inliner->style_inline($wrapped);
+            }
             return (string) apply_filters('woocommerce_mail_content', $wrapped);
         }
         return self::wrap_plain($heading, $html);
