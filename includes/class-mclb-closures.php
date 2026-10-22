@@ -68,7 +68,64 @@ class MCLB_Closures {
 
     public static function delete($id) {
         global $wpdb;
+        // Cascade: a closure's per-date release exceptions go with it (v1.4.1).
+        $wpdb->delete(self::exceptions_table(), ['closure_id' => (int) $id], ['%d']);
         return (bool) $wpdb->delete(self::table(), ['id' => (int) $id], ['%d']);
+    }
+
+    // ── Per-date release exceptions (Phase 1.4.1) ───────────────────────────────
+
+    public static function exceptions_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'mclb_closure_exceptions';
+    }
+
+    /** dbDelta-formatted CREATE TABLE for the release-exceptions. */
+    public static function exceptions_schema($charset_collate) {
+        $t = self::exceptions_table();
+        return "CREATE TABLE {$t} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  closure_id bigint(20) unsigned NOT NULL,
+  exception_date date NOT NULL,
+  lane_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  release_from time DEFAULT NULL,
+  actor varchar(20) DEFAULT NULL,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY closure_date (closure_id,exception_date),
+  KEY exception_date (exception_date)
+) ENGINE=InnoDB {$charset_collate};";
+    }
+
+    /** Add a release exception. $release_from = null (whole day) or 'HH:MM[:SS]'. */
+    public static function add_exception($closure_id, $exception_date, $lane_id, $release_from, $actor) {
+        global $wpdb;
+        $rf = ($release_from === null || $release_from === '') ? null : substr((string) $release_from, 0, 8);
+        $ok = $wpdb->insert(self::exceptions_table(), [
+            'closure_id'     => (int) $closure_id,
+            'exception_date' => (string) $exception_date,
+            'lane_id'        => (int) $lane_id,
+            'release_from'   => $rf,
+            'actor'          => mb_substr((string) $actor, 0, 20),
+            'created_at'     => current_time('mysql'),
+        ]);
+        return $ok ? (int) $wpdb->insert_id : false;
+    }
+
+    public static function get_exception($id) {
+        global $wpdb;
+        return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::exceptions_table() . ' WHERE id = %d', (int) $id));
+    }
+
+    public static function delete_exception($id) {
+        global $wpdb;
+        return (bool) $wpdb->delete(self::exceptions_table(), ['id' => (int) $id], ['%d']);
+    }
+
+    /** All release exceptions on $date (for the availability engine + calendar markers). */
+    public static function exceptions_for_day($date) {
+        global $wpdb;
+        return $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . self::exceptions_table() . ' WHERE exception_date = %s', (string) $date));
     }
 
     public static function get($id) {
@@ -92,12 +149,31 @@ class MCLB_Closures {
      * @return array<int,array>
      */
     public static function for_day_detail($date) {
-        $out = [];
+        $out  = [];
+        $exes = self::exceptions_for_day($date);
+        $tz   = wp_timezone();
+        $midnight = new DateTimeImmutable($date . ' 00:00:00', $tz);
         foreach (self::all() as $c) {
             $w = MCLB_Availability::closure_window($c, $date);
             if (!$w) {
                 continue;
             }
+            // Apply release exceptions so the admin calendar shows the effective
+            // (shortened/removed) blockout. An exception with lane_id 0 applies to
+            // the whole closure; one with lane_id = the closure's own lane applies
+            // to this lane-specific closure. (A per-lane release of a SITE-WIDE
+            // closure can't be shown as one entry, so it surfaces as a marker only.)
+            $start_min = (int) $w['start_min'];
+            $end_min   = (int) $w['end_min'];
+            $dropped   = false;
+            foreach ($exes as $ex) {
+                if ((int) $ex->closure_id !== (int) $c->id) { continue; }
+                if ((int) $ex->lane_id !== 0 && (int) $ex->lane_id !== (int) $c->lane_id) { continue; }
+                if ($ex->release_from === null || $ex->release_from === '') { $dropped = true; break; }
+                $cut = self::time_to_min((string) $ex->release_from);
+                if ($cut !== null && $cut < $end_min) { $end_min = max($start_min, $cut); }
+            }
+            if ($dropped || $end_min <= $start_min) { continue; }
             $out[] = [
                 'id'         => (int) $c->id,
                 'lane_id'    => (int) $c->lane_id,
@@ -107,10 +183,32 @@ class MCLB_Closures {
                 'colour'     => MCLB_Event_Types::color($c->event_type),
                 'type_label' => MCLB_Event_Types::admin_label($c->event_type),
                 'editable'   => ($c->kind === 'oneoff'),
-                'starts_at'  => $w['starts_at'],
-                'ends_at'    => $w['ends_at'],
-                'start_min'  => (int) $w['start_min'],
-                'end_min'    => (int) $w['end_min'],
+                'starts_at'  => $midnight->modify('+' . $start_min . ' minutes')->format('Y-m-d H:i:s'),
+                'ends_at'    => $midnight->modify('+' . $end_min . ' minutes')->format('Y-m-d H:i:s'),
+                'start_min'  => $start_min,
+                'end_min'    => $end_min,
+            ];
+        }
+        return $out;
+    }
+
+    /** HH:MM[:SS] → minutes-from-midnight, or null. */
+    private static function time_to_min($t) {
+        return preg_match('/^(\d{1,2}):(\d{2})/', (string) $t, $m) ? ((int) $m[1] * 60 + (int) $m[2]) : null;
+    }
+
+    /** Release markers for the calendar (+ undo), one per exception on $date. */
+    public static function released_for_day($date) {
+        $out = [];
+        foreach (self::exceptions_for_day($date) as $ex) {
+            $c = self::get((int) $ex->closure_id);
+            $out[] = [
+                'id'         => (int) $ex->id,
+                'closure_id' => (int) $ex->closure_id,
+                'lane_id'    => (int) $ex->lane_id,
+                'from'       => $ex->release_from ? substr((string) $ex->release_from, 0, 5) : '',
+                'actor'      => (string) $ex->actor,
+                'type_label' => $c ? MCLB_Event_Types::admin_label($c->event_type) : __('Blockout', 'mclb-lane-booking'),
             ];
         }
         return $out;

@@ -89,15 +89,18 @@ class MCLB_Coaches {
      *
      * @return int[] distinct coach ids
      */
-    public static function busy_ids($starts_at, $ends_at, $exclude_booking_id = 0) {
+    public static function busy_ids($starts_at, $ends_at, $exclude_booking_id = 0, $coach_starts_at = null, $coach_ends_at = null) {
         global $wpdb;
         $bt  = MCLB_Bookings::table();
         $now = current_time('mysql');
+        // Probe on the coach's EFFECTIVE window (partial coach time, v1.4.1), and
+        // compare against each row's effective window via the shared clause.
+        list($pcs, $pce) = MCLB_Bookings::coach_window($starts_at, $ends_at, $coach_starts_at, $coach_ends_at);
         $sql = "SELECT DISTINCT assigned_coach_id FROM $bt
                   WHERE assigned_coach_id IS NOT NULL
                     AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                    AND starts_at < %s AND ends_at > %s";
-        $params = [MCLB_Bookings::STATUS_CONFIRMED, MCLB_Bookings::STATUS_HELD, $now, $ends_at, $starts_at];
+                    AND " . MCLB_Bookings::coach_overlap_clause();
+        $params = [MCLB_Bookings::STATUS_CONFIRMED, MCLB_Bookings::STATUS_HELD, $now, $pce, $pcs];
         if ($exclude_booking_id) {
             $sql     .= ' AND id <> %d';
             $params[] = (int) $exclude_booking_id;
@@ -107,12 +110,13 @@ class MCLB_Coaches {
 
     /**
      * Bookable coaches free for a slot: options() minus busy_ids(). $exclude skips
-     * the booking being edited so its own coach stays listed.
+     * the booking being edited so its own coach stays listed. The coach range
+     * (when partial) narrows the check to the coach's own window.
      *
      * @return array [coach_id => name]
      */
-    public static function available_options($starts_at, $ends_at, $exclude_booking_id = 0) {
-        $busy = array_flip(self::busy_ids($starts_at, $ends_at, $exclude_booking_id));
+    public static function available_options($starts_at, $ends_at, $exclude_booking_id = 0, $coach_starts_at = null, $coach_ends_at = null) {
+        $busy = array_flip(self::busy_ids($starts_at, $ends_at, $exclude_booking_id, $coach_starts_at, $coach_ends_at));
         $out  = [];
         foreach (self::options() as $id => $name) {
             if (!isset($busy[(int) $id])) {

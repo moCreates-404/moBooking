@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.4.0
+Stable tag: 1.4.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,34 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.4.1 =
+* Partial coach time: a coach can now be booked for only part of a session. The
+  New-booking and booking-detail panels gain a "Coach time" control (start/end,
+  snapped to the booking increment and bounded by the session, defaulting to the
+  whole booking). The coach fee is charged on the coach's actual hours (rate ×
+  coach hours), the live "Lane + Coach = Due" line reflects it, and the coach
+  double-book guard checks only the coach's own window — so one coach can take
+  back-to-back half-sessions on different lanes. Recurring series carry one coach
+  sub-range applied to every occurrence; editing a series booking's coach can
+  apply to "this session only" or "this and all following". Moving a booking to a
+  shorter slot clamps the coach window to fit (with an audit line + toast). A new
+  coach-fee override (reason required) mirrors the lane-price override and is
+  allowed on any booking while the coach fee is unpaid. Day sheets, the coach's
+  "View my day" page, the calendar chip and the tooltip all show the coach's
+  actual hours, with the lane booking time in smaller text when they differ.
+* Block-out release / book-over: staff can free a blockout for a single date
+  without changing the recurring rule — "Release this date" (whole day) or
+  "Ended early at HH:MM" — from the blockout panel (one-off and recurring alike);
+  "Delete whole blockout" still removes a one-off entirely. Released dates free
+  the slot everywhere immediately (customer grid, REST, add-to-cart and checkout
+  all honour the single availability point). A "Released" marker on the day shows
+  who released it and offers "Undo release", which re-applies the blockout unless
+  a booking has since been taken in that window ("Can't restore: #123 is booked
+  in this window"). Dragging a new booking over a blockout pre-ticks override,
+  names the blockout and records the reason in History only. DB v6 adds the coach
+  sub-range + coach-fee-original columns and the mclb_closure_exceptions table
+  (dbDelta + self-heal); a deleted closure drops its exceptions.
 
 = 1.4.0 =
 * Recurring bookings (staff only): the manual-create panel (front Manage +

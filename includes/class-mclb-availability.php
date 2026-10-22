@@ -84,8 +84,12 @@ class MCLB_Availability {
 
         $closures = array_key_exists('closures', $args) ? (array) $args['closures'] : MCLB_Closures::for_lane($lane_id);
         $bookings = array_key_exists('bookings', $args) ? (array) $args['bookings'] : MCLB_Bookings::active_for_lane($lane_id, $day_start, $day_end);
+        // Per-date release exceptions (v1.4.1) — honoured here so EVERY consumer of
+        // for_lane (customer grid, REST, add-to-cart, checkout validation) frees the
+        // slot identically.
+        $exceptions = array_key_exists('exceptions', $args) ? (array) $args['exceptions'] : MCLB_Closures::exceptions_for_day($date);
 
-        $closed_intervals = self::closed_intervals($closures, $date, $weekday, $midnight, $tz);
+        $closed_intervals = self::closed_intervals($closures, $date, $weekday, $midnight, $tz, $lane_id, $exceptions);
         $booked_intervals = self::booked_intervals($bookings, $midnight, $tz);
 
         // Elapsed slots on today's date are unavailable — a slot whose start is in
@@ -174,6 +178,7 @@ class MCLB_Availability {
         // Query 2 & 3 — closures and bookings for the whole set at once.
         $closures_all = MCLB_Closures::for_lanes($ids);
         $bookings_all = MCLB_Bookings::active_for_lanes($ids, $day_start, $day_end);
+        $exceptions   = MCLB_Closures::exceptions_for_day($date); // v1.4.1 release exceptions (one query)
 
         // Group in PHP; site-wide closures (lane_id = 0) fan out to every lane.
         $site_closures = [];
@@ -198,6 +203,7 @@ class MCLB_Availability {
                 'increment'    => $increment,
                 'closures'     => array_merge($site_closures, $closures_by[$id] ?? []),
                 'bookings'     => $bookings_by[$id] ?? [],
+                'exceptions'   => $exceptions,
                 'include_past' => !empty($args['include_past']),
             ]);
             $result['lanes'][$id] = $avail;
@@ -284,15 +290,41 @@ class MCLB_Availability {
     // ── Interval helpers ────────────────────────────────────────────────────
 
     /** @return array<int,array{start:int,end:int,label:?string}> */
-    private static function closed_intervals(array $closures, $date, $weekday, DateTimeImmutable $midnight, DateTimeZone $tz) {
+    private static function closed_intervals(array $closures, $date, $weekday, DateTimeImmutable $midnight, DateTimeZone $tz, $lane_id = 0, array $exceptions = []) {
         $out = [];
         foreach ($closures as $c) {
             $m = self::closure_minutes($c, $date, $midnight, $tz);
+            if (!$m) { continue; }
+            $m = self::apply_exceptions($m, $c, (int) $lane_id, $exceptions);
             if ($m) {
                 $out[] = ['start' => $m['start'], 'end' => $m['end'], 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
             }
         }
         return $out;
+    }
+
+    /**
+     * Apply a closure's per-date release exceptions to its minute window for one
+     * lane (v1.4.1): a whole-day release (release_from NULL) removes it entirely;
+     * a "released from <time>" shortens the end to that time. An exception with
+     * lane_id 0 applies to every lane the closure covers; otherwise only its lane.
+     *
+     * @param array $m {start,end}
+     * @return array{start:int,end:int}|null
+     */
+    private static function apply_exceptions(array $m, $c, $lane_id, array $exceptions) {
+        foreach ($exceptions as $ex) {
+            if ((int) $ex->closure_id !== (int) $c->id) { continue; }
+            if ((int) $ex->lane_id !== 0 && (int) $ex->lane_id !== (int) $lane_id) { continue; }
+            if ($ex->release_from === null || $ex->release_from === '') {
+                return null; // whole-day release
+            }
+            $cut = self::hm_to_min((string) $ex->release_from);
+            if ($cut !== null && $cut < $m['end']) {
+                $m['end'] = max($m['start'], $cut);
+            }
+        }
+        return ($m['end'] > $m['start']) ? $m : null;
     }
 
     /**

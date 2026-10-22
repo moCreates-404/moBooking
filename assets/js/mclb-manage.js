@@ -71,6 +71,47 @@
     return h12 + ':' + pad(m) + ' ' + ap;
   }
   function timeInput(min) { return pad(Math.floor(min / 60)) + ':' + pad(min % 60); }
+  // Coach name + hours for chips/tooltips. When the coach covers only part of the
+  // session (partial coach time, v1.4.1) the hours are appended: "Rob 4:00–5:00 pm".
+  function coachChip(b) {
+    if (!b.coach_label) { return ''; }
+    if (b.coach_partial && b.coach_start_min != null && b.coach_end_min != null) {
+      return b.coach_label + ' ' + minToLabel(b.coach_start_min) + '–' + minToLabel(b.coach_end_min);
+    }
+    return b.coach_label;
+  }
+  // "1h" / "1.5h" for the fee breakdown.
+  function fmtHrs(h) { return (Math.round(h * 100) / 100).toString().replace(/\.0+$/, '') + 'h'; }
+  // Coach-time control (partial coach time, v1.4.1): two increment-snapped selects
+  // bounded by the booking range, defaulting to the whole session. partial() is
+  // false while it spans the whole booking (→ send no coach range = NULL = whole).
+  function buildCoachTime(startMin, endMin) {
+    var wrap = el('label', 'mclb-panel__field mclb-coachtime');
+    wrap.appendChild(el('span', null, (I18N.coachTime || 'Coach time')));
+    var row = el('div', 'mclb-coachtime__row');
+    var cStart = el('select'), cEnd = el('select');
+    var m;
+    for (m = startMin; m < endMin; m += INC) { cStart.appendChild(opt(String(m), minToLabel(m))); }
+    for (m = startMin + INC; m <= endMin; m += INC) { cEnd.appendChild(opt(String(m), minToLabel(m))); }
+    cStart.value = String(startMin); cEnd.value = String(endMin);
+    row.appendChild(cStart); row.appendChild(el('span', 'mclb-coachtime__dash', '–')); row.appendChild(cEnd);
+    wrap.appendChild(row);
+    // Keep end strictly after start (nudge end forward when needed).
+    function guard() {
+      if (parseInt(cEnd.value, 10) <= parseInt(cStart.value, 10)) {
+        cEnd.value = String(Math.min(endMin, parseInt(cStart.value, 10) + INC));
+      }
+    }
+    cStart.addEventListener('change', guard);
+    return {
+      wrap: wrap, cStart: cStart, cEnd: cEnd,
+      partial: function () { return parseInt(cStart.value, 10) !== startMin || parseInt(cEnd.value, 10) !== endMin; },
+      hours: function () { return (parseInt(cEnd.value, 10) - parseInt(cStart.value, 10)) / 60; },
+      startHHMM: function () { return timeInput(parseInt(cStart.value, 10)); },
+      endHHMM: function () { return timeInput(parseInt(cEnd.value, 10)); },
+      onChange: function (cb) { cStart.addEventListener('change', cb); cEnd.addEventListener('change', cb); }
+    };
+  }
   function dtToMin(dt) {               // "YYYY-MM-DD HH:MM:SS" → minutes of day
     var t = (dt || '').substr(11, 5).split(':');
     return (parseInt(t[0], 10) || 0) * 60 + (parseInt(t[1], 10) || 0);
@@ -144,6 +185,8 @@
     root.innerHTML = '';
     root.appendChild(toolbar());
     root.appendChild(collectStrip());
+    var rel = releasedStrip();
+    if (rel) { root.appendChild(rel); }
 
     var open = d.grid.open_min, close = d.grid.close_min;
     if (open == null || close == null) {
@@ -213,6 +256,34 @@
     return bar;
   }
   function opt(v, t) { var o = el('option', null, t); o.value = v; return o; }
+
+  // Released-blockout markers (v1.4.1). A whole-day release removes the blockout
+  // block entirely, so the only sign it is free is this strip; clicking a marker
+  // offers "Undo release" (which refuses if a booking now sits in the window).
+  function releasedStrip() {
+    var marks = (state.data && state.data.released) || [];
+    if (!marks.length) { return null; }
+    var strip = el('div', 'mclb-cal__collect mclb-cal__released');
+    strip.appendChild(el('strong', null, (I18N.released || 'Released') + ': '));
+    marks.forEach(function (m) {
+      var scope = (m.lane_id === 0) ? '' : (' · ' + (laneName(m.lane_id) || ('#' + m.lane_id)));
+      var when = m.from ? (' ' + (I18N.releasedFrom || 'from') + ' ' + m.from) : (' · ' + (I18N.wholeDay || 'whole day'));
+      var label = (m.type_label || 'Blockout') + when + scope + (m.actor ? ' (' + m.actor + ')' : '');
+      var chip = el('button', 'mclb-chip mclb-chip--released', label);
+      chip.onclick = function () { openReleaseUndo(m); };
+      strip.appendChild(chip);
+    });
+    return strip;
+  }
+
+  // Lane display name from the grouped grid data.
+  function laneName(laneId) {
+    var found = '';
+    ((state.data && state.data.types) || []).forEach(function (grp) {
+      (grp.lanes || []).forEach(function (l) { if (l.id === laneId) { found = l.name; } });
+    });
+    return found;
+  }
 
   function collectStrip() {
     var strip = el('div', 'mclb-cal__collect');
@@ -427,7 +498,7 @@
     block.title = titleText + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)
       + ' · ' + (b.source === 'online' ? 'Online' : 'Manual')
       + (seriesLabel ? ' · ' + seriesLabel : '')
-      + (b.coach_label ? ' · ' + b.coach_label : '')
+      + (b.coach_label ? ' · ' + coachChip(b) : '')
       + (b.phone ? ' · ' + b.phone : '')
       + (pill ? ' · ' + pill.label : '')
       + (b.price_original != null ? ' · ' + (I18N.priceOverridden || 'price overridden') : '');
@@ -436,7 +507,7 @@
     // where the name alone must stay readable and the rest is in the tooltip.
     if ((b.end_min - b.start_min) > 30) {
       var row = el('div', 'mclb-mblock__row');
-      if (b.coach_label) { row.appendChild(el('span', 'mclb-mblock__coach', b.coach_label)); }
+      if (b.coach_label) { row.appendChild(el('span', 'mclb-mblock__coach', coachChip(b))); }
       if (pill) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + pill.kind, pill.label)); }
       if (row.childNodes.length) { block.appendChild(row); }
     }
@@ -666,6 +737,11 @@
       var note = field(bookBody, I18N.notes || 'Note', mkInput('text'));
       var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
       field(bookBody, CFG.labels.staffSingular || 'Coach', coach);
+      // Coach time is always shown (it bounds which coaches are free): narrowing it
+      // re-fetches the free-coach list for that window, so a coach busy for the
+      // whole slot but free for a sub-range can still be picked (v1.4.1 fix #1).
+      var ct = buildCoachTime(startMin, endMin);
+      bookBody.appendChild(ct.wrap);
 
       var laneRate = lane.price_per_hour || 0, hours = (endMin - startMin) / 60;
       var baseLane = Math.round(laneRate * hours * 100) / 100;
@@ -678,20 +754,47 @@
       var preview = el('p', 'mclb-panel__preview');
       bookBody.appendChild(preview);
       var coachRates = {};
+      var coachLoaded = false;
       function laneVal() { var v = parseFloat(priceIn.value); return isNaN(v) ? 0 : v; }
       function updatePreview() {
-        var cfee = coachRates[coach.value] ? coachRates[coach.value] * hours : 0;
+        var isCoach = coach.value !== '0';
+        var rate = coachRates[coach.value]; if (rate == null) { rate = 0; }
+        var chrs = isCoach ? ct.hours() : 0;      // coach fee = rate × COACH hours (v1.4.1)
+        var cfee = Math.round(rate * chrs * 100) / 100;
         var l = laneVal();
-        preview.textContent = 'Lane ' + money(l) + (coach.value !== '0' ? ' + Coach ' + money(cfee) : '') + ' = Due ' + money(l + cfee);
+        // Only show the coach part when a coach is actually selected (fix #4).
+        var coachStr = isCoach ? (' + ' + (I18N.perSessionCoach || 'Coach') + ' ' + money(cfee) + ' (' + fmtHrs(chrs) + ' × ' + money(rate) + ')') : '';
+        preview.textContent = (I18N.perSessionLane || 'Lane') + ' ' + money(l) + coachStr + ' = ' + (I18N.due || 'Due') + ' ' + money(l + (isCoach ? cfee : 0));
         reasonWrap.style.display = (Math.abs(l - baseLane) > 0.001) ? '' : 'none';
       }
-      api('/coaches?date=' + state.date + '&start=' + timeInput(startMin) + '&end=' + timeInput(endMin))
-        .then(function (res) {
+      // Debounced free-coach fetch for the current coach window; keeps the chosen
+      // coach if still free, resets to "No coach" if not, and disables Save until
+      // a list is in hand (fix #1).
+      var coachSeq = 0, coachTimer = null;
+      function refreshCoaches() {
+        var want = String(coach.value);
+        var qs = '/coaches?date=' + state.date + '&start=' + timeInput(startMin) + '&end=' + timeInput(endMin);
+        if (ct.partial()) { qs += '&coach_start=' + ct.startHHMM() + '&coach_end=' + ct.endHHMM(); }
+        var seq = ++coachSeq;
+        if (save) { save.disabled = true; }
+        api(qs).then(function (res) {
+          if (seq !== coachSeq) { return; } // a newer fetch superseded this one
+          coachRates = {};
+          while (coach.options.length > 1) { coach.remove(1); } // keep "— No coach —"
           if (res.ok && res.body.coaches) {
             res.body.coaches.forEach(function (c) { coachRates[String(c.id)] = c.rate; coach.appendChild(opt(String(c.id), c.name + ' — ' + money(c.rate) + '/hr')); });
           }
+          coach.value = (want !== '0' && coachRates[want] != null) ? want : '0';
+          coachLoaded = true;
+          if (save) { save.disabled = false; }
+          updatePreview();
         });
-      coach.onchange = updatePreview; priceIn.oninput = updatePreview; updatePreview();
+      }
+      function scheduleCoachRefresh() { if (coachTimer) { clearTimeout(coachTimer); } coachTimer = setTimeout(refreshCoaches, 180); }
+      coach.onchange = updatePreview;
+      ct.onChange(function () { updatePreview(); scheduleCoachRefresh(); });
+      priceIn.oninput = updatePreview;
+      refreshCoaches(); updatePreview();
 
       var ovWrap = el('label', 'mclb-panel__override');
       var ov = el('input'); ov.type = 'checkbox';
@@ -699,10 +802,26 @@
       bookBody.appendChild(ovWrap);
       var ovWarn = el('p', 'mclb-panel__warn', '⚠ Booking outside normal availability.'); ovWarn.style.display = 'none';
       bookBody.appendChild(ovWarn);
+
+      // Book-over (v1.4.1): the dragged range overlaps a blockout on this lane.
+      // Pre-tick override, name the blockout, and require a reason (History only).
+      var blocking = (state.data.blockouts || []).filter(function (bo) {
+        return (bo.lane_id === 0 || bo.lane_id === lane.id) && bo.start_min < endMin && bo.end_min > startMin;
+      })[0];
+      var boWrap = el('label', 'mclb-panel__field'); boWrap.style.display = 'none';
+      boWrap.appendChild(el('span', null, I18N.bookOverReason || 'Reason for booking over the blockout'));
+      var boReason = mkInput('text'); boWrap.appendChild(boReason); bookBody.appendChild(boWrap);
+      if (blocking) {
+        ov.checked = true;
+        boWrap.style.display = '';
+        var boNote = el('p', 'mclb-panel__warn', (I18N.slotBlocked || 'This slot is blocked') + ': ' + (blocking.type_label || 'Unavailable') + (blocking.note ? ' (' + blocking.note + ')' : ''));
+        ovWrap.parentNode.insertBefore(boNote, ovWrap);
+      }
+
       // Show the warning when the range is genuinely outside hours/blockouts/past,
       // or when override is ticked. (Advisory — the server is the authority.)
       var outside = rangeOutside(lane, startMin, endMin);
-      function syncWarn() { ovWarn.style.display = (ov.checked || outside) ? '' : 'none'; }
+      function syncWarn() { ovWarn.style.display = (ov.checked || outside) ? '' : 'none'; boWrap.style.display = (blocking && ov.checked) ? '' : 'none'; }
       ov.onchange = syncWarn;
       syncWarn();
 
@@ -724,6 +843,7 @@
       var ini = initialsField(bookBody);
       var err = errBox(bookBody);
       var save = el('button', 'button button-primary mclb-panel__save', 'Create booking');
+      save.disabled = !coachLoaded; // enabled once the free-coach list is in hand (fix #1)
       bookBody.appendChild(save);
       var seriesBox = el('div', 'mclb-series-result'); seriesBox.style.display = 'none'; bookBody.appendChild(seriesBox);
 
@@ -734,11 +854,13 @@
       };
 
       function seriesBody() {
-        return {
+        var body = {
           lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
           repeat: repeat.value, mode: endMode.value, count: countIn.value, until: untilIn.value,
           coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0
         };
+        if (coach.value !== '0' && ct.partial()) { body.coach_start = ct.startHHMM(); body.coach_end = ct.endHHMM(); }
+        return body;
       }
 
       save.onclick = function () {
@@ -746,13 +868,18 @@
         if (!phone.value.trim()) { showErr(err, I18N.phoneRequired || 'A phone number is required.'); return; }
         initialsSet(ini.value.trim());
 
+        if (blocking && ov.checked && !boReason.value.trim()) { showErr(err, I18N.bookOverReasonRequired || 'A reason is required to book over a blockout.'); return; }
+
         if (!repeat.value) {
-          runWrite(save, err, api('/booking', { method: 'POST', body: {
+          var cbody = {
             lane_id: lane.id, date: state.date, start: timeInput(startMin), end: timeInput(endMin),
             name: name.value, email: email.value, phone: phone.value, note: note.value,
             coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0,
             override_price: priceIn.value, price_reason: reason.value, actor: ini.value.trim()
-          } }));
+          };
+          if (coach.value !== '0' && ct.partial()) { cbody.coach_start = ct.startHHMM(); cbody.coach_end = ct.endHHMM(); }
+          if (blocking && ov.checked) { cbody.book_over_reason = boReason.value.trim(); }
+          runWrite(save, err, api('/booking', { method: 'POST', body: cbody }));
           return;
         }
 
@@ -923,20 +1050,75 @@
       var coachSaveBtn = null; // set when the actions are built; enabled once coaches load
       var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
       field(panel, 'Change ' + (CFG.labels.staffSingular || 'coach'), coach);
-      api('/coaches?date=' + state.date + '&start=' + timeInput(b.start_min) + '&end=' + timeInput(b.end_min) + '&exclude=' + b.id)
-        .then(function (res) {
+
+      // Partial coach time (v1.4.1): always shown. Narrowing it re-fetches the
+      // free-coach list for that window (fix #1), so a coach busy for the whole
+      // slot but free for a sub-range can still be assigned. Defaults to this
+      // booking's current coach window, else the whole session.
+      var dct = buildCoachTime(b.start_min, b.end_min);
+      if (b.coach_partial && b.coach_start_min != null && b.coach_end_min != null) {
+        dct.cStart.value = String(b.coach_start_min); dct.cEnd.value = String(b.coach_end_min);
+      }
+      panel.appendChild(dct.wrap);
+
+      // Series scope: apply the coach change to this one, or this + all following.
+      var scopeSel = null;
+      if (b.series_id && b.series_m > 1) {
+        scopeSel = el('select');
+        scopeSel.appendChild(opt('this', I18N.scopeThis || 'This session only'));
+        scopeSel.appendChild(opt('following', I18N.scopeFollowing || 'This and all following'));
+        field(panel, I18N.applyTo || 'Apply to', scopeSel);
+      }
+
+      var dSeq = 0, dTimer = null;
+      function refreshDetailCoaches() {
+        var want = coach.value ? String(coach.value) : (b.coach_id ? String(b.coach_id) : '0');
+        var qs = '/coaches?date=' + state.date + '&start=' + timeInput(b.start_min) + '&end=' + timeInput(b.end_min) + '&exclude=' + b.id;
+        if (dct.partial()) { qs += '&coach_start=' + dct.startHHMM() + '&coach_end=' + dct.endHHMM(); }
+        var seq = ++dSeq;
+        if (coachSaveBtn) { coachSaveBtn.disabled = true; }
+        api(qs).then(function (res) {
+          if (seq !== dSeq) { return; }
           var list = (res.ok && res.body.coaches) ? res.body.coaches : [];
-          // Make sure the current coach is an option, then preselect it so an
-          // accidental Save can't silently remove them.
+          while (coach.options.length > 1) { coach.remove(1); } // keep "— No coach —"
+          // Keep the booking's current coach selectable even if busy elsewhere now.
           if (b.coach_id && !list.some(function (c) { return c.id === b.coach_id; })) {
             coach.appendChild(opt(String(b.coach_id), b.coach_label));
           }
           list.forEach(function (c) { coach.appendChild(opt(String(c.id), c.name + ' — ' + money(c.rate) + '/hr')); });
-          coach.value = b.coach_id ? String(b.coach_id) : '0';
+          var has = Array.prototype.some.call(coach.options, function (o) { return o.value === want; });
+          coach.value = has ? want : (b.coach_id ? String(b.coach_id) : '0');
           if (coachSaveBtn) { coachSaveBtn.disabled = false; }
         });
+      }
+      function scheduleDetailRefresh() { if (dTimer) { clearTimeout(dTimer); } dTimer = setTimeout(refreshDetailCoaches, 180); }
+      dct.onChange(scheduleDetailRefresh);
+      refreshDetailCoaches();
       var coachNote = mkInput('text'); coachNote.placeholder = 'note (required if counter paid)';
       if (b.counter_paid) { field(panel, 'Note', coachNote); }
+
+      // Coach-fee override (v1.4.1): mirrors the lane-price override — allowed on
+      // any booking while the coach fee is unpaid; a reason is required.
+      if (b.coach_id > 0 && !b.counter_paid) {
+        if (b.coach_fee_original != null) {
+          panel.appendChild(el('p', 'mclb-panel__warn', (I18N.coachFeeOverridden || 'Coach fee overridden') + ' (' + (I18N.was || 'was') + ' ' + money(b.coach_fee_original) + ')'));
+        }
+        var cfToggle = el('button', 'button mclb-panel__act', I18N.overrideCoachFee || 'Override coach fee');
+        panel.appendChild(cfToggle);
+        var cfForm = el('div', 'mclb-panel__edit'); cfForm.style.display = 'none'; panel.appendChild(cfForm);
+        var cfFee = field(cfForm, I18N.coachFee || 'Coach fee', mkInput('number')); cfFee.step = '0.01'; cfFee.min = '0';
+        cfFee.value = (b.coach_fee != null ? Number(b.coach_fee).toFixed(2) : '0.00');
+        var cfReason = field(cfForm, I18N.overrideReason || 'Reason', mkInput('text'));
+        var cfSave = el('button', 'button button-primary mclb-panel__save', I18N.saveCoachFee || 'Save coach fee'); cfForm.appendChild(cfSave);
+        cfToggle.onclick = function () { cfForm.style.display = (cfForm.style.display === 'none') ? '' : 'none'; };
+        cfSave.onclick = function () {
+          if (!needInitials()) { return; }
+          if (!cfReason.value.trim()) { showErr(err, I18N.reasonRequired || 'A reason is required.'); return; }
+          runWrite(cfSave, err, api('/booking/' + b.id + '/coach-fee', { method: 'POST', body: {
+            fee: cfFee.value, reason: cfReason.value, actor: ini.value.trim()
+          } }));
+        };
+      }
 
       // counter
       if (b.counter_due != null && b.counter_due > 0) {
@@ -987,7 +1169,10 @@
           showErr(err, I18N.noteRequiredPaid || 'A note is required because the counter payment has been taken.');
           return;
         }
-        runWrite(btn, err, api('/booking/' + b.id + '/coach', { method: 'POST', body: { coach_id: coachId, note: coachNote.value, actor: ini.value.trim() } }));
+        var cbody = { coach_id: coachId, note: coachNote.value, actor: ini.value.trim() };
+        if (coachId > 0 && dct.partial()) { cbody.coach_start = dct.startHHMM(); cbody.coach_end = dct.endHHMM(); }
+        if (scopeSel) { cbody.scope = scopeSel.value; }
+        runWrite(btn, err, api('/booking/' + b.id + '/coach', { method: 'POST', body: cbody }));
       });
       // Disabled until the free-coach list has loaded + the current coach is
       // preselected, so an accidental click can't fire the default "No coach".
@@ -1189,6 +1374,9 @@
             var jumped = res.body && res.body.date && res.body.date !== state.date;
             if (jumped) { toast((I18N.movedToast || 'Moved to %s').replace('%s', label), I18N.goToDay || 'Go to that day', function () { state.date = res.body.date; load(); }); }
             else { toast((I18N.movedToast || 'Moved to %s').replace('%s', label)); }
+            // Partial coach time (v1.4.1): warn when the coach window was clamped
+            // to fit a shorter session.
+            if (res.body && res.body.coach_clamped) { toast(I18N.coachClamped || 'Coach time was shortened to fit the new session.'); }
             load(true);
           } else { setBusy(save, false); showErr(err, errText(res)); }
         });
@@ -1210,29 +1398,95 @@
   function openBlockout(bo) {
     openPanel(function (panel) {
       panelHead(panel, (bo.type_label || 'Blockout') + ' · ' + minToLabel(bo.start_min) + '–' + minToLabel(bo.end_min));
-      if (!bo.editable) {
-        panel.appendChild(el('p', 'mclb-panel__ctx', 'Recurring blockout — edit it on the Closures screen.'));
-        if (bo.note) { panel.appendChild(el('p', 'mclb-panel__ctx', 'Note: ' + bo.note)); }
-        return;
+      var recurring = !bo.editable;
+      if (recurring) {
+        panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.recurringBlockout || 'Recurring blockout') + ' — ' + (I18N.editOnClosures || 'edit it on the Closures screen') + '.'));
       }
+      if (bo.note) { panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.note || 'Note') + ': ' + bo.note)); }
+
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+
+      // Existing releases for this blockout on this date (fix #6): show them with
+      // an Undo instead of re-offering "Ended early" as if nothing happened.
+      var myReleases = ((state.data && state.data.released) || []).filter(function (mk) { return mk.closure_id === bo.id; });
+      if (myReleases.length) {
+        var relDone = el('div', 'mclb-panel__release');
+        relDone.appendChild(el('strong', null, (I18N.alreadyReleased || 'Already released') + ' · ' + ((state.data && state.data.date_label) || state.date)));
+        myReleases.forEach(function (mk) {
+          var row = el('div', 'mclb-panel__relrow');
+          var when = mk.from ? ((I18N.releasedFrom || 'from') + ' ' + mk.from) : (I18N.wholeDay || 'whole day');
+          row.appendChild(el('span', null, when + (mk.actor ? ' (' + mk.actor + ')' : '')));
+          var undo = el('button', 'button mclb-panel__act', I18N.undoRelease || 'Undo release');
+          undo.onclick = function () { closePanel(); openReleaseUndo(mk); };
+          row.appendChild(undo);
+          relDone.appendChild(row);
+        });
+        panel.appendChild(relDone);
+      }
+
+      // ── Release this date (v1.4.1) — frees the slot without touching the rule.
+      //    Works for one-off and recurring blockouts alike. "Release the whole
+      //    blockout" is the Delete button below (one-off only). Hidden once a
+      //    release already exists for this date (undo it first). ──
+      if (!myReleases.length) {
+        var rel = el('div', 'mclb-panel__release');
+        rel.appendChild(el('strong', null, (I18N.releaseThisDate || 'Release this date') + ' · ' + ((state.data && state.data.date_label) || state.date)));
+        var endEarly = el('select');
+        endEarly.appendChild(opt('', I18N.releaseWholeDay || 'Free the whole day'));
+        for (var m = bo.start_min + INC; m < bo.end_min; m += INC) { endEarly.appendChild(opt(timeInput(m), (I18N.endedEarlyAt || 'Ended early at') + ' ' + minToLabel(m))); }
+        field(rel, I18N.howMuch || 'How much', endEarly);
+        var relBtn = actionBtn(I18N.release || 'Release', function (btn) {
+          if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+          initialsSet(ini.value.trim());
+          var body = { date: state.date, actor: ini.value.trim() };
+          if (endEarly.value) { body.release_from = endEarly.value; }
+          if (bo.lane_id) { body.lane_id = bo.lane_id; }
+          runWrite(btn, err, api('/closure/' + bo.id + '/release', { method: 'POST', body: body }));
+        });
+        var relActions = el('div', 'mclb-panel__actions'); relActions.appendChild(relBtn); rel.appendChild(relActions);
+        panel.appendChild(rel);
+      }
+
+      if (recurring) { return; } // no edit/delete for recurring here
+
+      // ── Edit / delete the one-off blockout ──
       var etype = el('select'); etype.appendChild(opt('', '— Event type —'));
       (CFG.eventTypes || []).forEach(function (t) { var o = opt(t.slug, t.label); if (t.slug === bo.event_type) { o.selected = true; } etype.appendChild(o); });
       field(panel, 'Event type', etype);
       var note = field(panel, 'Note', mkInput('text')); note.value = bo.note || '';
-      var ini = initialsField(panel);
-      var err = errBox(panel);
       var actions = el('div', 'mclb-panel__actions');
       actions.appendChild(actionBtn(I18N.save || 'Save', function (btn) {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
         initialsSet(ini.value.trim());
         runWrite(btn, err, api('/blockout/' + bo.id, { method: 'POST', body: { event_type: etype.value, note: note.value, actor: ini.value.trim() } }));
       }));
-      actions.appendChild(actionBtn(I18N.delete || 'Delete', function () {
+      actions.appendChild(actionBtn((I18N.deleteWholeBlockout || 'Delete whole blockout'), function () {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
         initialsSet(ini.value.trim());
         confirmStep(actions, 'Delete this blockout?', function (yesBtn) {
           runWrite(yesBtn, err, api('/blockout/' + bo.id, { method: 'DELETE', body: { actor: ini.value.trim() } }));
         });
+      }, 'is-danger'));
+      panel.appendChild(actions);
+    });
+  }
+
+  // ── Undo a release (click a "released" marker) ────────────────────────────────
+  function openReleaseUndo(m) {
+    openPanel(function (panel) {
+      panelHead(panel, (I18N.undoRelease || 'Undo release'));
+      var scope = (m.lane_id === 0) ? '' : (' · ' + (laneName(m.lane_id) || ('#' + m.lane_id)));
+      var when = m.from ? (' ' + (I18N.releasedFrom || 'from') + ' ' + m.from) : (' · ' + (I18N.wholeDay || 'whole day'));
+      panel.appendChild(el('p', 'mclb-panel__ctx', (m.type_label || 'Blockout') + when + scope + ' · ' + ((state.data && state.data.date_label) || state.date) + (m.actor ? ' (' + m.actor + ')' : '')));
+      panel.appendChild(el('p', 'mclb-panel__ctx', I18N.undoReleaseHint || 'This re-applies the blockout for this date. It will refuse if a booking now sits in the released window.'));
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+      var actions = el('div', 'mclb-panel__actions');
+      actions.appendChild(actionBtn((I18N.undoRelease || 'Undo release'), function (btn) {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        initialsSet(ini.value.trim());
+        runWrite(btn, err, api('/closure-exception/' + m.id, { method: 'DELETE', body: { actor: ini.value.trim() } }));
       }, 'is-danger'));
       panel.appendChild(actions);
     });

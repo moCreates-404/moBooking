@@ -50,6 +50,17 @@
 .mclb-chip { cursor: pointer; border: 1px solid var(--mclb-line); border-radius: 999px; padding: 3px 10px; font-size: 12px; background: #fff; }
 .mclb-chip--due { border-color: #b32d2e; color: #b32d2e; }
 .mclb-chip--refund { border-color: #8a6d00; color: #8a6d00; }
+/* Released-blockout markers (v1.4.1) */
+.mclb-cal__released { background: #f4faf9; }
+.mclb-chip--released { border-color: #0f766e; color: #0f766e; border-style: dashed; }
+
+/* Partial coach time (v1.4.1) */
+.mclb-coachtime__row { display: flex; align-items: center; gap: 8px; }
+.mclb-coachtime__row select { flex: 1 1 auto; }
+.mclb-coachtime__dash { color: var(--mclb-muted); }
+.mclb-panel__release { margin: 12px 0; padding: 10px; border: 1px dashed var(--mclb-line); border-radius: 8px; }
+.mclb-panel__release > strong { display: block; margin-bottom: 8px; font-size: 13px; }
+.mclb-panel__relrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 13px; }
 
 /* Calendar grid: a time gutter + stacked lane groups. The .mclb-cal box is the
  * 2D scroll container — horizontal for many lanes, vertical for the hours — so

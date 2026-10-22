@@ -48,6 +48,7 @@ class MCLB_Activator {
         $charset_collate = $wpdb->get_charset_collate();
         dbDelta(MCLB_Bookings::schema($charset_collate));
         dbDelta(MCLB_Closures::schema($charset_collate));
+        dbDelta(MCLB_Closures::exceptions_schema($charset_collate)); // v6 (Phase 1.4.1)
 
         // One-time v3 backfill: tag pre-existing orderless bookings as manual.
         // Runs ONLY when crossing up into v3 from an earlier version — not on

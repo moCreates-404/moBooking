@@ -113,7 +113,7 @@ class MCLB_Daysheets {
         $rows = self::coaches_with_sessions($date)[(int) $coach_id] ?? [];
         $sig  = [];
         foreach ($rows as $r) {
-            $sig[] = $r->id . '|' . $r->starts_at . '|' . $r->ends_at . '|' . $r->lane_name . '|' . $r->customer_name . '|' . $r->customer_phone . '|' . $r->staff_note;
+            $sig[] = $r->id . '|' . $r->starts_at . '|' . $r->ends_at . '|' . $r->coach_starts_at . '|' . $r->coach_ends_at . '|' . $r->lane_name . '|' . $r->customer_name . '|' . $r->customer_phone . '|' . $r->staff_note;
         }
         sort($sig);
         return md5(implode("\n", $sig));
@@ -245,10 +245,20 @@ class MCLB_Daysheets {
 
         $tr = '';
         foreach ($rows as $r) {
-            $s        = new DateTimeImmutable($r->starts_at, $tz);
-            $e        = new DateTimeImmutable($r->ends_at, $tz);
+            // Coach's own hours (partial coach time, v1.4.1): the Time column + the
+            // Duration are the COACH window; the lane booking time shows smaller
+            // beneath it when the coach covers only part of the session.
+            $partial  = ($r->coach_starts_at !== null && $r->coach_ends_at !== null);
+            list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
+            $s        = new DateTimeImmutable((string) $cs, $tz);
+            $e        = new DateTimeImmutable((string) $ce, $tz);
             $dur      = max(0, ($e->getTimestamp() - $s->getTimestamp()) / 3600);
             $time     = esc_html(wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp()));
+            if ($partial) {
+                $ls    = new DateTimeImmutable((string) $r->starts_at, $tz);
+                $le    = new DateTimeImmutable((string) $r->ends_at, $tz);
+                $time .= '<br><span style="color:#888;font-size:12px;font-weight:400;">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), wp_date($tf, $ls->getTimestamp()) . ' – ' . wp_date($tf, $le->getTimestamp()))) . '</span>';
+            }
             $customer = esc_html(self::format_name($r->customer_name));
             // Phone follows the name-visibility setting (shown only when a name is).
             $phone    = ($customer !== '' && $r->customer_phone) ? esc_html(MCLB_Phone::format_au($r->customer_phone)) : '';
@@ -298,11 +308,14 @@ class MCLB_Daysheets {
         $club = get_bloginfo('name') ?: 'Cricketers Club';
         $out  = $club . "\n" . sprintf(__('Hi %1$s — your sessions for %2$s:', 'mclb-lane-booking'), $first_name, $date_label) . "\n\n";
         foreach ($rows as $r) {
-            $s        = new DateTimeImmutable($r->starts_at, $tz);
-            $e        = new DateTimeImmutable($r->ends_at, $tz);
+            $partial  = ($r->coach_starts_at !== null && $r->coach_ends_at !== null);
+            list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
+            $s        = new DateTimeImmutable((string) $cs, $tz);
+            $e        = new DateTimeImmutable((string) $ce, $tz);
+            $lane_t   = $partial ? ('  (' . sprintf(__('lane %s', 'mclb-lane-booking'), wp_date($tf, (new DateTimeImmutable((string) $r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $r->ends_at, $tz))->getTimestamp())) . ')') : '';
             $customer = self::format_name($r->customer_name);
             $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
-            $out     .= wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp())
+            $out     .= wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp()) . $lane_t
                 . '  ' . $r->lane_name
                 . ($customer !== '' ? '  ' . $customer : '')
                 . ($phone !== '' ? '  ' . $phone : '')

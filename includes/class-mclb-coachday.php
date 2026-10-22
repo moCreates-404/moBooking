@@ -109,8 +109,10 @@ class MCLB_Coachday {
             $x        = $gut + $laneIdx[(int) $r->lane_id] * $colW;
             $customer = self::fmt($r->customer_name);
             $note     = (string) $r->staff_note;
+            $ct = self::coach_times($r, $tz, $tf);
             $tl .= '<div class="mclb-cd-block" style="top:' . ($head + ($s - $top) * $ppm) . 'px;height:' . (max($e - $s, 30) * $ppm - 2) . 'px;left:' . ($x + 2) . 'px;width:' . ($colW - 6) . 'px;">'
-                . '<strong>' . esc_html(wp_date($tf, (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp())) . '</strong>'
+                . '<strong>' . esc_html($ct['start']) . '</strong>'
+                . ($ct['partial'] ? '<br><span class="mclb-cd-sub">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), $ct['lane'])) . '</span>' : '')
                 . ($customer !== '' ? '<br>' . esc_html($customer) : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')
                 . '</div>';
@@ -123,11 +125,13 @@ class MCLB_Coachday {
             $customer = self::fmt($r->customer_name);
             $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
             $note     = (string) $r->staff_note;
+            $ct = self::coach_times($r, $tz, $tf);
             $li .= '<li><span class="mclb-cd-time">'
-                . esc_html(wp_date($tf, (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable($r->ends_at, $tz))->getTimestamp()))
+                . esc_html($ct['range'])
                 . '</span> · ' . esc_html($r->lane_name)
                 . ($customer !== '' ? ' · ' . esc_html($customer) : '')
                 . ($phone !== '' ? ' · ' . esc_html($phone) : '')
+                . ($ct['partial'] ? '<br><span class="mclb-cd-note">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), $ct['lane'])) . '</span>' : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')
                 . '</li>';
         }
@@ -138,6 +142,27 @@ class MCLB_Coachday {
 
     private static function fmt($raw) {
         return MCLB_Daysheets::format_name($raw);
+    }
+
+    /**
+     * Coach's own hours for a row (partial coach time, v1.4.1). When the coach
+     * covers only part of the session, 'partial' is true and 'lane' carries the
+     * full lane booking time to show smaller underneath the coach hours.
+     *
+     * @return array{start:string,range:string,lane:string,partial:bool}
+     */
+    private static function coach_times($r, $tz, $tf) {
+        $partial = ($r->coach_starts_at !== null && $r->coach_ends_at !== null);
+        list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
+        $f = static function ($dt) use ($tz, $tf) {
+            return wp_date($tf, (new DateTimeImmutable((string) $dt, $tz))->getTimestamp());
+        };
+        return [
+            'start'   => $f($cs),
+            'range'   => $f($cs) . ' – ' . $f($ce),
+            'lane'    => $partial ? ($f($r->starts_at) . ' – ' . $f($r->ends_at)) : '',
+            'partial' => $partial,
+        ];
     }
 
     /** A standalone minimal HTML document (we own the whole response here). */
@@ -162,6 +187,7 @@ class MCLB_Coachday {
   .mclb-cd-list li:last-child{border-bottom:none;}
   .mclb-cd-time{font-weight:700;}
   .mclb-cd-note{color:#777;font-size:13px;}
+  .mclb-cd-sub{color:#888;font-size:11px;}
   /* Timeline is an enhancement for wider screens; the list always covers phones. */
   .mclb-cd-tlwrap{display:none;overflow-x:auto;background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:8px;}
   .mclb-cd-tl{position:relative;}

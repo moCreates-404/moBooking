@@ -90,6 +90,9 @@ class MCLB_Bookings {
   source varchar(10) NOT NULL DEFAULT 'online',
   coach_rate decimal(10,2) DEFAULT NULL,
   coach_fee decimal(10,2) DEFAULT NULL,
+  coach_fee_original decimal(10,2) DEFAULT NULL,
+  coach_starts_at datetime DEFAULT NULL,
+  coach_ends_at datetime DEFAULT NULL,
   counter_due decimal(10,2) DEFAULT NULL,
   counter_paid_at datetime DEFAULT NULL,
   counter_paid_by bigint(20) unsigned DEFAULT NULL,
@@ -427,12 +430,16 @@ class MCLB_Bookings {
             if ($rate === null) {
                 return ['ok' => false, 'error' => 'coach_no_rate'];
             }
+            // Coach fee = rate × COACH hours (partial coach time, v1.4.1).
+            list($cs, $ce) = self::coach_window($data['starts_at'], $data['ends_at'], $data['coach_starts_at'] ?? null, $data['coach_ends_at'] ?? null);
             $data['assigned_coach_id'] = $coach_id;
             $data['coach_rate']        = (float) $rate;
-            $data['coach_fee']         = MCLB_Coaches::fee($rate, $data['starts_at'], $data['ends_at']);
+            $data['coach_fee']         = MCLB_Coaches::fee($rate, $cs, $ce);
             $data['counter_due']       = round($price + $data['coach_fee'], 2);
         } else {
-            $data['counter_due'] = round($price, 2);
+            $data['coach_starts_at'] = null;
+            $data['coach_ends_at']   = null;
+            $data['counter_due']     = round($price, 2);
         }
 
         $lock_coach = ($coach_id > 0);
@@ -490,7 +497,8 @@ class MCLB_Bookings {
         // read: the caller holds this coach's named lock (see insert_confirmed_locked)
         // so no other writer can assign the coach concurrently.
         if ($coach_id > 0) {
-            if (self::coach_conflict($coach_id, $data['starts_at'], $data['ends_at'])) {
+            list($pcs, $pce) = self::coach_window($data['starts_at'], $data['ends_at'], $data['coach_starts_at'] ?? null, $data['coach_ends_at'] ?? null);
+            if (self::coach_conflict($coach_id, $pcs, $pce)) {
                 $wpdb->query('ROLLBACK');
                 return ['ok' => false, 'conflict' => true, 'reason' => 'coach'];
             }
@@ -512,6 +520,9 @@ class MCLB_Bookings {
             'assigned_coach_id' => $coach_id ?: null,
             'coach_rate'        => isset($data['coach_rate']) ? (float) $data['coach_rate'] : null,
             'coach_fee'         => isset($data['coach_fee']) ? (float) $data['coach_fee'] : null,
+            'coach_fee_original'=> isset($data['coach_fee_original']) ? (float) $data['coach_fee_original'] : null,
+            'coach_starts_at'   => ($coach_id > 0 && !empty($data['coach_starts_at'])) ? $data['coach_starts_at'] : null,
+            'coach_ends_at'     => ($coach_id > 0 && !empty($data['coach_ends_at'])) ? $data['coach_ends_at'] : null,
             'counter_due'       => isset($data['counter_due']) ? (float) $data['counter_due'] : null,
             'source'            => isset($data['source']) ? sanitize_text_field($data['source']) : 'manual',
             'admin_note'        => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
@@ -866,7 +877,7 @@ class MCLB_Bookings {
         $wpdb->query($wpdb->prepare('SELECT RELEASE_LOCK(%s)', self::coach_lock_name($coach_id)));
     }
 
-    public static function assign_coach_locked($booking_id, $coach_id, $note = '') {
+    public static function assign_coach_locked($booking_id, $coach_id, $note = '', $coach_starts_at = null, $coach_ends_at = null) {
         $booking_id = (int) $booking_id;
         $coach_id   = (int) $coach_id;
 
@@ -887,7 +898,7 @@ class MCLB_Bookings {
                 continue; // coach busy with another assignment — retry
             }
             try {
-                $r = self::attempt_assign_coach($booking_id, $coach_id, (float) $rate, (string) $note);
+                $r = self::attempt_assign_coach($booking_id, $coach_id, (float) $rate, (string) $note, $coach_starts_at, $coach_ends_at);
             } finally {
                 self::release_coach_lock($coach_id);
             }
@@ -899,7 +910,7 @@ class MCLB_Bookings {
         return ['ok' => false, 'lock_error' => true];
     }
 
-    private static function attempt_assign_coach($booking_id, $coach_id, $rate, $note) {
+    private static function attempt_assign_coach($booking_id, $coach_id, $rate, $note, $coach_starts_at = null, $coach_ends_at = null) {
         global $wpdb;
         $t   = self::table();
         $now = current_time('mysql');
@@ -912,18 +923,15 @@ class MCLB_Bookings {
         if (!$b) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_found']; }
         if ($b->status !== self::STATUS_CONFIRMED) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'not_confirmed']; }
 
-        // Coach double-book guard. Plain read — the caller holds this coach's named
-        // lock, so no other writer can assign the coach concurrently.
-        if (self::coach_conflict($coach_id, $b->starts_at, $b->ends_at, $booking_id)) {
-            $wpdb->query('ROLLBACK');
-            return ['ok' => false, 'conflict' => true, 'reason' => 'coach'];
-        }
-
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+
         if ($paid) {
-            // Financials locked: a swap requires a note (enforced here); the audit
-            // line itself is written once by the caller in the standard format.
+            // Financials locked: a swap requires a note; coach TIME can't change
+            // (that would re-price). Conflict-check the new coach on the existing
+            // effective window. The audit line is written once by the caller.
             if (trim((string) $note) === '') { $wpdb->query('ROLLBACK'); return ['ok' => false, 'error' => 'locked_need_note']; }
+            list($cs, $ce) = self::coach_window($b->starts_at, $b->ends_at, $b->coach_starts_at, $b->coach_ends_at);
+            if (self::coach_conflict($coach_id, $cs, $ce, $booking_id)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach']; }
             $upd = $wpdb->update($t, ['assigned_coach_id' => $coach_id, 'updated_at' => $now], ['id' => $booking_id]);
             if ($upd === false) {
                 $lock = self::is_lock_error($wpdb->last_error);
@@ -934,16 +942,23 @@ class MCLB_Bookings {
             return ['ok' => true, 'locked' => true, 'coach_fee' => (float) $b->coach_fee, 'counter_due' => (float) $b->counter_due];
         }
 
-        // Unpaid → snapshot the rate, (re)compute fee + counter_due.
-        $fee         = MCLB_Coaches::fee($rate, $b->starts_at, $b->ends_at);
+        // Unpaid → use the requested coach window, (re)compute fee + counter_due,
+        // and clear any coach-fee override (a (re)assign / time change resets it).
+        list($cs, $ce) = self::coach_window($b->starts_at, $b->ends_at, $coach_starts_at, $coach_ends_at);
+        if (self::coach_conflict($coach_id, $cs, $ce, $booking_id)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach']; }
+        $fee         = MCLB_Coaches::fee($rate, $cs, $ce);
         $price       = (float) $b->price;
         $counter_due = ($b->source === 'manual') ? round($price + $fee, 2) : round($fee, 2);
+        $override_cleared = ($b->coach_fee_original !== null);
         $upd = $wpdb->update($t, [
-            'assigned_coach_id' => $coach_id,
-            'coach_rate'        => $rate,
-            'coach_fee'         => $fee,
-            'counter_due'       => $counter_due,
-            'updated_at'        => $now,
+            'assigned_coach_id'  => $coach_id,
+            'coach_rate'         => $rate,
+            'coach_fee'          => $fee,
+            'coach_fee_original' => null,
+            'coach_starts_at'    => ($coach_starts_at !== null && $coach_starts_at !== '') ? $coach_starts_at : null,
+            'coach_ends_at'      => ($coach_ends_at !== null && $coach_ends_at !== '') ? $coach_ends_at : null,
+            'counter_due'        => $counter_due,
+            'updated_at'         => $now,
         ], ['id' => $booking_id]);
         if ($upd === false) {
             $lock = self::is_lock_error($wpdb->last_error);
@@ -951,7 +966,7 @@ class MCLB_Bookings {
             return $lock ? ['ok' => false, 'lock_error' => true] : ['ok' => false, 'error' => 'db'];
         }
         $wpdb->query('COMMIT');
-        return ['ok' => true, 'coach_fee' => $fee, 'counter_due' => $counter_due];
+        return ['ok' => true, 'coach_fee' => $fee, 'counter_due' => $counter_due, 'override_cleared' => $override_cleared];
     }
 
     /** Remove the coach. Unpaid → recompute counter_due; paid → needs a note, logged. */
@@ -974,11 +989,14 @@ class MCLB_Bookings {
         $price       = (float) $b->price;
         $counter_due = ($b->source === 'manual') ? round($price, 2) : null;
         $wpdb->update($t, [
-            'assigned_coach_id' => null,
-            'coach_rate'        => null,
-            'coach_fee'         => null,
-            'counter_due'       => $counter_due,
-            'updated_at'        => $now,
+            'assigned_coach_id'  => null,
+            'coach_rate'         => null,
+            'coach_fee'          => null,
+            'coach_fee_original' => null,
+            'coach_starts_at'    => null,
+            'coach_ends_at'      => null,
+            'counter_due'        => $counter_due,
+            'updated_at'         => $now,
         ], ['id' => (int) $booking_id]);
         return ['ok' => true];
     }
@@ -1153,19 +1171,37 @@ class MCLB_Bookings {
         if (self::is_lock_error($wpdb->last_error)) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'lock_error' => true]; }
         if ($conflict) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'lane', 'conflict_id' => (int) $conflict]; }
 
-        // Coach double-book guard (plain read — caller holds the coach's named lock).
+        // Coach range shifts by the same offset as the booking (partial coach time,
+        // v1.4.1), clamped into the new booking when a duration change would push it
+        // out. Coach clash + fee use that effective window.
         $coach_id = (int) $b->assigned_coach_id;
+        $online   = ((string) $b->source === 'online');
+        $paid     = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        $coach_cs = null; $coach_ce = null; $coach_clamped = false;
         if ($coach_id > 0) {
-            $busy = self::coach_conflict($coach_id, $starts_at, $ends_at, $id);
+            if ($b->coach_starts_at !== null && $b->coach_ends_at !== null) {
+                $tz     = wp_timezone();
+                $offset = (new DateTimeImmutable((string) $starts_at, $tz))->getTimestamp() - (new DateTimeImmutable((string) $b->starts_at, $tz))->getTimestamp();
+                $cs = (new DateTimeImmutable((string) $b->coach_starts_at, $tz))->modify($offset . ' seconds');
+                $ce = (new DateTimeImmutable((string) $b->coach_ends_at, $tz))->modify($offset . ' seconds');
+                $bs = new DateTimeImmutable((string) $starts_at, $tz);
+                $be = new DateTimeImmutable((string) $ends_at, $tz);
+                if ($cs < $bs) { $cs = $bs; $coach_clamped = true; }
+                if ($ce > $be) { $ce = $be; $coach_clamped = true; }
+                if ($cs >= $ce) { $cs = $bs; $ce = $be; $coach_clamped = true; }
+                $coach_cs = $cs->format('Y-m-d H:i:s');
+                $coach_ce = $ce->format('Y-m-d H:i:s');
+            }
+            list($pcs, $pce) = self::coach_window($starts_at, $ends_at, $coach_cs, $coach_ce);
+            $busy = self::coach_conflict($coach_id, $pcs, $pce, $id);
             if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach', 'conflict_id' => (int) $busy]; }
         }
 
         $new_lane_name  = get_the_title($new_lane_id);
         $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at);
         $old_price      = (float) $b->price;
-        $online         = ((string) $b->source === 'online');
-        $paid           = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
-        $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $starts_at, $ends_at) : null;
+        list($efcs, $efce) = self::coach_window($starts_at, $ends_at, $coach_cs, $coach_ce);
+        $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $efcs, $efce) : null;
         $delta          = round($new_lane_price - $old_price, 2);
         $mode           = self::money_mode($online, $paid, $delta);
 
@@ -1176,7 +1212,11 @@ class MCLB_Bookings {
             'ends_at'    => $ends_at,
             'updated_at' => $now,
         ];
-        if ($coach_id > 0) { $upd['coach_fee'] = $coach_fee_new; }
+        if ($coach_id > 0) {
+            $upd['coach_starts_at'] = $coach_cs; // shifted/clamped (null = whole booking)
+            $upd['coach_ends_at']   = $coach_ce;
+            if (!$paid) { $upd['coach_fee'] = $coach_fee_new; } // fee locked once counter-paid
+        }
 
         // Money (see Phase 1.3.0 rules). A counter-PAID booking is money-locked:
         // move the slot but leave price/counter_due alone (flagged for manual review).
@@ -1215,8 +1255,9 @@ class MCLB_Bookings {
             'order_item_id' => (int) $b->order_item_id,
             'coach_id'      => $coach_id,
             'old'   => ['lane_id' => (int) $b->lane_id, 'lane_name' => (string) $b->lane_name, 'starts_at' => (string) $b->starts_at, 'ends_at' => (string) $b->ends_at, 'price' => $old_price, 'counter_due' => $b->counter_due],
-            'new'   => ['lane_id' => $new_lane_id, 'lane_name' => $new_lane_name, 'starts_at' => (string) $starts_at, 'ends_at' => (string) $ends_at],
+            'new'   => ['lane_id' => $new_lane_id, 'lane_name' => $new_lane_name, 'starts_at' => (string) $starts_at, 'ends_at' => (string) $ends_at, 'coach_starts_at' => $coach_cs, 'coach_ends_at' => $coach_ce],
             'money' => ['mode' => $mode, 'new_lane_price' => $new_lane_price, 'old_price' => $old_price, 'delta' => $delta, 'coach_fee_new' => $coach_fee_new],
+            'coach_clamped' => $coach_clamped,
         ];
     }
 
@@ -1242,7 +1283,32 @@ class MCLB_Bookings {
      *
      * @param int $exclude_id a booking id to ignore (the row being moved/edited).
      */
-    public static function coach_conflict($coach_id, $starts_at, $ends_at, $exclude_id = 0) {
+    /**
+     * The effective-coach-window overlap predicate — a coach occupies its coach
+     * sub-range when set (coach_starts_at/coach_ends_at), else the whole booking.
+     * Shared by coach_conflict() and MCLB_Coaches::busy_ids() so the partial coach
+     * time rule (v1.4.1) lives in exactly one place. Two %s placeholders: the
+     * PROBE end then the PROBE start.
+     */
+    public static function coach_overlap_clause() {
+        return 'COALESCE(coach_starts_at, starts_at) < %s AND COALESCE(coach_ends_at, ends_at) > %s';
+    }
+
+    /** Effective coach window for a prospective booking: the coach sub-range if set, else the booking range. */
+    public static function coach_window($starts_at, $ends_at, $coach_starts_at = null, $coach_ends_at = null) {
+        return [
+            ($coach_starts_at !== null && $coach_starts_at !== '') ? (string) $coach_starts_at : (string) $starts_at,
+            ($coach_ends_at !== null && $coach_ends_at !== '') ? (string) $coach_ends_at : (string) $ends_at,
+        ];
+    }
+
+    /**
+     * Id of a booking whose coach (effective) window overlaps the PROBE coach
+     * window, or null. Pass the probe's EFFECTIVE coach range (caller resolves
+     * NULL→booking via coach_window()). Plain read; the hard guarantee is the
+     * caller's GET_LOCK. $exclude_id skips the row being edited.
+     */
+    public static function coach_conflict($coach_id, $coach_starts_at, $coach_ends_at, $exclude_id = 0) {
         global $wpdb;
         $coach_id = (int) $coach_id;
         if ($coach_id <= 0) {
@@ -1251,8 +1317,8 @@ class MCLB_Bookings {
         $sql  = 'SELECT id FROM ' . self::table() . '
                    WHERE assigned_coach_id = %d
                      AND (status = %s OR (status = %s AND hold_expires_at > %s))
-                     AND starts_at < %s AND ends_at > %s';
-        $args = [$coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, current_time('mysql'), $ends_at, $starts_at];
+                     AND ' . self::coach_overlap_clause();
+        $args = [$coach_id, self::STATUS_CONFIRMED, self::STATUS_HELD, current_time('mysql'), $coach_ends_at, $coach_starts_at];
         if ((int) $exclude_id > 0) {
             $sql .= ' AND id <> %d';
             $args[] = (int) $exclude_id;
@@ -1260,6 +1326,60 @@ class MCLB_Bookings {
         $sql .= ' LIMIT 1';
         $id = $wpdb->get_var($wpdb->prepare($sql, $args));
         return $id ? (int) $id : null;
+    }
+
+    /**
+     * Validate a coach sub-range against its booking (every write path calls this;
+     * the UI's clamping is advisory only). NULL/NULL = whole booking = valid.
+     * Otherwise both must be set, start < end, aligned to the booking increment
+     * from the booking start, and inside [booking start, booking end].
+     */
+    public static function validate_coach_time($starts_at, $ends_at, $coach_starts_at, $coach_ends_at) {
+        $cs = ($coach_starts_at === null || $coach_starts_at === '') ? null : (string) $coach_starts_at;
+        $ce = ($coach_ends_at === null || $coach_ends_at === '') ? null : (string) $coach_ends_at;
+        if ($cs === null && $ce === null) { return true; }
+        if ($cs === null || $ce === null) { return false; }
+        $tz = wp_timezone();
+        $bs = new DateTimeImmutable((string) $starts_at, $tz);
+        $be = new DateTimeImmutable((string) $ends_at, $tz);
+        $csd = new DateTimeImmutable($cs, $tz);
+        $ced = new DateTimeImmutable($ce, $tz);
+        if ($csd >= $ced) { return false; }
+        if ($csd < $bs || $ced > $be) { return false; }
+        $inc = (int) MCLB_Settings::get('booking_increment');
+        if ($inc < 1) { $inc = 60; }
+        $o1 = (int) (($csd->getTimestamp() - $bs->getTimestamp()) / 60);
+        $o2 = (int) (($ced->getTimestamp() - $bs->getTimestamp()) / 60);
+        return ($o1 % $inc === 0) && ($o2 % $inc === 0);
+    }
+
+    /**
+     * Override a booking's COACH fee (v1.4.1), mirroring override_lane_price:
+     * keeps coach_fee_original (set once), recomputes counter_due. Allowed on ANY
+     * booking while the coach fee is unpaid (the coach fee is collected at the
+     * counter even on online bookings); callers gate to counter-unpaid + record
+     * the audit line.
+     *
+     * @return array ok + old/new fee, or an error key.
+     */
+    public static function override_coach_fee($id, $new_fee) {
+        global $wpdb;
+        $b = self::get((int) $id);
+        if (!$b) { return ['ok' => false, 'error' => 'not_found']; }
+        if ((int) $b->assigned_coach_id <= 0) { return ['ok' => false, 'error' => 'no_coach']; }
+        $new_fee = round((float) $new_fee, 2);
+        if ($new_fee < 0) { return ['ok' => false, 'error' => 'bad_fee']; }
+        $old      = (float) $b->coach_fee;
+        $original = ($b->coach_fee_original === null) ? $old : (float) $b->coach_fee_original;
+        $lane_part = ((string) $b->source === 'manual') ? (float) $b->price : 0.0; // online lane is paid online
+        $due       = round($lane_part + $new_fee, 2);
+        $ok = $wpdb->update(self::table(), [
+            'coach_fee'          => $new_fee,
+            'coach_fee_original' => $original,
+            'counter_due'        => $due > 0 ? $due : null,
+            'updated_at'         => current_time('mysql'),
+        ], ['id' => (int) $id]);
+        return ['ok' => $ok !== false, 'old' => $old, 'new' => $new_fee];
     }
 
     /**
@@ -1281,7 +1401,7 @@ class MCLB_Bookings {
      *
      * @return array{available:bool,reason:string}
      */
-    public static function slot_available($lane_id, $coach_id, $starts_at, $ends_at, $override = false) {
+    public static function slot_available($lane_id, $coach_id, $starts_at, $ends_at, $override = false, $coach_starts_at = null, $coach_ends_at = null) {
         global $wpdb;
         $t   = self::table();
         $now = current_time('mysql');
@@ -1293,7 +1413,9 @@ class MCLB_Bookings {
             (int) $lane_id, self::STATUS_CONFIRMED, self::STATUS_HELD, $now, $ends_at, $starts_at
         ));
         if ($clash) { return ['available' => false, 'reason' => 'lane']; }
-        if (self::coach_conflict($coach_id, $starts_at, $ends_at)) {
+        // Coach clash on the coach's EFFECTIVE window (partial coach time, v1.4.1).
+        list($cs, $ce) = self::coach_window($starts_at, $ends_at, $coach_starts_at, $coach_ends_at);
+        if (self::coach_conflict($coach_id, $cs, $ce)) {
             return ['available' => false, 'reason' => 'coach'];
         }
         return ['available' => true, 'reason' => ''];
@@ -1326,6 +1448,11 @@ class MCLB_Bookings {
             $data = $base;
             $data['starts_at'] = $s;
             $data['ends_at']   = $e;
+            // Per-occurrence coach window (partial coach time, v1.4.1). NULL when
+            // the coach covers the whole session; insert_confirmed_locked prices
+            // and clash-checks on the effective window either way.
+            $data['coach_starts_at'] = isset($slot['coach_starts_at']) ? $slot['coach_starts_at'] : null;
+            $data['coach_ends_at']   = isset($slot['coach_ends_at'])   ? $slot['coach_ends_at']   : null;
             $r = self::insert_confirmed_locked($data);
             if (!empty($r['ok'])) {
                 $created[] = (int) $r['id'];
