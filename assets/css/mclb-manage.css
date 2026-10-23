@@ -53,6 +53,11 @@
 /* Released-blockout markers (v1.4.1) */
 .mclb-cal__released { background: #f4faf9; }
 .mclb-chip--released { border-color: #0f766e; color: #0f766e; border-style: dashed; }
+/* Coupon / credit badges + panel line (v1.4.2) */
+.mclb-badge--coupon { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.mclb-badge--credit { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.mclb-panel__coupon { font-weight: 600; color: #047857; }
+.mclb-panel__coupon.is-credit { color: #1d4ed8; }
 
 /* Partial coach time (v1.4.1) */
 .mclb-coachtime__row { display: flex; align-items: center; gap: 8px; }

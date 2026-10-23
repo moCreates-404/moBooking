@@ -331,7 +331,23 @@
    the drawer's 9999). The full .mclb-selection summary still renders below the grid
    on every width. */
 .mclb-grid__minibar { display: none; }
+.mclb-grid__minibar-row { display: flex; align-items: center; gap: 10px; width: 100%; }
 .mclb-grid__minibar-info { font-weight: 700; flex: 1 1 auto; min-width: 0; }
+/* T&Cs link under the sticky bar: one line, never wraps into the price row. */
+.mclb-grid__minibar-terms {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mclb-muted, #666);
+}
+/* T&Cs line in the desktop selection panel. */
+.mclb-terms { margin: 8px 0 0; font-size: 12px; color: var(--mclb-muted, #666); }
+/* Lock the grid while an add-to-cart is in flight. */
+.mclb-grid-wrap.is-adding .mclb-grid { pointer-events: none; }
 .mclb-grid__minibar-add {
   background: var(--mclb-accent, #f4c430);
   color: #1a1a1a;
@@ -357,8 +373,9 @@
 @media (max-width: 768px) {
   .mclb-grid__minibar:not([hidden]) {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
     position: fixed;
     left: 0;
     right: 0;

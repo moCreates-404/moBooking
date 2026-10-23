@@ -243,6 +243,14 @@ class MCLB_REST_Admin {
                 'held'        => $held,
                 'cancelled'   => $cancelled,
                 'source'      => (string) $b->source,
+                // Booked-at (v1.4.2): formatted server-side in site tz. created_by
+                // is the staff initials (column), with the audit-line parse as the
+                // fallback for pre-v7 rows; '' = unknown/online.
+                'created_label' => $b->created_at ? (MCLB_Settings::friendly_date_short((new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) . ', ' . wp_date(get_option('time_format') ?: 'g:i a', (new DateTimeImmutable($b->created_at, $tz))->getTimestamp())) : '',
+                'created_by'    => (string) ($b->created_by !== null && $b->created_by !== '' ? $b->created_by : MCLB_Bookings::creation_initials($b->admin_note)),
+                // Per-line coupon snapshot (v1.4.2): null = not yet backfilled,
+                // [] = none, [{codes,amount,credit}] = this line's discount incl tax.
+                'coupons'       => ($b->coupons !== null && $b->coupons !== '') ? json_decode($b->coupons, true) : null,
                 'customer'    => trim((string) $b->customer_name),
                 'email'       => (string) $b->customer_email,
                 'phone'       => $b->customer_phone ? MCLB_Phone::format_au($b->customer_phone) : '',
@@ -468,6 +476,7 @@ class MCLB_REST_Admin {
             'coach_id'        => $coach_id,
             'coach_starts_at' => $coach_id > 0 ? $cr[0] : null,
             'coach_ends_at'   => $coach_id > 0 ? $cr[1] : null,
+            'created_by'      => $actor, // staff initials (v1.4.2)
         ]);
         if (empty($res['ok'])) {
             return self::write_error($res);
@@ -657,6 +666,7 @@ class MCLB_REST_Admin {
             'customer_phone' => $phone,
             'staff_note'     => $note,
             'coach_id'       => $p['coach_id'],
+            'created_by'     => $actor, // staff initials (v1.4.2)
         ];
         $res       = MCLB_Bookings::create_series($base, $p['slots'], $p['override']);
         $created   = $res['created'];

@@ -3,7 +3,7 @@
  * Plugin Name:       moBooking
  * Plugin URI:        https://mocreates.com.au/
  * Description:       Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid, checking out through WooCommerce. Generic and configurable per install.
- * Version:           1.4.1
+ * Version:           1.4.2
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            moCreates
@@ -26,8 +26,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MCLB_VERSION', '1.4.1'); // display/asset-fallback version only; DB migrations use MCLB_DB_VERSION.
-define('MCLB_DB_VERSION', '6'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note. v3: bookings coach-fee/counter/source columns + coach_range index, source backfill, closures.event_type. v4: bookings customer_phone + staff_note + price_original (Phase 8a). v5: bookings series_id + series index (recurring bookings, Phase 1.4.0). v6: bookings coach_starts_at/coach_ends_at/coach_fee_original (partial coach time) + mclb_closure_exceptions table (block-out release, Phase 1.4.1).
+define('MCLB_VERSION', '1.4.2'); // display/asset-fallback version only; DB migrations use MCLB_DB_VERSION.
+define('MCLB_DB_VERSION', '7'); // bump to trigger dbDelta migrations (see MCLB_Activator). v2: admin_note. v3: bookings coach-fee/counter/source columns + coach_range index, source backfill, closures.event_type. v4: bookings customer_phone + staff_note + price_original (Phase 8a). v5: bookings series_id + series index (recurring bookings, Phase 1.4.0). v6: bookings coach_starts_at/coach_ends_at/coach_fee_original (partial coach time) + mclb_closure_exceptions table (block-out release, Phase 1.4.1). v7: bookings coupons (per-line coupon snapshot JSON) + created_by (staff initials); Action Scheduler backfill of existing online bookings (Phase 1.4.2).
 define('MCLB_FILE', __FILE__);
 define('MCLB_DIR', plugin_dir_path(__FILE__));
 define('MCLB_URL', plugin_dir_url(__FILE__));
@@ -49,6 +49,7 @@ require_once MCLB_DIR . 'includes/class-mclb-availability.php';
 require_once MCLB_DIR . 'includes/class-mclb-grid.php';
 require_once MCLB_DIR . 'includes/class-mclb-cart.php';
 require_once MCLB_DIR . 'includes/class-mclb-order.php';
+require_once MCLB_DIR . 'includes/class-mclb-coupon-backfill.php';
 require_once MCLB_DIR . 'includes/class-mclb-mail.php';
 require_once MCLB_DIR . 'includes/class-mclb-emails.php';
 require_once MCLB_DIR . 'includes/class-mclb-refunds.php';

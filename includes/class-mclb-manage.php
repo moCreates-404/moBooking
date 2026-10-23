@@ -367,6 +367,12 @@ class MCLB_Manage {
                 'note'            => __('Note', 'mclb-lane-booking'),
                 'undoRelease'     => __('Undo release', 'mclb-lane-booking'),
                 'undoReleaseHint' => __('This re-applies the blockout for this date. It will refuse if a booking now sits in the released window.', 'mclb-lane-booking'),
+                // Created time + coupon (v1.4.2).
+                'booked'          => __('Booked', 'mclb-lane-booking'),
+                'srcOnline'       => __('online', 'mclb-lane-booking'),
+                'srcManual'       => __('manual', 'mclb-lane-booking'),
+                'coupon'          => __('Coupon', 'mclb-lane-booking'),
+                'credit'          => __('Credit', 'mclb-lane-booking'),
             ],
         ];
 

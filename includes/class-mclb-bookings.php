@@ -97,6 +97,8 @@ class MCLB_Bookings {
   counter_paid_at datetime DEFAULT NULL,
   counter_paid_by bigint(20) unsigned DEFAULT NULL,
   series_id bigint(20) unsigned DEFAULT NULL,
+  coupons text DEFAULT NULL,
+  created_by varchar(20) DEFAULT NULL,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -256,7 +258,10 @@ class MCLB_Bookings {
             $params[] = $like;
         }
         $limit = isset($args['limit']) ? max(1, (int) $args['limit']) : 200;
-        $sql   = 'SELECT * FROM ' . self::table() . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY starts_at DESC LIMIT ' . $limit;
+        // Sortable admin columns (v1.4.2): whitelist both column + direction.
+        $orderby = (isset($args['orderby']) && in_array($args['orderby'], ['starts_at', 'created_at'], true)) ? $args['orderby'] : 'starts_at';
+        $order   = (isset($args['order']) && strtoupper($args['order']) === 'ASC') ? 'ASC' : 'DESC';
+        $sql     = 'SELECT * FROM ' . self::table() . ' WHERE ' . implode(' AND ', $where) . " ORDER BY $orderby $order, id $order LIMIT " . $limit;
         return $params ? $wpdb->get_results($wpdb->prepare($sql, $params)) : $wpdb->get_results($sql);
     }
 
@@ -527,6 +532,8 @@ class MCLB_Bookings {
             'source'            => isset($data['source']) ? sanitize_text_field($data['source']) : 'manual',
             'admin_note'        => isset($data['admin_note']) ? sanitize_textarea_field($data['admin_note']) : null,
             'staff_note'        => isset($data['staff_note']) ? sanitize_textarea_field($data['staff_note']) : null,
+            // Staff initials of the creator (v1.4.2); NULL on online bookings.
+            'created_by'        => (isset($data['created_by']) && $data['created_by'] !== '') ? mb_substr(sanitize_text_field($data['created_by']), 0, 20) : null,
             'created_at'        => $now,
             'updated_at'        => $now,
         ];
@@ -542,6 +549,74 @@ class MCLB_Bookings {
         $id = (int) $wpdb->insert_id;
         $wpdb->query('COMMIT');
         return ['ok' => true, 'id' => $id];
+    }
+
+    /**
+     * Staff initials parsed from the FIRST audit line of an admin_note
+     * ("[Y-m-d H:i] CL: created booking…" → "CL"). Fallback for pre-v7 rows that
+     * have no created_by column value. Returns '' when none is found. (v1.4.2)
+     */
+    public static function creation_initials($admin_note) {
+        $note = (string) $admin_note;
+        if ($note === '') { return ''; }
+        $first = strtok($note, "\n");
+        if ($first !== false && preg_match('/\]\s*([^:]{1,20}):/', $first, $m)) {
+            return trim($m[1]);
+        }
+        return '';
+    }
+
+    /**
+     * Snapshot each of an order's booking lines' coupon usage onto the row's
+     * `coupons` column (v1.4.2), so the calendar/panel never hit WooCommerce on
+     * day load. Shape per row:
+     *   NULL  = not yet checked (backfill target)
+     *   '[]'  = checked, no coupon reduced this line
+     *   '[{"codes":["SAVE10"],"amount":3.50,"credit":false}]'  = one entry, this
+     *           line's combined discount INCLUDING tax (what the customer saw).
+     * credit = true when any applied coupon is a moBooking store-credit coupon
+     * (carries _mclb_booking_id — see MCLB_Account::issue_credit_coupon — or the
+     * forward-compat _mclb_credit flag). Pro-rata per line: summing each line's
+     * `amount` equals the order's total discount incl tax (±1c).
+     *
+     * Writes a value to EVERY booking row linked to the order, so new orders and
+     * backfilled rows always leave NULL behind.
+     */
+    public static function snapshot_coupons($order) {
+        global $wpdb;
+        if (!class_exists('WC_Order') || !($order instanceof WC_Order)) { return; }
+        $codes = array_values($order->get_coupon_codes());
+
+        // Which of the order's codes are moBooking credit coupons?
+        $credit = false;
+        if (!empty($codes) && class_exists('WC_Coupon') && function_exists('wc_get_coupon_id_by_code')) {
+            foreach ($codes as $code) {
+                $cid = wc_get_coupon_id_by_code($code);
+                if (!$cid) { continue; }
+                $c = new WC_Coupon($cid);
+                if ($c->get_meta('_mclb_booking_id') || $c->get_meta('_mclb_credit')) { $credit = true; break; }
+            }
+        }
+        $codes_up = array_map('strtoupper', $codes);
+
+        $now  = current_time('mysql');
+        $rows = self::for_order((int) $order->get_id());
+        foreach ($rows as $r) {
+            $item = $r->order_item_id ? $order->get_item((int) $r->order_item_id) : null;
+            $json = '[]';
+            if ($item && !empty($codes)) {
+                // Discount INCLUDING tax = (subtotal+subtotal_tax) − (total+total_tax).
+                $disc = round(
+                    ((float) $item->get_subtotal() + (float) $item->get_subtotal_tax())
+                    - ((float) $item->get_total() + (float) $item->get_total_tax()),
+                    2
+                );
+                if ($disc > 0) {
+                    $json = wp_json_encode([['codes' => $codes_up, 'amount' => $disc, 'credit' => $credit]]);
+                }
+            }
+            $wpdb->update(self::table(), ['coupons' => $json, 'updated_at' => $now], ['id' => (int) $r->id], ['%s', '%s'], ['%d']);
+        }
     }
 
     /** Stamp the WC order + line item onto a held row (status stays 'held'). */

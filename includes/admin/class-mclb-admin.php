@@ -142,6 +142,7 @@ class MCLB_Admin {
         $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mclb-lane-booking'), __('WooCommerce product ID', 'mclb-lane-booking'), 0);
         $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
         $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mclb-lane-booking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mclb-lane-booking'), 0, 720);
+        add_settings_field('terms_page_id', __('Terms & Conditions page', 'mclb-lane-booking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
 
         // General → Emails
         add_settings_section('mclb_emails', __('Emails', 'mclb-lane-booking'), function () {
@@ -432,6 +433,23 @@ class MCLB_Admin {
             printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url(get_permalink($id)), esc_html__('View', 'mclb-lane-booking'));
         }
         printf('<p class="description">%s</p>', esc_html__('Create a page containing just the [mclb_manage] shortcode, then choose it here.', 'mclb-lane-booking'));
+    }
+
+    public function render_terms_page() {
+        wp_dropdown_pages([
+            'name'              => esc_attr($this->name('terms_page_id')),
+            'selected'          => (int) $this->val('terms_page_id'),
+            'show_option_none'  => __('— Use the WooCommerce terms page —', 'mclb-lane-booking'),
+            'option_none_value' => '0',
+        ]);
+        $url = MCLB_Settings::terms_page_url();
+        if ($url) {
+            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url($url), esc_html__('View', 'mclb-lane-booking'));
+        }
+        printf(
+            '<p class="description">%s</p>',
+            esc_html__('A “By booking you agree to our Terms & Conditions” link shows beside the customer grid’s Add to cart. Defaults to the WooCommerce terms page; the line is hidden if no page is set.', 'mclb-lane-booking')
+        );
     }
 
     public function render_hours() {

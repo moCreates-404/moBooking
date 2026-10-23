@@ -67,6 +67,17 @@ class MCLB_Activator {
             ));
         }
 
+        // v7 (Phase 1.4.2): backfill the coupon snapshot on existing online
+        // bookings. Only when crossing UP into v7 (not fresh installs / future
+        // upgrades). The flag + init self-heal cover the case where Action
+        // Scheduler isn't loaded yet at migration time.
+        if ($prev !== false && version_compare((string) $prev, '7', '<')) {
+            update_option('mclb_coupon_backfill_pending', 1);
+            if (class_exists('MCLB_Coupon_Backfill')) {
+                MCLB_Coupon_Backfill::maybe_start();
+            }
+        }
+
         update_option('mclb_db_version', MCLB_DB_VERSION);
     }
 }

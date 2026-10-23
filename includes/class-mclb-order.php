@@ -46,6 +46,10 @@ class MCLB_Order {
         // Only empty/"Guest" values are filled, never a staff-edited name.
         if ($attached) {
             MCLB_Bookings::fill_customer_from_order($order->get_id());
+            // Snapshot coupon usage per line (v1.4.2) so the calendar never hits
+            // WooCommerce on day load. Writes a value ('[]' or the array) to every
+            // linked row, so NULL only ever means "pre-v7, not yet backfilled".
+            MCLB_Bookings::snapshot_coupons($order);
         }
     }
 

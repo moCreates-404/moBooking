@@ -64,6 +64,7 @@ class MCLB_Settings {
             'staff_label_singular'    => 'Coach',  // what an assignable staff member is called (Coach, Pro, Instructor…)
             'staff_label_plural'      => 'Coaches',
             'manage_page_id'          => 0,  // page holding [mclb_manage] (the staff calendar); 0 = none set
+            'terms_page_id'           => 0,  // T&Cs page shown by the customer grid; 0 = fall back to the WooCommerce terms page (hidden if neither resolves)
             // Coach day sheets (Phase 7d)
             'daysheet_enabled'        => 0,
             'daysheet_send_time'      => '19:00',
@@ -124,6 +125,25 @@ class MCLB_Settings {
             return $opts;
         }
         return $opts[$key] ?? null;
+    }
+
+    /**
+     * Resolve the customer T&Cs link (v1.4.2). Uses the chosen page, else the
+     * WooCommerce terms page; returns '' when neither resolves (grid hides the
+     * line). URL only — the grid opens it in a new tab.
+     */
+    public static function terms_page_url() {
+        $pid = (int) self::get('terms_page_id');
+        if (!$pid && function_exists('wc_terms_and_conditions_page_id')) {
+            $pid = (int) wc_terms_and_conditions_page_id();
+        }
+        if (!$pid) {
+            $pid = (int) get_option('woocommerce_terms_page_id');
+        }
+        if (!$pid || get_post_status($pid) !== 'publish') {
+            return '';
+        }
+        return (string) get_permalink($pid);
     }
 
     /** Register the single option + its sanitiser (fields live in MCLB_Admin). */
@@ -195,6 +215,9 @@ class MCLB_Settings {
         }
         if (isset($in['manage_page_id'])) {
             $out['manage_page_id'] = absint($in['manage_page_id']);
+        }
+        if (isset($in['terms_page_id'])) {
+            $out['terms_page_id'] = absint($in['terms_page_id']);
         }
         // Emails (General tab). Address fields guarded by isset so another tab's
         // save doesn't clear them; checkboxes carry a hidden companion so unchecked

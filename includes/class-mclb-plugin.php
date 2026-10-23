@@ -42,6 +42,7 @@ class MCLB_Plugin {
         // WooCommerce cart + order lifecycle (hooks are inert until WC fires them).
         MCLB_Cart::init();
         MCLB_Order::init();
+        MCLB_Coupon_Backfill::init();
         MCLB_Account::init();
 
         // Emails + WooCommerce admin-email routing (Phase 8a-2).

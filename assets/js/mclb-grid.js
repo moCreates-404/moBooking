@@ -209,6 +209,7 @@
   // a selected cell), a click without a drag is a single select.
 
   MclbGrid.prototype.onPointerDown = function (e) {
+    if (this.adding) { return; } // grid locked while an add-to-cart is in flight
     var cell = cellFrom(e);
     if (e.pointerType === 'touch' || e.pointerType === 'pen') {
       this.touch = { cell: cell, x: e.clientX, y: e.clientY, sl: this.grid.scrollLeft, st: this.grid.scrollTop };
@@ -417,6 +418,7 @@
   // ── Add to cart ──────────────────────────────────────────────────────────────
   MclbGrid.prototype.addToCart = function () {
     var self = this;
+    if (this.adding) { return; }                 // double-submit guard
     if (!this.selections.length) { return; }
     if (CFG.canBook === false) { this.setMsg(I18N.demo || 'Bookings are unavailable in demo mode.', false); return; }
 
@@ -429,9 +431,20 @@
     };
     this.wrap.dispatchEvent(new CustomEvent('mclb:addtocart', { bubbles: true, detail: payload }));
 
+    // Busy state: label both buttons "Adding…", disable them, and lock the grid
+    // so no slot can be tapped mid-request. All restored on failure.
     var mbAdd = this.minibar ? this.minibar.querySelector('.mclb-grid__minibar-add') : null;
-    if (this.addBtn) { this.addBtn.disabled = true; }
-    if (mbAdd) { mbAdd.disabled = true; }
+    var addingLabel = I18N.adding || 'Adding…';
+    this.adding = true;
+    this.wrap.classList.add('is-adding');
+    if (this.addBtn) { this.addBtn._label = this.addBtn.textContent; this.addBtn.textContent = addingLabel; this.addBtn.disabled = true; }
+    if (mbAdd) { mbAdd._label = mbAdd.textContent; mbAdd.textContent = addingLabel; mbAdd.disabled = true; }
+    function restore() {
+      self.adding = false;
+      self.wrap.classList.remove('is-adding');
+      if (self.addBtn) { self.addBtn.disabled = false; if (self.addBtn._label != null) { self.addBtn.textContent = self.addBtn._label; } }
+      if (mbAdd) { mbAdd.disabled = false; if (mbAdd._label != null) { mbAdd.textContent = mbAdd._label; } }
+    }
 
     fetch(CFG.cartUrl, {
       method: 'POST',
@@ -440,19 +453,17 @@
     })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
-        if (res.ok && res.body && res.body.redirect) { window.location = res.body.redirect; return; }
-        if (res.ok) { self.setMsg((res.body && res.body.message) || 'Added.', true); }
+        if (res.ok && res.body && res.body.redirect) { window.location = res.body.redirect; return; } // leave locked during navigation
+        if (res.ok) { self.setMsg((res.body && res.body.message) || 'Added.', true); restore(); }
         else {
           self.setMsg((res.body && res.body.message) || I18N.cartSoon || 'Could not add to cart.', false);
-          if (self.addBtn) { self.addBtn.disabled = false; }
-          if (mbAdd) { mbAdd.disabled = false; }
+          restore();
           self.refresh(); // a slot was just taken: re-pull fresh, keeping the customer's still-free picks
         }
       })
       .catch(function () {
         self.setMsg(I18N.cartSoon || 'Could not add to cart.', false);
-        if (self.addBtn) { self.addBtn.disabled = false; }
-        if (mbAdd) { mbAdd.disabled = false; }
+        restore();
       });
   };
 

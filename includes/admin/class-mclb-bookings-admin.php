@@ -50,6 +50,17 @@ class MCLB_Bookings_Admin {
         return admin_url('admin.php?page=' . self::SLUG);
     }
 
+    /** Initials of the current WP user (e.g. "Chris Lane" → "CL"), for created_by. */
+    private static function user_initials() {
+        $u = wp_get_current_user();
+        $name = trim((string) ($u && $u->display_name ? $u->display_name : ($u ? $u->user_login : '')));
+        if ($name === '') { return ''; }
+        $parts = preg_split('/\s+/', $name);
+        $ini   = '';
+        foreach ($parts as $p) { if ($p !== '') { $ini .= strtoupper(substr($p, 0, 1)); } }
+        return mb_substr($ini !== '' ? $ini : strtoupper(substr($name, 0, 2)), 0, 20);
+    }
+
     // ── Write handlers ─────────────────────────────────────────────────────────
 
     public function handle_cancel() {
@@ -182,6 +193,7 @@ class MCLB_Bookings_Admin {
             'customer_phone' => $phone,
             'staff_note'     => $note,
             'coach_id'       => $coach_id,
+            'created_by'     => self::user_initials(), // WP user's initials (v1.4.2)
         ]);
 
         if (!empty($res['ok'])) {
@@ -261,6 +273,8 @@ class MCLB_Bookings_Admin {
             'date_from' => isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '',
             'date_to'   => isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '',
             'search'    => isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '',
+            'orderby'   => (isset($_GET['orderby']) && $_GET['orderby'] === 'created_at') ? 'created_at' : 'starts_at',
+            'order'     => (isset($_GET['order']) && strtoupper((string) $_GET['order']) === 'ASC') ? 'ASC' : 'DESC',
         ];
         // phpcs:enable
 
@@ -285,7 +299,8 @@ class MCLB_Bookings_Admin {
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th>#</th>';
         printf('<th>%s</th>', esc_html($res_label));
-        printf('<th>%s</th>', esc_html__('When', 'mclb-lane-booking'));
+        echo $this->sort_th(__('When', 'mclb-lane-booking'), 'starts_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
+        echo $this->sort_th(__('Booked', 'mclb-lane-booking'), 'created_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
         printf('<th>%s</th>', esc_html__('Customer', 'mclb-lane-booking'));
         printf('<th>%s</th>', esc_html__('Status', 'mclb-lane-booking'));
         printf('<th>%s</th>', esc_html__('Order', 'mclb-lane-booking'));
@@ -311,6 +326,13 @@ class MCLB_Bookings_Admin {
             printf('<td>%d</td>', (int) $b->id);
             printf('<td>%s</td>', esc_html($b->lane_name));
             printf('<td>%s</td>', esc_html($when));
+            // Booked (v1.4.2): created time + how it was made.
+            $booked = $b->created_at
+                ? MCLB_Settings::friendly_date_short((new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) . ', ' . wp_date($tf, (new DateTimeImmutable($b->created_at, $tz))->getTimestamp())
+                : '—';
+            $cby = ($b->created_by !== null && $b->created_by !== '') ? $b->created_by : MCLB_Bookings::creation_initials($b->admin_note);
+            $src = ((string) $b->source === 'online') ? __('online', 'mclb-lane-booking') : (__('manual', 'mclb-lane-booking') . ($cby !== '' ? ' · ' . $cby : ''));
+            printf('<td>%s<br><small>%s</small></td>', esc_html($booked), esc_html($src));
             printf('<td>%s%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mclb-lane-booking')), $phone !== '' ? '<br><small>' . esc_html($phone) . '</small>' : '');
             // A lapsed hold reads "Expired" regardless of whether the sweep cron
             // has run yet — availability already treats it as free (lazy expiry).
@@ -358,6 +380,25 @@ class MCLB_Bookings_Admin {
             echo '</td></tr>';
         }
         echo '</tbody></table></div>';
+    }
+
+    /** A sortable column header that toggles order and preserves the filters. */
+    private function sort_th($label, $col, $f) {
+        $cur   = ($f['orderby'] === $col);
+        $next  = ($cur && $f['order'] === 'ASC') ? 'DESC' : 'ASC';
+        $args  = array_filter([
+            'page'      => self::SLUG,
+            'status'    => $f['status'],
+            'lane_id'   => $f['lane_id'] ?: null,
+            'date_from' => $f['date_from'],
+            'date_to'   => $f['date_to'],
+            'search'    => $f['search'],
+            'orderby'   => $col,
+            'order'     => $next,
+        ], function ($v) { return $v !== '' && $v !== null; });
+        $url   = add_query_arg($args, admin_url('admin.php'));
+        $arrow = $cur ? ($f['order'] === 'ASC' ? ' ↑' : ' ↓') : '';
+        return '<th><a href="' . esc_url($url) . '">' . esc_html($label . $arrow) . '</a></th>';
     }
 
     private function filters($f) {

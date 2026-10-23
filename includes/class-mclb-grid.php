@@ -58,6 +58,7 @@ class MCLB_Grid {
             ],
             'i18n'         => [
                 'addToCart'  => __('Add to cart', 'mclb-lane-booking'),
+                'adding'     => __('Adding…', 'mclb-lane-booking'),
                 'remove'     => __('Remove', 'mclb-lane-booking'),
                 'total'      => __('Total', 'mclb-lane-booking'),
                 'slot'       => __('slot', 'mclb-lane-booking'),
@@ -129,13 +130,31 @@ class MCLB_Grid {
               <textarea class="mclb-coach__note" rows="2" hidden placeholder="<?php esc_attr_e('Anything the coach should know? (optional)', 'mclb-lane-booking'); ?>"></textarea>
             <?php endif; ?>
             <button type="button" class="mclb-add-to-cart" disabled><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
+            <?php $mclb_terms = MCLB_Settings::terms_page_url(); ?>
+            <?php if ($mclb_terms !== '') : ?>
+              <p class="mclb-terms"><?php
+                printf(
+                    wp_kses(
+                        /* translators: %s: URL of the Terms & Conditions page. */
+                        __('By booking you agree to our <a href="%s" target="_blank" rel="noopener">Terms &amp; Conditions</a>.', 'mclb-lane-booking'),
+                        ['a' => ['href' => [], 'target' => [], 'rel' => []]]
+                    ),
+                    esc_url($mclb_terms)
+                );
+              ?></p>
+            <?php endif; ?>
             <p class="mclb-selection__msg" role="status"></p>
           </aside>
 
           <div class="mclb-grid__minibar" hidden aria-live="polite">
-            <span class="mclb-grid__minibar-info"></span>
-            <button type="button" class="mclb-grid__minibar-add"><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
-            <button type="button" class="mclb-grid__minibar-clear" aria-label="<?php esc_attr_e('Clear all', 'mclb-lane-booking'); ?>">&#10005;</button>
+            <div class="mclb-grid__minibar-row">
+              <span class="mclb-grid__minibar-info"></span>
+              <button type="button" class="mclb-grid__minibar-add"><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
+              <button type="button" class="mclb-grid__minibar-clear" aria-label="<?php esc_attr_e('Clear all', 'mclb-lane-booking'); ?>">&#10005;</button>
+            </div>
+            <?php if ($mclb_terms !== '') : ?>
+              <a class="mclb-grid__minibar-terms" href="<?php echo esc_url($mclb_terms); ?>" target="_blank" rel="noopener"><?php esc_html_e('Terms & Conditions apply', 'mclb-lane-booking'); ?></a>
+            <?php endif; ?>
           </div>
 
           <noscript><p><?php esc_html_e('This booking grid needs JavaScript enabled.', 'mclb-lane-booking'); ?></p></noscript>

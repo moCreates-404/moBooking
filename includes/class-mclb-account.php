@@ -223,6 +223,7 @@ class MCLB_Account {
         /* translators: 1: resource name, 2: date/time. */
         $coupon->set_description(sprintf(__('Booking credit — cancelled %1$s (%2$s)', 'mclb-lane-booking'), $b->lane_name, substr($b->starts_at, 0, 16)));
         $coupon->add_meta_data('_mclb_booking_id', (int) $b->id, true);
+        $coupon->add_meta_data('_mclb_credit', 1, true); // explicit credit flag (v1.4.2) for coupon-snapshot detection
         $coupon->save();
 
         if ($email) {

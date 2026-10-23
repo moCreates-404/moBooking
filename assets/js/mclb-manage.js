@@ -82,6 +82,23 @@
   }
   // "1h" / "1.5h" for the fee breakdown.
   function fmtHrs(h) { return (Math.round(h * 100) / 100).toString().replace(/\.0+$/, '') + 'h'; }
+  // Coupon snapshot (v1.4.2): the day payload sends coupons as null (unchecked),
+  // [] (none), or [{codes,amount,credit}] for this line's discount incl tax.
+  function couponEntry(b) { return (b.coupons && b.coupons.length) ? b.coupons[0] : null; }
+  function couponText(b) {
+    var e = couponEntry(b); if (!e) { return ''; }
+    var codes = (e.codes || []).join(', ');
+    return (e.credit ? (I18N.credit || 'Credit') + ' · ' : (I18N.coupon || 'Coupon') + ': ')
+      + codes + ' · −' + money(e.amount);
+  }
+  // "Booked Mon 20 Oct 2026, 3:42 pm (online)" / "(manual · CL)" (v1.4.2).
+  function createdText(b) {
+    if (!b.created_label) { return ''; }
+    var how = (b.source === 'online')
+      ? (I18N.srcOnline || 'online')
+      : (I18N.srcManual || 'manual') + (b.created_by ? ' · ' + b.created_by : '');
+    return (I18N.booked || 'Booked') + ' ' + b.created_label + ' (' + how + ')';
+  }
   // Coach-time control (partial coach time, v1.4.1): two increment-snapped selects
   // bounded by the booking range, defaulting to the whole session. partial() is
   // false while it spans the whole booking (→ send no coach range = NULL = whole).
@@ -501,7 +518,9 @@
       + (b.coach_label ? ' · ' + coachChip(b) : '')
       + (b.phone ? ' · ' + b.phone : '')
       + (pill ? ' · ' + pill.label : '')
-      + (b.price_original != null ? ' · ' + (I18N.priceOverridden || 'price overridden') : '');
+      + (b.price_original != null ? ' · ' + (I18N.priceOverridden || 'price overridden') : '')
+      + (couponEntry(b) ? ' · ' + couponText(b) : '')
+      + (createdText(b) ? ' · ' + createdText(b) : '');
 
     // Line 2 (coach chip + payment pill on one row) — hidden on ≤30-min blocks,
     // where the name alone must stay readable and the rest is in the tooltip.
@@ -509,6 +528,8 @@
       var row = el('div', 'mclb-mblock__row');
       if (b.coach_label) { row.appendChild(el('span', 'mclb-mblock__coach', coachChip(b))); }
       if (pill) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + pill.kind, pill.label)); }
+      var ce = couponEntry(b);
+      if (ce) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + (ce.credit ? 'credit' : 'coupon'), ce.credit ? (I18N.credit || 'Credit') : (I18N.coupon || 'Coupon'))); }
       if (row.childNodes.length) { block.appendChild(row); }
     }
 
@@ -994,6 +1015,12 @@
       panelHead(panel, '#' + b.id + ' · ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min));
       panel.appendChild(el('p', 'mclb-panel__ctx', (b.source === 'online' ? 'Online' : 'Manual') + ' · ' + (b.customer || 'Guest') + (b.email ? ' · ' + b.email : '')));
       if (b.phone) { panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.phone || 'Phone') + ': ' + b.phone)); }
+      if (createdText(b)) { panel.appendChild(el('p', 'mclb-panel__ctx', createdText(b))); }
+      if (couponEntry(b)) {
+        var cp = el('p', 'mclb-panel__ctx mclb-panel__coupon', couponText(b));
+        if (couponEntry(b).credit) { cp.classList.add('is-credit'); }
+        panel.appendChild(cp);
+      }
       if (b.price_original != null) {
         panel.appendChild(el('p', 'mclb-panel__warn', (I18N.priceOverridden || 'Price overridden') + ' (' + (I18N.was || 'was') + ' ' + money(b.price_original) + ')'));
       }
