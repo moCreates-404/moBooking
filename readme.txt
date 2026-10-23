@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.4.1
+Stable tag: 1.4.2
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,27 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.4.2 =
+* Booking "created" time: the Manage panel + tooltip now show when a booking was
+  made and how — "Booked Mon 20 Oct 2026, 3:42 pm (online)" or "(manual · CL)"
+  with the staff member's initials. The wp-admin Bookings list gains a sortable
+  "Booked" column. DB v7 adds a created_by column recorded on every staff create
+  path (the audit line is only a fallback for older rows).
+* Coupon used: online bookings now show any coupon applied — "Coupon: SAVE10 ·
+  −$3.50" in the panel plus a badge on the block; moBooking store-credit coupons
+  show as "Credit". The amount is what the customer saw (including GST); a
+  cart-level coupon across several lanes is split pro-rata per line. The coupon
+  is snapshotted onto the booking when the order is placed (DB v7 coupons
+  column), so the calendar never queries orders on load; existing online
+  bookings are backfilled automatically in the background.
+* Terms & Conditions: a "By booking you agree to our Terms & Conditions" link
+  shows beside the booking grid's Add to cart and sticky bar and opens in a new
+  tab. A new setting chooses the page (defaults to the WooCommerce terms page);
+  the line is hidden if no page is set.
+* Clearer processing feedback: the customer Add to cart button shows "Adding…"
+  and the grid locks while the request is in flight (restored on failure), so a
+  slot can't be double-added or tapped mid-request.
 
 = 1.4.1 =
 * Partial coach time: a coach can now be booked for only part of a session. The
