@@ -58,6 +58,8 @@
 .mclb-badge--credit { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .mclb-panel__coupon { font-weight: 600; color: #047857; }
 .mclb-panel__coupon.is-credit { color: #1d4ed8; }
+.mclb-panel__notify { margin-top: 10px; }
+.mclb-panel__sub { color: var(--mclb-muted, #777); font-size: 12px; }
 
 /* Partial coach time (v1.4.1) */
 .mclb-coachtime__row { display: flex; align-items: center; gap: 8px; }

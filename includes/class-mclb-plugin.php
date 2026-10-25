@@ -28,6 +28,7 @@ class MCLB_Plugin {
         // covers a symlinked dev install that was activated before Phase 1's
         // tables existed, and future migrations when MCLB_DB_VERSION bumps.
         MCLB_Activator::maybe_install();
+        MCLB_Settings::maybe_migrate(); // v1.4.3: alert_self_cancel → alert_cancel (once)
 
         add_action('init', [$this, 'load_textdomain']);
         add_action('admin_init', ['MCLB_Settings', 'register']);
@@ -44,6 +45,7 @@ class MCLB_Plugin {
         MCLB_Order::init();
         MCLB_Coupon_Backfill::init();
         MCLB_Account::init();
+        MCLB_Manage_Booking::init(); // guest self-cancel page (WEB-17)
 
         // Emails + WooCommerce admin-email routing (Phase 8a-2).
         MCLB_Mail::init();

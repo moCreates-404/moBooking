@@ -1221,17 +1221,30 @@
           });
         }));
       }
+      // Notify-customer checkbox (v1.4.3), shared by the cancel actions; default
+      // on, disabled with a note when there's no email on file.
+      var cnWrap = el('label', 'mclb-panel__override mclb-panel__notify');
+      var cnCb = el('input'); cnCb.type = 'checkbox'; cnCb.checked = !!b.email;
+      cnWrap.appendChild(cnCb);
+      cnWrap.appendChild(document.createTextNode(' ' + (I18N.notifyCustomer || 'Notify customer by email')));
+      if (!b.email) { cnCb.disabled = true; cnWrap.appendChild(el('span', 'mclb-panel__sub', ' (' + (I18N.noEmailOnFile || 'No email address on file') + ')')); }
+      actions.appendChild(cnWrap);
+      function notifyVal() { return cnCb.checked ? 1 : 0; }
+      // Paid-online hint (addition a): staff should refund the card, not just cancel.
+      if (b.source === 'online' && b.order_id && b.price > 0) {
+        actions.appendChild(el('p', 'mclb-panel__warn', (I18N.paidOnlineHint || 'Customer paid %s online. Use Cancel + refund to refund their card.').replace('%s', money(b.price))));
+      }
       actions.appendChild(actionBtn('Cancel only', function () {
         if (!needInitials()) { return; }
         confirmStep(actions, 'Cancel this booking?', function (yesBtn) {
-          runWrite(yesBtn, err, api('/booking/' + b.id + '/cancel', { method: 'POST', body: { mode: 'only', actor: ini.value.trim() } }));
+          runWrite(yesBtn, err, api('/booking/' + b.id + '/cancel', { method: 'POST', body: { mode: 'only', notify: notifyVal(), actor: ini.value.trim() } }));
         });
       }, 'is-danger'));
       if (CANREFUND && b.refundable) {
         actions.appendChild(actionBtn('Cancel + refund', function () {
           if (!needInitials()) { return; }
           confirmStep(actions, 'Cancel and refund online payment?', function (yesBtn) {
-            runWrite(yesBtn, err, api('/booking/' + b.id + '/cancel', { method: 'POST', body: { mode: 'refund', actor: ini.value.trim() } }));
+            runWrite(yesBtn, err, api('/booking/' + b.id + '/cancel', { method: 'POST', body: { mode: 'refund', notify: notifyVal(), actor: ini.value.trim() } }));
           });
         }, 'is-danger'));
       }
@@ -1255,7 +1268,7 @@
                 q += ' ' + (I18N.seriesPaidWarn || '%n prepaid or past session(s) will be cancelled with no automatic refund:').replace('%n', d.sensitive_count) + ' ' + d.sensitive_dates.join(', ');
               }
               confirmStep(actions, q, function (yes) {
-                runWrite(yes, err, api('/booking/' + b.id + '/cancel-series', { method: 'POST', body: { mode: mode, confirm_paid: 1, actor: ini.value.trim() } }));
+                runWrite(yes, err, api('/booking/' + b.id + '/cancel-series', { method: 'POST', body: { mode: mode, confirm_paid: 1, notify: notifyVal(), actor: ini.value.trim() } }));
               });
             });
           }, 'is-danger');

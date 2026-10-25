@@ -18,7 +18,10 @@ param([string]$Ref = 'HEAD')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot           # repo root (bin/..)
 $dist = Join-Path $root 'dist'
-$out  = Join-Path $dist 'mclb-lane-booking.zip'
+# Name the zip after the ref (e.g. mclb-lane-booking-v1.4.3.zip); the folder
+# PREFIX inside stays mclb-lane-booking/ so WordPress installs it correctly.
+$safeRef = ($Ref -replace '[^A-Za-z0-9._-]', '_')
+$out     = Join-Path $dist ("mclb-lane-booking-$safeRef.zip")
 
 # Locate git: PATH first, else the git bundled with GitHub Desktop.
 $git = (Get-Command git -ErrorAction SilentlyContinue).Source

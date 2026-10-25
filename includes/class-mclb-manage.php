@@ -373,6 +373,7 @@ class MCLB_Manage {
                 'srcManual'       => __('manual', 'mclb-lane-booking'),
                 'coupon'          => __('Coupon', 'mclb-lane-booking'),
                 'credit'          => __('Credit', 'mclb-lane-booking'),
+                'paidOnlineHint'  => __('Customer paid %s online. Use Cancel + refund to refund their card.', 'mclb-lane-booking'),
             ],
         ];
 

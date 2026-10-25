@@ -28,7 +28,7 @@ class MCLB_Refunds {
      *
      * @return array{ok:bool,error?:string,refunded?:bool,amount?:float}
      */
-    public static function cancel_and_refund($booking_id, $reason = '') {
+    public static function cancel_and_refund($booking_id, $reason = '', array $ctx = []) {
         $b = MCLB_Bookings::get($booking_id);
         if (!$b) {
             return ['ok' => false, 'error' => 'not_found'];
@@ -38,7 +38,20 @@ class MCLB_Refunds {
         }
         // Slot released the instant claim_cancel() flipped the status. Now refund.
         $refunded = self::refund_line($b, $reason);
-        return ['ok' => true, 'refunded' => $refunded, 'amount' => (float) $b->price];
+        // Single cancel seam + WEB-12 emails (v1.4.3). Only reached by the winner
+        // of claim_cancel() above, so the WC refund hook can't double-fire it.
+        $outcome = [
+            'type'        => $refunded ? 'refund_card' : 'refund_failed',
+            'amount'      => (float) $b->price,
+            'actor'       => isset($ctx['actor']) ? (string) $ctx['actor'] : '',
+            'actor_note'  => isset($ctx['actor_note']) ? (string) $ctx['actor_note'] : '',
+            'via_link'    => !empty($ctx['via_link']),
+            'manual_flag' => !$refunded, // a failed auto-refund needs staff follow-up
+        ];
+        if (class_exists('MCLB_Cancel')) {
+            MCLB_Cancel::finish($b, $outcome, ['notify' => array_key_exists('notify', $ctx) ? (bool) $ctx['notify'] : true]);
+        }
+        return ['ok' => true, 'refunded' => $refunded, 'amount' => (float) $b->price, 'outcome' => $outcome];
     }
 
     /**

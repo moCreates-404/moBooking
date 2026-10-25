@@ -32,8 +32,9 @@ class MCLB_Emails {
         // Customer "your booking has moved" (per-move opt-out via the Move panel).
         add_action('mclb_booking_moved', [__CLASS__, 'on_booking_moved'], 10, 4);
 
-        // Staff alerts (each gated by its own setting).
-        add_action('mclb_self_cancelled', [__CLASS__, 'alert_self_cancel'], 10, 1);
+        // Staff alerts (each gated by its own setting). Cancellation emails
+        // (customer + staff) fire from MCLB_Cancel::finish(), not a hook here, so
+        // they can carry the money outcome and be deduped by the claim_cancel winner.
         add_action('woocommerce_payment_complete', [__CLASS__, 'alert_coach_request'], 20, 1);
     }
 
@@ -104,6 +105,7 @@ class MCLB_Emails {
         $html .= '<p>' . esc_html__('Your booking is confirmed:', 'mclb-lane-booking') . '</p>';
         $html .= self::booking_table($b);
         $html .= '<p>' . esc_html__('Payment is taken at the counter. See you then!', 'mclb-lane-booking') . '</p>';
+        $html .= self::manage_link_html($b);
 
         return MCLB_Mail::send($email, self::subject($heading), $html, [
             'heading'  => $heading,
@@ -146,14 +148,6 @@ class MCLB_Emails {
     }
 
     // ── 3. Staff alerts (to Bookings, Reply-To customer) ───────────────────────
-
-    public static function alert_self_cancel($booking_id) {
-        if (!self::on('alert_self_cancel')) { return; }
-        $b = MCLB_Bookings::get((int) $booking_id);
-        if (!$b) { return; }
-        $html = '<p>' . esc_html__('A customer has self-cancelled a booking:', 'mclb-lane-booking') . '</p>' . self::booking_table($b);
-        self::staff_alert(__('Booking self-cancelled', 'mclb-lane-booking'), $html, $b, 'alert-self-cancel');
-    }
 
     /** On an online order confirming, alert staff if any of its bookings asked for a coach. */
     public static function alert_coach_request($order_id) {
@@ -223,6 +217,7 @@ class MCLB_Emails {
             ? sprintf(esc_html__('Paid upfront: %s', 'mclb-lane-booking'), esc_html($money))
             : sprintf(esc_html__('Total due at the counter: %s', 'mclb-lane-booking'), esc_html($money))) . '</p>';
         $html .= '<p>' . ($allPaid ? esc_html__('Thanks — see you then!', 'mclb-lane-booking') : esc_html__('Payment is taken at the counter. See you then!', 'mclb-lane-booking')) . '</p>';
+        $html .= self::manage_link_html($first);
 
         return MCLB_Mail::send($email, self::subject($heading), $html, [
             'heading'  => $heading,
@@ -246,6 +241,151 @@ class MCLB_Emails {
             $html .= '<p style="color:#666;">' . esc_html__('Skipped:', 'mclb-lane-booking') . ' ' . esc_html(implode(', ', array_map(function ($s) { return self::nice_date($s['date']); }, $skipped))) . '</p>';
         }
         self::staff_alert(__('Recurring booking created', 'mclb-lane-booking'), $html, $first, 'alert-series-created');
+    }
+
+    // ── Cancellations (WEB-12, v1.4.3) — fired from MCLB_Cancel::finish() ───────
+
+    /** Customer "your booking has been cancelled" email with the money outcome. */
+    public static function send_cancellation($b, array $outcome) {
+        $email = sanitize_email((string) $b->customer_email);
+        if ($email === '') { return ['ok' => false, 'result' => 'no-email']; }
+        $heading = __('Your booking has been cancelled', 'mclb-lane-booking');
+        $html  = '<p>' . sprintf(esc_html__('Hi %s,', 'mclb-lane-booking'), esc_html(self::first_name($b->customer_name))) . '</p>';
+        $html .= '<p>' . esc_html__('This booking has been cancelled:', 'mclb-lane-booking') . '</p>';
+        $html .= self::booking_table($b, false) . self::coach_hours_line($b);
+        $line = self::outcome_customer_text($outcome);
+        if ($line !== '') { $html .= '<p style="font-weight:bold;">' . esc_html($line) . '</p>'; }
+        // Guest email-link cancels: a safety line in case a link was used by someone
+        // other than the booker (v1.4.3).
+        if (!empty($outcome['via_link'])) {
+            $phone = MCLB_Settings::club_phone();
+            $warn  = $phone !== ''
+                ? sprintf(__('Didn’t cancel this? Contact the club as soon as possible on %s.', 'mclb-lane-booking'), $phone)
+                : __('Didn’t cancel this? Contact the club as soon as possible.', 'mclb-lane-booking');
+            $html .= '<p style="color:#b32d2e;">' . esc_html($warn) . '</p>';
+        }
+        return MCLB_Mail::send($email, self::subject($heading), $html, [
+            'heading' => $heading, 'branded' => true, 'reply_to' => self::bookings_addr(), 'tag' => 'booking-cancelled',
+        ]);
+    }
+
+    /** Staff alert to the Bookings address for a single cancellation. */
+    public static function alert_cancel($b, array $outcome) {
+        $html  = '<p>' . esc_html(self::outcome_staff_text($outcome)) . '</p>';
+        $html .= self::booking_table($b, false) . self::coach_hours_line($b);
+        $line  = self::outcome_customer_text($outcome);
+        if ($line !== '') { $html .= '<p>' . esc_html($line) . '</p>'; }
+        if (!empty($outcome['manual_flag'])) {
+            $html .= '<p style="color:#b32d2e;font-weight:bold;">' . esc_html__('⚠ Handle manually — the money was not settled automatically.', 'mclb-lane-booking') . '</p>';
+        }
+        self::staff_alert(__('Booking cancelled', 'mclb-lane-booking'), $html, $b, 'alert-cancel');
+    }
+
+    /** ONE customer email for a series cancel, listing each date + its outcome. */
+    public static function send_series_cancellation($anchor, array $items) {
+        $email = sanitize_email((string) $anchor->customer_email);
+        if ($email === '' || empty($items)) { return ['ok' => false, 'result' => 'no-email']; }
+        $heading = __('Your recurring booking has been cancelled', 'mclb-lane-booking');
+        $html  = '<p>' . sprintf(esc_html__('Hi %s,', 'mclb-lane-booking'), esc_html(self::first_name($anchor->customer_name))) . '</p>';
+        /* translators: %d: number of sessions cancelled. */
+        $html .= '<p>' . sprintf(esc_html(_n('%d session has been cancelled:', '%d sessions have been cancelled:', count($items), 'mclb-lane-booking')), count($items)) . '</p>';
+        $html .= self::cancel_items_table($items);
+        self::staff_or_customer_manual_note($html, $items); // appends a manual-money note if any
+        return MCLB_Mail::send($email, self::subject($heading), $html, [
+            'heading' => $heading, 'branded' => true, 'reply_to' => self::bookings_addr(), 'tag' => 'series-cancelled',
+        ]);
+    }
+
+    /** ONE staff alert for a series cancel. */
+    public static function alert_series_cancel($anchor, array $items, $actor) {
+        if (empty($items)) { return; }
+        /* translators: 1: who cancelled, 2: count. */
+        $who  = ($actor === 'customer' || $actor === '') ? __('the customer', 'mclb-lane-booking') : $actor;
+        $html = '<p>' . sprintf(esc_html__('%1$s cancelled %2$d session(s):', 'mclb-lane-booking'), esc_html($who), count($items)) . '</p>';
+        $html .= '<p>' . esc_html(trim((string) $anchor->customer_name) ?: 'Guest') . '</p>';
+        $html .= self::cancel_items_table($items);
+        self::staff_or_customer_manual_note($html, $items);
+        self::staff_alert(__('Recurring booking cancelled', 'mclb-lane-booking'), $html, $anchor, 'alert-series-cancel');
+    }
+
+    /** A table of cancelled series dates with each date's plain-words outcome. */
+    private static function cancel_items_table($items) {
+        $tz   = wp_timezone();
+        $tf   = get_option('time_format') ?: 'g:i a';
+        $cell = 'style="padding:5px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#222;"';
+        $out  = '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0;">';
+        foreach ($items as $it) {
+            $r = $it['booking'];
+            $s = (new DateTimeImmutable($r->starts_at, $tz))->getTimestamp();
+            $e = (new DateTimeImmutable($r->ends_at, $tz))->getTimestamp();
+            $when = wp_date('D j M Y', $s) . ', ' . wp_date($tf, $s) . ' – ' . wp_date($tf, $e);
+            $out .= '<tr><td ' . $cell . '>' . esc_html($when) . '</td><td ' . $cell . '>' . esc_html(self::outcome_customer_text($it['outcome'])) . '</td></tr>';
+        }
+        return $out . '</table>';
+    }
+
+    private static function staff_or_customer_manual_note(&$html, $items) {
+        foreach ($items as $it) {
+            if (!empty($it['outcome']['manual_flag'])) {
+                $html .= '<p>' . esc_html__('Some sessions involved a payment the club will settle with you directly.', 'mclb-lane-booking') . '</p>';
+                return;
+            }
+        }
+    }
+
+    /** Plain-words money sentence for an outcome (customer-facing). */
+    public static function outcome_customer_text(array $o) {
+        $money = (isset($o['amount']) && class_exists('MCLB_Coaches')) ? MCLB_Coaches::money((float) $o['amount']) : '';
+        switch ($o['type'] ?? '') {
+            case 'refund_card':
+                return sprintf(__('Refunded %s to your card (please allow 3–5 business days).', 'mclb-lane-booking'), $money);
+            case 'refund_failed':
+                return sprintf(__('A refund of %s is being arranged — the club will confirm it with you.', 'mclb-lane-booking'), $money);
+            case 'store_credit':
+                $exp = (!empty($o['credit_expires'])) ? ' ' . sprintf(__('(expires %s)', 'mclb-lane-booking'), wp_date('j M Y', (int) $o['credit_expires'])) : '';
+                return sprintf(__('Store credit: %1$s, %2$s%3$s. Apply it at checkout.', 'mclb-lane-booking'), (string) ($o['credit_code'] ?? ''), $money, $exp);
+            case 'counter_refund':
+                return sprintf(__('Refund at the counter: %s.', 'mclb-lane-booking'), $money);
+            case 'paid_not_refunded':
+                return sprintf(__('Your payment of %s hasn’t been refunded automatically. The club will contact you about it.', 'mclb-lane-booking'), $money);
+            case 'manual_no_refund':
+                return __('Please contact the club about any payment on this booking.', 'mclb-lane-booking');
+            case 'order_refunded':
+                return __('Your refund details are in a separate email.', 'mclb-lane-booking');
+            case 'order_cancelled':
+            case 'cancelled':
+                return '';
+            case 'no_refund_cutoff':
+                return __('No refund: cancelled within the cancellation cut-off before the start time.', 'mclb-lane-booking');
+        }
+        return '';
+    }
+
+    /** Who cancelled + context, for the staff alert's opening line. */
+    private static function outcome_staff_text(array $o) {
+        $actor = (string) ($o['actor'] ?? '');
+        $who   = ($actor === 'customer' || $actor === '') ? __('the customer', 'mclb-lane-booking') : $actor;
+        $note  = trim((string) ($o['actor_note'] ?? ''));
+        /* translators: 1: who cancelled (customer / staff initials), 2: optional context like "via email link". */
+        return trim(sprintf(__('Cancelled by %1$s%2$s.', 'mclb-lane-booking'), $who, $note !== '' ? ' ' . $note : ''));
+    }
+
+    /** "Coach: Rob Turner, 4:00 – 5:00 pm" line when the booking has a coach. */
+    private static function coach_hours_line($b) {
+        if ((int) $b->assigned_coach_id <= 0 || !class_exists('MCLB_Coaches')) { return ''; }
+        $tz = wp_timezone();
+        $tf = get_option('time_format') ?: 'g:i a';
+        list($cs, $ce) = MCLB_Bookings::coach_window($b->starts_at, $b->ends_at, $b->coach_starts_at, $b->coach_ends_at);
+        $hrs = wp_date($tf, (new DateTimeImmutable((string) $cs, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $ce, $tz))->getTimestamp());
+        return '<p style="color:#666;">' . esc_html(MCLB_Coaches::label_singular() . ': ' . MCLB_Coaches::label((int) $b->assigned_coach_id) . ', ' . $hrs) . '</p>';
+    }
+
+    /** "Manage or cancel this booking" link (guest token) for confirmation emails. */
+    public static function manage_link_html($b) {
+        if ((int) MCLB_Settings::get('guest_self_cancel') !== 1 || !class_exists('MCLB_Manage_Token')) { return ''; }
+        $url = MCLB_Manage_Token::url($b);
+        if ($url === '') { return ''; }
+        return '<p><a href="' . esc_url($url) . '">' . esc_html__('Manage or cancel this booking', 'mclb-lane-booking') . '</a></p>';
     }
 
     private static function nice_date($ymd) {
@@ -274,9 +414,24 @@ class MCLB_Emails {
         return $out;
     }
 
-    private static function staff_alert($heading, $html, $booking, $tag) {
+    /**
+     * Where staff alerts go: the Bookings address, else WooCommerce's New Order
+     * recipient, else the site admin email — so a blank Bookings address never
+     * silently drops an alert (v1.4.3 fix).
+     */
+    public static function staff_recipient() {
         $to = self::bookings_addr();
-        if ($to === '') { return; } // no Bookings address configured → nothing to alert
+        if ($to !== '') { return $to; }
+        $wc = get_option('woocommerce_new_order_settings');
+        if (is_array($wc) && !empty($wc['recipient'])) {
+            return (string) $wc['recipient']; // may be comma-separated
+        }
+        return (string) get_option('admin_email');
+    }
+
+    private static function staff_alert($heading, $html, $booking, $tag) {
+        $to = self::staff_recipient();
+        if ($to === '') { return; } // truly nowhere to send (no admin email) — bail
         $reply = $booking ? sanitize_email((string) $booking->customer_email) : '';
         MCLB_Mail::send($to, self::subject($heading), $html, [
             'heading'  => $heading,
@@ -306,8 +461,13 @@ class MCLB_Emails {
         return (string) $starts_at . ' – ' . (string) $ends_at;
     }
 
-    /** A small email-safe details table for one booking (incl. coach if assigned). */
-    private static function booking_table($b) {
+    /**
+     * A small email-safe details table for one booking (incl. coach if assigned).
+     * $with_price=false omits the price row — used by cancellation emails so the
+     * money statement is ONLY the outcome line (never conflicting with WooCommerce's
+     * own refund email amounts — WEB-12 addition b).
+     */
+    private static function booking_table($b, $with_price = true) {
         $cell = 'style="padding:6px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#222;"';
         $lbl  = 'style="padding:6px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#666;white-space:nowrap;"';
         $rows = '';
@@ -316,7 +476,7 @@ class MCLB_Emails {
         if ((int) $b->assigned_coach_id > 0 && class_exists('MCLB_Coaches')) {
             $rows .= '<tr><td ' . $lbl . '>' . esc_html(MCLB_Coaches::label_singular()) . '</td><td ' . $cell . '>' . esc_html(MCLB_Coaches::label((int) $b->assigned_coach_id)) . '</td></tr>';
         }
-        if ($b->price !== null && class_exists('MCLB_Coaches')) {
+        if ($with_price && $b->price !== null && class_exists('MCLB_Coaches')) {
             $rows .= '<tr><td ' . $lbl . '>' . esc_html__('Price', 'mclb-lane-booking') . '</td><td ' . $cell . '>' . esc_html(MCLB_Coaches::money((float) $b->price)) . '</td></tr>';
         }
         return '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0;">' . $rows . '</table>';

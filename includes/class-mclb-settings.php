@@ -76,12 +76,16 @@ class MCLB_Settings {
             'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
             'self_cancel_hours'       => 24, // logged-in self-cancel cutoff before booking start
             'refund_window_hours'     => 24, // cancel within this long after placing (and >cutoff before start) = real refund, else credit
+            'credit_expiry_days'      => 30, // store-credit coupon lifetime in days (0 = never); set on issue (v1.4.3)
+            'guest_self_cancel'       => 1,  // allow guests to cancel via a signed email link (WEB-17; reverses the 30 Sep "guests contact admin" rule)
+            'club_phone'              => '', // shown on the "inside cutoff — call us" message; empty falls back to the mclb_club_phone filter
             // Emails (Phase 8a-2)
             'email_test_recipient'      => '', // dev safety: reroutes EVERY plugin email (incl. day sheets) here
             'email_bookings'            => '', // lane-order WC admin emails + staff alerts
             'email_reception'           => '', // shop-order WC admin emails
             'email_manual_confirmation' => 1,  // email the customer when staff create a manual booking
-            'alert_self_cancel'         => 1,  // staff alert on a customer self-cancel
+            'email_customer_on_cancel'  => 1,  // email the customer on every cancellation (WEB-12, v1.4.3)
+            'alert_cancel'              => 1,  // staff alert to Bookings on every cancellation (v1.4.3; absorbs the old self-cancel-only alert)
             'alert_coach_request'       => 1,  // staff alert when an online booking requests a coach
             'alert_manual_created'      => 0,  // staff alert on a staff-created manual booking
             'alert_move'                => 0,  // staff alert on a staff move
@@ -146,6 +150,37 @@ class MCLB_Settings {
         return (string) get_permalink($pid);
     }
 
+    /**
+     * Club phone for the "inside cutoff — call us" message (v1.4.3). Uses the
+     * setting, else the mclb_club_phone filter (the theme can return its ACF Site
+     * Settings phone); '' when neither is set (caller says "contact the club").
+     */
+    public static function club_phone() {
+        $p = trim((string) self::get('club_phone'));
+        if ($p === '') {
+            $p = trim((string) apply_filters('mclb_club_phone', ''));
+        }
+        return $p;
+    }
+
+    /**
+     * One-time (v1.4.3): carry the retired alert_self_cancel preference over to
+     * the unified alert_cancel, so a site that turned the self-cancel alert OFF
+     * keeps it off. Runs once, guarded by an option. No DB-version bump needed.
+     */
+    public static function maybe_migrate() {
+        if (get_option('mclb_alert_cancel_migrated')) {
+            return;
+        }
+        $o = get_option(MCLB_OPTION, []);
+        if (is_array($o) && array_key_exists('alert_self_cancel', $o) && !array_key_exists('alert_cancel', $o)) {
+            $o['alert_cancel'] = (int) $o['alert_self_cancel'] === 1 ? 1 : 0;
+            unset($o['alert_self_cancel']);
+            update_option(MCLB_OPTION, $o);
+        }
+        update_option('mclb_alert_cancel_migrated', 1);
+    }
+
     /** Register the single option + its sanitiser (fields live in MCLB_Admin). */
     public static function register() {
         register_setting(self::GROUP, MCLB_OPTION, [
@@ -201,6 +236,12 @@ class MCLB_Settings {
         if (isset($in['refund_window_hours'])) {
             $out['refund_window_hours'] = absint($in['refund_window_hours']);
         }
+        if (isset($in['credit_expiry_days'])) {
+            $out['credit_expiry_days'] = absint($in['credit_expiry_days']); // 0 = never
+        }
+        if (isset($in['club_phone'])) {
+            $out['club_phone'] = sanitize_text_field($in['club_phone']);
+        }
         // Checkbox: the General tab always posts a hidden value="0" companion (see
         // MCLB_Admin::checkbox_field), so an unchecked box reliably records 0 rather
         // than sticking on the previous value through this per-tab merge.
@@ -236,7 +277,10 @@ class MCLB_Settings {
             }
             $out['email_test_recipient'] = $v;
         }
-        foreach (['email_manual_confirmation', 'alert_self_cancel', 'alert_coach_request', 'alert_manual_created', 'alert_move'] as $cb) {
+        if (isset($in['guest_self_cancel'])) {
+            $out['guest_self_cancel'] = empty($in['guest_self_cancel']) ? 0 : 1;
+        }
+        foreach (['email_manual_confirmation', 'email_customer_on_cancel', 'alert_cancel', 'alert_coach_request', 'alert_manual_created', 'alert_move'] as $cb) {
             if (isset($in[$cb])) {
                 $out[$cb] = empty($in[$cb]) ? 0 : 1;
             }

@@ -1600,17 +1600,42 @@ class MCLB_Bookings {
     /** Release every held/confirmed row for an order (cancel/refund). */
     public static function cancel_by_order($order_id) {
         global $wpdb;
-        return $wpdb->query(
-            $wpdb->prepare(
-                'UPDATE ' . self::table() . ' SET status = %s, updated_at = %s
-                  WHERE order_id = %d AND status IN (%s, %s)',
-                self::STATUS_CANCELLED,
-                current_time('mysql'),
-                (int) $order_id,
-                self::STATUS_HELD,
-                self::STATUS_CONFIRMED
-            )
-        );
+        $order_id = (int) $order_id;
+        // Per-row (v1.4.3) so the cancel seam + WEB-12 emails fire once per
+        // CONFIRMED booking the WC hook actually flips — and so a plugin cancel
+        // that already flipped a row (then tripped this hook via the gateway
+        // refund) can't double-email: claim_cancel() finds it already cancelled.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM ' . self::table() . ' WHERE order_id = %d AND status IN (%s, %s)',
+            $order_id, self::STATUS_HELD, self::STATUS_CONFIRMED
+        ));
+        if (empty($rows)) {
+            return 0;
+        }
+        $order          = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+        $refunded_order = ($order && $order->get_status() === 'refunded');
+        $now            = current_time('mysql');
+        $n              = 0;
+        foreach ($rows as $r) {
+            if ((string) $r->status === self::STATUS_HELD) {
+                // Abandoned hold on a cancelled order — never a confirmed booking,
+                // so flip silently with no email (hold-expiry rule).
+                $wpdb->update(self::table(), ['status' => self::STATUS_CANCELLED, 'updated_at' => $now], ['id' => (int) $r->id]);
+                continue;
+            }
+            if (self::claim_cancel((int) $r->id)) {
+                $n++;
+                if (class_exists('MCLB_Cancel')) {
+                    MCLB_Cancel::finish($r, [
+                        'type'        => $refunded_order ? 'order_refunded' : 'order_cancelled',
+                        'amount'      => (float) $r->price,
+                        'actor'       => __('WooCommerce order', 'mclb-lane-booking'),
+                        'manual_flag' => false,
+                    ], ['notify' => true]);
+                }
+            }
+        }
+        return $n;
     }
 
     // ── Cron: housekeeping sweep (not the source of truth — see class docblock) ──

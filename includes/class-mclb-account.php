@@ -151,72 +151,52 @@ class MCLB_Account {
             exit;
         }
 
-        // Tiered cancellation policy (decision #4, finalised 30 Sep):
-        //   < cutoff before start                       → nothing (also UI-gated)
-        //   placed ≤ refund_window ago AND > cutoff out  → automatic real refund
-        //   otherwise (> cutoff out, placed longer ago)  → store-credit coupon
-        $tz        = wp_timezone();
-        $now       = new DateTimeImmutable('now', $tz);
-        $hours_out = ((new DateTimeImmutable($b->starts_at, $tz))->getTimestamp() - $now->getTimestamp()) / 3600;
-        $cutoff    = (int) MCLB_Settings::get('self_cancel_hours');
+        // Tiered policy lives in MCLB_Cancel (shared with guest self-cancel, v1.4.3):
+        //   < cutoff before start → blocked; within refund window & > cutoff → card
+        //   refund; otherwise → store-credit coupon. The single seam + the WEB-12
+        //   emails fire inside self_cancel() → finish().
+        $label = trim((string) $b->customer_name) ?: __('customer', 'mclb-lane-booking');
+        $res   = MCLB_Cancel::self_cancel($b, $label, ['notify' => true]);
 
-        if ($hours_out < $cutoff) {
+        if (!empty($res['blocked'])) {
             wp_safe_redirect(add_query_arg('mclb_msg', 'toolate', $redirect));
             exit;
         }
-
-        $hours_since_placed = ($now->getTimestamp() - (new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) / 3600;
-        $refund_window      = (int) MCLB_Settings::get('refund_window_hours');
-
-        if ($hours_since_placed <= $refund_window) {
-            // Real refund tier. The atomic guard lives inside cancel_and_refund().
-            $res = MCLB_Refunds::cancel_and_refund((int) $b->id, __('Customer self-cancel (within refund window)', 'mclb-lane-booking'));
-            if (empty($res['ok'])) {
-                wp_safe_redirect(add_query_arg('mclb_msg', 'invalid', $redirect));
-                exit;
-            }
-            $msg = !empty($res['refunded']) ? 'refunded' : 'refund_pending';
-        } else {
-            // Store-credit tier. claim_cancel() is the same idempotency guard.
-            if (!MCLB_Bookings::claim_cancel((int) $b->id)) {
-                wp_safe_redirect(add_query_arg('mclb_msg', 'invalid', $redirect));
-                exit;
-            }
-            $code = self::issue_credit_coupon($b);
-            if ($b->order_id) {
-                $order = wc_get_order((int) $b->order_id);
-                if ($order) {
-                    /* translators: 1: booking id, 2: coupon code. */
-                    $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mclb-lane-booking'), (int) $b->id, $code));
-                }
-            }
-            $msg = 'cancelled';
+        if (empty($res['ok'])) {
+            wp_safe_redirect(add_query_arg('mclb_msg', 'invalid', $redirect));
+            exit;
         }
-
-        /** Staff alert (Phase 8a-2): the customer cancelled their own booking. */
-        do_action('mclb_self_cancelled', (int) $b->id);
-
+        $type = isset($res['outcome']['type']) ? $res['outcome']['type'] : '';
+        $msg  = ($type === 'refund_card') ? 'refunded' : (($type === 'refund_failed') ? 'refund_pending' : 'cancelled');
         wp_safe_redirect(add_query_arg('mclb_msg', $msg, $redirect));
         exit;
     }
 
     /**
      * Issue a per-customer WooCommerce coupon for the booking's value and email
-     * it. Returns the coupon code (or '' if WC/coupon unavailable).
+     * it. Returns ['code' => string, 'expires' => int|null] ('' / null when
+     * WC/coupon is unavailable). Expiry comes from credit_expiry_days (0 = never),
+     * set on the coupon AND returned so the cancellation email can show it (v1.4.3).
      */
     public static function issue_credit_coupon($b) {
         if (!class_exists('WC_Coupon')) {
-            return '';
+            return ['code' => '', 'expires' => null];
         }
         $amount = (float) $b->price;
         $email  = $b->customer_email ?: '';
         $code   = 'MCLB-' . strtoupper(wp_generate_password(10, false, false));
+
+        $days    = (int) MCLB_Settings::get('credit_expiry_days');
+        $expires = ($days > 0) ? (time() + $days * DAY_IN_SECONDS) : null;
 
         $coupon = new WC_Coupon();
         $coupon->set_code($code);
         $coupon->set_discount_type('fixed_cart');
         $coupon->set_amount($amount);
         $coupon->set_usage_limit(1);
+        if ($expires !== null) {
+            $coupon->set_date_expires($expires);
+        }
         if ($email) {
             $coupon->set_email_restrictions([$email]);
         }
@@ -226,19 +206,24 @@ class MCLB_Account {
         $coupon->add_meta_data('_mclb_credit', 1, true); // explicit credit flag (v1.4.2) for coupon-snapshot detection
         $coupon->save();
 
-        if ($email) {
-            self::email_credit($email, $b, $code, $amount);
-        }
-        return $code;
+        // NOTE (v1.4.3): no separate "credit issued" email here. Credit coupons are
+        // only ever issued from the cancel flow (MCLB_Cancel::self_cancel), whose
+        // cancellation email already carries the code + expiry — so a second email
+        // would duplicate it AND (the legacy wp_mail below) bypass the dev test
+        // recipient. email_credit() is kept, routed through MCLB_Mail, for any future
+        // non-cancel caller, but is no longer invoked automatically.
+        return ['code' => $code, 'expires' => $expires];
     }
 
-    private static function email_credit($email, $b, $code, $amount) {
-        $money   = function_exists('wc_price') ? wp_strip_all_tags(wc_price($amount)) : number_format((float) $amount, 2);
-        $subject = sprintf(
-            /* translators: %s: site name. */
-            __('Your booking credit — %s', 'mclb-lane-booking'),
-            wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES)
-        );
+    /**
+     * Branded "store credit issued" email. No longer auto-sent (the cancellation
+     * email covers it) but routed through MCLB_Mail so the dev test-recipient /
+     * production guard apply if a future path calls it. (v1.4.3)
+     */
+    public static function email_credit($email, $b, $code, $amount) {
+        if (!class_exists('MCLB_Mail')) { return; }
+        $money   = class_exists('MCLB_Coaches') ? MCLB_Coaches::money((float) $amount) : number_format((float) $amount, 2);
+        $heading = __('Your booking credit', 'mclb-lane-booking');
         $body  = '<p>' . esc_html__('Your booking has been cancelled and store credit issued.', 'mclb-lane-booking') . '</p>';
         $body .= '<p>' . sprintf(
             /* translators: 1: amount, 2: coupon code. */
@@ -247,7 +232,8 @@ class MCLB_Account {
             '<strong>' . esc_html($code) . '</strong>'
         ) . '</p>';
         $body .= '<p>' . esc_html(sprintf('%s — %s', $b->lane_name, substr($b->starts_at, 0, 16))) . '</p>';
-
-        wp_mail($email, $subject, $body, ['Content-Type: text/html; charset=UTF-8']);
+        MCLB_Mail::send($email, $heading . ' — ' . (wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES) ?: 'Cricketers Club'), $body, [
+            'heading' => $heading, 'branded' => true, 'tag' => 'credit-issued',
+        ]);
     }
 }

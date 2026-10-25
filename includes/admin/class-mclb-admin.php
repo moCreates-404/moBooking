@@ -142,16 +142,29 @@ class MCLB_Admin {
         $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mclb-lane-booking'), __('WooCommerce product ID', 'mclb-lane-booking'), 0);
         $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
         $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mclb-lane-booking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mclb-lane-booking'), 0, 720);
+        $this->number_field($g, 'mclb_wc', 'credit_expiry_days', __('Store-credit expiry', 'mclb-lane-booking'), __('days a cancellation credit coupon lasts (0 = never); set when the coupon is issued', 'mclb-lane-booking'), 0, 3650);
+        $this->checkbox_field($g, 'mclb_wc', 'guest_self_cancel', __('Guest self-cancel', 'mclb-lane-booking'), __('Let customers cancel from a secure link in their confirmation email (no login)', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_wc', 'club_phone', __('Club phone', 'mclb-lane-booking'), __('shown when a booking is too close to its start time to cancel online (the theme can supply this via the mclb_club_phone filter)', 'mclb-lane-booking'));
         add_settings_field('terms_page_id', __('Terms & Conditions page', 'mclb-lane-booking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
 
         // General → Emails
         add_settings_section('mclb_emails', __('Emails', 'mclb-lane-booking'), function () {
             echo '<p>' . esc_html__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: lane bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mclb-lane-booking') . '</p>';
+            // Warn when the Bookings address is blank: staff alerts fall back to
+            // WooCommerce's New Order recipient / the admin email (v1.4.3).
+            if (sanitize_email((string) MCLB_Settings::get('email_bookings')) === '') {
+                $fallback = get_option('woocommerce_new_order_settings');
+                $fallback = (is_array($fallback) && !empty($fallback['recipient'])) ? $fallback['recipient'] : get_option('admin_email');
+                echo '<div class="notice notice-warning inline" style="margin:6px 0;"><p>'
+                    . esc_html(sprintf(__('No Bookings email is set — staff alerts (incl. cancellations) currently go to %s. Set one below so booking alerts reach the right inbox.', 'mclb-lane-booking'), $fallback))
+                    . '</p></div>';
+            }
         }, $g);
         $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mclb-lane-booking'), __('e.g. bookings@yourclub.com — lane-booking admin emails + staff alerts', 'mclb-lane-booking'));
         $this->text_field($g, 'mclb_emails', 'email_reception', __('Reception / shop email', 'mclb-lane-booking'), __('e.g. reception@yourclub.com — shop-order admin emails', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'email_manual_confirmation', __('Manual booking confirmation', 'mclb-lane-booking'), __('Email the customer a confirmation when staff create a manual booking (if an address is on file)', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_self_cancel', __('Alert: customer self-cancel', 'mclb-lane-booking'), __('Email the Bookings address when a customer cancels their own booking', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'email_customer_on_cancel', __('Customer cancellation email', 'mclb-lane-booking'), __('Email the customer whenever a booking is cancelled, with the refund/credit outcome (if an address is on file)', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_cancel', __('Alert: cancellation', 'mclb-lane-booking'), __('Email the Bookings address whenever a booking is cancelled (staff, customer or order)', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mclb-lane-booking'), __('Email the Bookings address when an online booking asks for a coach', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mclb-lane-booking'), __('Email the Bookings address when staff create a manual booking', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mclb-lane-booking'), __('Email the Bookings address when staff move a booking', 'mclb-lane-booking'));

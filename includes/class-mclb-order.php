@@ -23,6 +23,64 @@ class MCLB_Order {
         add_action('woocommerce_payment_complete', [__CLASS__, 'on_payment_complete'], 10, 1);
         add_action('woocommerce_order_status_cancelled', [__CLASS__, 'on_release'], 10, 1);
         add_action('woocommerce_order_status_refunded', [__CLASS__, 'on_release'], 10, 1);
+
+        // Guest self-cancel "Manage booking" links (WEB-17): in the customer order
+        // emails and on the thank-you / view-order pages, for orders with bookings.
+        add_action('woocommerce_email_after_order_table', [__CLASS__, 'email_manage_links'], 20, 4);
+        add_action('woocommerce_order_details_after_order_table', [__CLASS__, 'page_manage_links'], 20, 1);
+    }
+
+    /** Confirmed, future bookings on an order (for the manage links). */
+    private static function manageable_bookings($order_id) {
+        if ((int) MCLB_Settings::get('guest_self_cancel') !== 1 || !class_exists('MCLB_Manage_Token')) {
+            return [];
+        }
+        $out = [];
+        $now = current_time('mysql');
+        foreach (MCLB_Bookings::for_order((int) $order_id) as $b) {
+            if ((string) $b->status === MCLB_Bookings::STATUS_CONFIRMED && (string) $b->starts_at > $now) {
+                $out[] = $b;
+            }
+        }
+        return $out;
+    }
+
+    public static function email_manage_links($order, $sent_to_admin, $plain_text, $email) {
+        if ($sent_to_admin || !($order instanceof WC_Order)) { return; }
+        $rows = self::manageable_bookings($order->get_id());
+        if (empty($rows)) { return; }
+        $label = __('Need to change a booking? Manage or cancel it here:', 'mclb-lane-booking');
+        if ($plain_text) {
+            echo "\n" . $label . "\n";
+            foreach ($rows as $b) { echo MCLB_Manage_Token::url($b) . "\n"; } // phpcs:ignore WordPress.Security.EscapeOutput -- plain URL
+            return;
+        }
+        echo '<p style="margin:16px 0 6px;">' . esc_html($label) . '</p><ul>';
+        foreach ($rows as $b) {
+            printf(
+                '<li><a href="%s">%s — %s</a></li>',
+                esc_url(MCLB_Manage_Token::url($b)),
+                esc_html($b->lane_name),
+                esc_html(MCLB_Cart::when_label($b->starts_at, $b->ends_at))
+            );
+        }
+        echo '</ul>';
+    }
+
+    public static function page_manage_links($order) {
+        if (!($order instanceof WC_Order)) { return; }
+        $rows = self::manageable_bookings($order->get_id());
+        if (empty($rows)) { return; }
+        echo '<section class="mclb-manage-links"><h2>' . esc_html__('Your bookings', 'mclb-lane-booking') . '</h2><ul>';
+        foreach ($rows as $b) {
+            printf(
+                '<li><a href="%s" target="_blank" rel="noopener">%s — %s</a></li>',
+                esc_url(MCLB_Manage_Token::url($b)),
+                esc_html($b->lane_name),
+                esc_html(MCLB_Cart::when_label($b->starts_at, $b->ends_at))
+            );
+        }
+        echo '</ul></section>';
     }
 
     /** Order saved: link each line item's hold row to the order. */

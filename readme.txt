@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,35 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.4.3 =
+* Cancellation emails (WEB-12): every cancellation now emails both the customer
+  and the Bookings address. The customer email states plainly what was cancelled
+  (date, lane, time, coach hours) and the money outcome — refunded to card, store
+  credit (code + expiry), refund at the counter, paid-but-not-auto-refunded, or
+  no refund inside the cut-off. A whole-series cancel sends one email listing each
+  date. Staff confirms gain a "Notify customer" checkbox (default on, like Move);
+  with no email on file the customer email is skipped and the panel says so.
+  Settings: "Customer cancellation email" and "Alert: cancellation" (the latter
+  replaces the old self-cancel-only alert, so there's no double alert).
+* Guest self-cancel (WEB-17): customers no longer have to phone — the online
+  order confirmation, thank-you page and manual/series confirmations now include
+  a secure, no-login "Manage or cancel this booking" link. The page applies the
+  same tiered policy as logged-in self-cancel (card refund within the window,
+  otherwise store credit; inside the cut-off it shows the club phone and asks the
+  customer to call). It confirms the lane/date/time and the exact outcome before
+  cancelling, only ever shows that customer's own order/series, and the link
+  stops working once a booking is cancelled or past. New settings: "Guest
+  self-cancel" (default on), "Store-credit expiry" (default 30 days), and "Club
+  phone" (also settable via the mclb_club_phone filter). Links in emails sent
+  before this release have no token and still use the phone / My Account route.
+* Store-credit coupons issued on cancellation now carry an expiry (default 30
+  days; 0 = never), shown to the customer.
+* Note for staff: a partial WooCommerce refund of a single line does not change
+  the order status and so does not cancel a booking — use the calendar's
+  "Cancel + refund" to cancel and refund one lane.
+* Every cancel path funnels through one internal action (mclb_booking_cancelled),
+  the seam future prepaid-pass refunds will hook. No database change (still v7).
 
 = 1.4.2 =
 * Booking "created" time: the Manage panel + tooltip now show when a booking was

@@ -771,15 +771,40 @@ class MCLB_REST_Admin {
             ]);
         }
 
+        $notify = ($request->get_param('notify') === null) ? true : filter_var($request->get_param('notify'), FILTER_VALIDATE_BOOLEAN);
+
+        // Series cancels never auto-refund (staff settle the money); each occurrence
+        // fires the single seam (batch — no per-booking email), then ONE customer
+        // email + ONE staff alert list every cancelled date with its outcome.
         $cancelled = 0;
+        $items     = []; // [ ['booking'=>row, 'outcome'=>...] ] for the combined emails
         foreach ($targets as $r) {
             if (MCLB_Bookings::claim_cancel((int) $r->id)) {
                 $cancelled++;
                 $label = ($mode === 'whole') ? __('cancelled (whole series)', 'mclb-lane-booking') : __('cancelled (this and following)', 'mclb-lane-booking');
                 self::log((int) $r->id, $actor, $label);
+                $paid_counter = ($r->counter_paid_at !== null && $r->counter_paid_at !== '0000-00-00 00:00:00' && $r->counter_due !== null);
+                if (MCLB_Cancel::is_online_paid($r)) {
+                    $outcome = ['type' => 'paid_not_refunded', 'amount' => (float) $r->price, 'actor' => $actor, 'manual_flag' => true];
+                } elseif ($paid_counter) {
+                    $outcome = ['type' => 'counter_refund', 'amount' => (float) $r->counter_due, 'actor' => $actor, 'manual_flag' => true];
+                } else {
+                    $outcome = ['type' => 'cancelled', 'amount' => 0.0, 'actor' => $actor, 'manual_flag' => false];
+                }
+                MCLB_Cancel::finish($r, $outcome, ['batch' => true]); // seam only
+                $items[] = ['booking' => $r, 'outcome' => $outcome];
             }
         }
-        return rest_ensure_response(['ok' => true, 'cancelled' => $cancelled]);
+        $has_email = sanitize_email((string) $b->customer_email) !== '';
+        if (!empty($items) && class_exists('MCLB_Emails')) {
+            if ((int) MCLB_Settings::get('alert_cancel') === 1) {
+                MCLB_Emails::alert_series_cancel($b, $items, $actor);
+            }
+            if ($notify && (int) MCLB_Settings::get('email_customer_on_cancel') === 1 && $has_email) {
+                MCLB_Emails::send_series_cancellation($b, $items);
+            }
+        }
+        return rest_ensure_response(['ok' => true, 'cancelled' => $cancelled, 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
     }
 
     // ── POST /admin/booking/{id}/details (edit customer fields) ───────────────
@@ -1329,30 +1354,49 @@ class MCLB_REST_Admin {
         if ($actor === null) {
             return self::need_initials();
         }
-        $id   = (int) $request['id'];
-        $mode = ($request->get_param('mode') === 'refund') ? 'refund' : 'only';
+        $id     = (int) $request['id'];
+        $mode   = ($request->get_param('mode') === 'refund') ? 'refund' : 'only';
+        // Staff "Notify customer" box (default on), mirroring Move.
+        $notify = ($request->get_param('notify') === null) ? true : filter_var($request->get_param('notify'), FILTER_VALIDATE_BOOLEAN);
+
+        $b = MCLB_Bookings::get($id);
+        if (!$b) {
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+        }
+        $has_email = sanitize_email((string) $b->customer_email) !== '';
 
         if ($mode === 'refund') {
             if (!current_user_can(MCLB_Caps::REFUND)) {
                 return new WP_Error('mclb_forbidden', __('You can’t issue refunds.', 'mclb-lane-booking'), ['status' => 403]);
             }
-            $b = MCLB_Bookings::get($id);
-            if (!$b || (string) $b->source !== 'online' || !$b->order_id) {
+            if ((string) $b->source !== 'online' || !$b->order_id) {
                 return new WP_Error('mclb_no_refund', __('This booking has no online payment to refund. Use “Cancel only”.', 'mclb-lane-booking'), ['status' => 400]);
             }
-            $res = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'));
+            // cancel_and_refund fires the single seam + the WEB-12 emails.
+            $res = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'), ['actor' => $actor, 'notify' => $notify]);
             if (empty($res['ok'])) {
                 return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mclb-lane-booking'), ['status' => 409]);
             }
-            self::log($id, $actor, __('cancelled + refunded', 'mclb-lane-booking'));
-            return rest_ensure_response(['ok' => true, 'refunded' => !empty($res['refunded'])]);
+            self::log($id, $actor, !empty($res['refunded']) ? __('cancelled + refunded', 'mclb-lane-booking') : __('cancelled — automatic refund FAILED, refund manually', 'mclb-lane-booking'));
+            return rest_ensure_response(['ok' => true, 'refunded' => !empty($res['refunded']), 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
         }
 
+        // Cancel only (no refund). Classify the money outcome so the email is
+        // accurate (addition a: an online-paid booking must not just say "cancelled").
         if (!MCLB_Bookings::claim_cancel($id)) {
             return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mclb-lane-booking'), ['status' => 409]);
         }
+        $paid_counter = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00' && $b->counter_due !== null);
+        if (MCLB_Cancel::is_online_paid($b)) {
+            $outcome = ['type' => 'paid_not_refunded', 'amount' => (float) $b->price, 'actor' => $actor, 'manual_flag' => true];
+        } elseif ($paid_counter) {
+            $outcome = ['type' => 'counter_refund', 'amount' => (float) $b->counter_due, 'actor' => $actor, 'manual_flag' => true];
+        } else {
+            $outcome = ['type' => 'cancelled', 'amount' => 0.0, 'actor' => $actor, 'manual_flag' => false];
+        }
+        MCLB_Cancel::finish($b, $outcome, ['notify' => $notify]);
         self::log($id, $actor, __('cancelled', 'mclb-lane-booking'));
-        return rest_ensure_response(['ok' => true]);
+        return rest_ensure_response(['ok' => true, 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
     }
 
     // ── POST /admin/daysheet (manual send) ───────────────────────────────────

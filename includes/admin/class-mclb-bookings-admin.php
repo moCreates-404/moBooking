@@ -76,11 +76,27 @@ class MCLB_Bookings_Admin {
         $counter_paid = $pre && $pre->counter_paid_at !== null && $pre->counter_paid_at !== '0000-00-00 00:00:00' && $pre->counter_due !== null;
         $counter_amt  = $counter_paid ? (float) $pre->counter_due : 0.0;
 
+        $actor = self::user_initials();
         if ($mode === 'refund') {
-            $res    = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'));
+            // cancel_and_refund fires the cancel seam + WEB-12 emails (v1.4.3).
+            $res    = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'), ['actor' => $actor, 'notify' => true]);
             $notice = empty($res['ok']) ? 'nochange' : (!empty($res['refunded']) ? 'refunded' : 'cancelled_norefund');
         } else {
-            $notice = MCLB_Bookings::claim_cancel($id) ? 'cancelled' : 'nochange';
+            if (MCLB_Bookings::claim_cancel($id)) {
+                $notice = 'cancelled';
+                if ($pre && class_exists('MCLB_Cancel')) {
+                    if (MCLB_Cancel::is_online_paid($pre)) {
+                        $outcome = ['type' => 'paid_not_refunded', 'amount' => (float) $pre->price, 'actor' => $actor, 'manual_flag' => true];
+                    } elseif ($counter_paid) {
+                        $outcome = ['type' => 'counter_refund', 'amount' => $counter_amt, 'actor' => $actor, 'manual_flag' => true];
+                    } else {
+                        $outcome = ['type' => 'cancelled', 'amount' => 0.0, 'actor' => $actor, 'manual_flag' => false];
+                    }
+                    MCLB_Cancel::finish($pre, $outcome, ['notify' => true]);
+                }
+            } else {
+                $notice = 'nochange';
+            }
         }
 
         $args = ['mclb_msg' => $notice];
