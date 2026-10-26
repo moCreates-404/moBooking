@@ -256,3 +256,52 @@
 .mclb-series-row.is-ok .mclb-series-row__state { color: #15803d; font-weight: 600; }
 .mclb-series-row.is-bad { color: var(--mclb-muted); }
 .mclb-series-row.is-bad .mclb-series-row__state { color: #b91c1c; }
+
+/* ── Coach roster (v1.5.1) ──────────────────────────────────────────────────── */
+.mclb-manage .mclb-cal__viewtog { display: inline-flex; gap: 2px; }
+.mclb-manage .mclb-cal__btn.is-active { background: var(--mclb-accent, #f4c430); color: #1a1a1a; font-weight: 700; }
+.mclb-ros-wrap { overflow-x: auto; border: 1px solid var(--mclb-line, #e5e5e5); border-radius: 8px; background: var(--mclb-surface, #fff); }
+.mclb-ros-wrap.mclb-ros-week { overflow-x: auto; border: 0; border-radius: 0; background: transparent; }
+.mclb-ros-week .mclb-ros-day { width: max-content; min-width: 100%; }
+.mclb-ros-week .mclb-ros { border: 1px solid var(--mclb-line, #e5e5e5); border-top: 0; border-radius: 0 0 8px 8px; background: var(--mclb-surface, #fff); }
+.mclb-ros { width: 100%; } /* fills the roster; JS sets a min-width so narrow screens scroll */
+.mclb-ros__head { display: flex; position: sticky; top: 0; z-index: 4; background: var(--mclb-surface, #fff); border-bottom: 1px solid var(--mclb-line, #e5e5e5); }
+.mclb-ros__gut { flex: 0 0 150px; width: 150px; position: sticky; left: 0; z-index: 2; background: var(--mclb-surface, #fff); }
+.mclb-ros__ticks { position: relative; height: 26px; flex: 1 1 auto; }
+.mclb-ros__tick { position: absolute; top: 6px; font-size: 11px; color: var(--mclb-muted, #888); transform: translateX(-2px); white-space: nowrap; }
+.mclb-ros__row { display: flex; min-height: 48px; border-bottom: 1px solid #f0f0f0; }
+.mclb-ros__label { border-right: 1px solid var(--mclb-line, #e5e5e5); padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; justify-content: center; }
+.mclb-ros__name { font-weight: 700; font-size: 13px; }
+.mclb-ros__tot { font-size: 12px; color: var(--mclb-muted, #555); }
+.mclb-ros__norate { color: #b45309; }
+.mclb-ros__sheet { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.mclb-ros__sheetnote { font-size: 11px; color: var(--mclb-muted, #888); }
+.mclb-ros__send { padding: 2px 8px; font-size: 11px; }
+.mclb-ros__track { position: relative; flex: 1 1 auto; min-height: 48px; }
+.mclb-ros__now { position: absolute; top: 0; bottom: 0; width: 2px; background: #b32d2e; z-index: 3; }
+.mclb-rosblock { position: absolute; top: 4px; bottom: 4px; min-width: 34px; min-height: 38px; overflow: hidden; border-radius: 6px; padding: 3px 6px; font-size: 12px; line-height: 1.25; cursor: pointer; background: #eaf2ff; border: 1px solid #c7dbff; }
+.mclb-rosblock.mclb-mblock--online { background: #eaf2ff; border-color: #c7dbff; }
+.mclb-rosblock.mclb-mblock--manual { background: #fdf4e3; border-color: #f3dca6; }
+.mclb-rosblock.mclb-mblock--now { box-shadow: 0 0 0 2px #b32d2e inset; }
+.mclb-rosblock__name { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mclb-rosblock__sub { display: block; color: var(--mclb-muted, #777); font-size: 11px; }
+.mclb-rosblock__badges { display: flex; gap: 4px; margin-top: 2px; }
+.mclb-ros__none { padding: 8px 10px; font-size: 12px; color: var(--mclb-muted, #777); border-bottom: 1px solid #f0f0f0; }
+.mclb-ros-day { margin: 0 0 14px; }
+.mclb-ros-day__head { position: sticky; top: 0; z-index: 5; background: var(--mclb-accent, #f4c430); color: #1a1a1a; font-weight: 700; padding: 6px 10px; border-radius: 6px 6px 0 0; }
+.mclb-ros__summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; margin: 0 0 10px; border: 1px solid var(--mclb-line, #e5e5e5); border-radius: 8px; background: var(--mclb-surface, #fff); }
+.mclb-ros__sumchip { font-size: 12px; border: 1px solid var(--mclb-line, #e5e5e5); border-radius: 999px; padding: 2px 10px; }
+.mclb-print-only { display: none; }
+
+/* ── Print: landscape week roster, no toolbar/panel ─────────────────────────── */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+  .mclb-cal__toolbar, .mclb-panel, .mclb-panel__scrim, .mclb-cal__collect, .mclb-toast { display: none !important; }
+  .mclb-ros-wrap { overflow: visible !important; border: none; }
+  .mclb-ros__label, .mclb-ros__gut, .mclb-ros__head { position: static !important; }
+  .mclb-ros__send, .mclb-ros__sheet { display: none !important; }
+  .mclb-ros-day { page-break-after: always; break-after: page; }
+  .mclb-rosblock__name { display: none; }
+  .mclb-print-only { display: block; }
+  .mclb-ros__now { display: none; }
+}

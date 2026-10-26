@@ -219,7 +219,7 @@ class MCLB_Manage {
             'ajaxUrl'   => esc_url_raw(admin_url('admin-ajax.php')),
             'nonce'     => wp_create_nonce('wp_rest'),
             'canRefund'  => current_user_can(MCLB_Caps::REFUND),
-            'testRecipient' => sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient')),
+            'testRecipient' => MCLB_Mail::test_recipient(), // the address day sheets actually reroute to (global email_test_recipient, daysheet fallback)
             'eventTypes' => array_map(static function ($t) {
                 return ['slug' => $t['slug'], 'label' => $t['label']];
             }, MCLB_Event_Types::all()),
@@ -338,6 +338,9 @@ class MCLB_Manage {
                 'testMode'    => __('Test mode:', 'mclb-lane-booking'),
                 'testGoesTo'  => __('this will go to', 'mclb-lane-booking'),
                 'notTheCoach' => __('not the coach', 'mclb-lane-booking'),
+                'allSheetsTo'   => __('every day sheet will go to', 'mclb-lane-booking'),
+                'notTheCoaches' => __('not the coaches', 'mclb-lane-booking'),
+                'guest'         => __('Guest', 'mclb-lane-booking'),
                 // Partial coach time + block-out release (v1.4.1).
                 'coachTime'       => __('Coach time', 'mclb-lane-booking'),
                 'due'             => __('Due', 'mclb-lane-booking'),
@@ -408,6 +411,26 @@ class MCLB_Manage {
                 'leftAfter'       => __('left after', 'mclb-lane-booking'),
                 'dueAtCounter'    => __('Due at counter:', 'mclb-lane-booking'),
                 'fromPass'        => __('from pass', 'mclb-lane-booking'),
+                // Coach roster (v1.5.1).
+                'lanesView'       => __('Lanes', 'mclb-lane-booking'),
+                'rosterView'      => __('Roster', 'mclb-lane-booking'),
+                'day'             => __('Day', 'mclb-lane-booking'),
+                'week'            => __('Week', 'mclb-lane-booking'),
+                'weekOf'          => __('Week of', 'mclb-lane-booking'),
+                'weekTotals'      => __('Week totals', 'mclb-lane-booking'),
+                'showAllCoaches'  => __('Show all coaches', 'mclb-lane-booking'),
+                'noSessions'      => __('No sessions', 'mclb-lane-booking'),
+                'noRate'          => __('no rate set', 'mclb-lane-booking'),
+                'noOpen'          => __('Closed this day.', 'mclb-lane-booking'),
+                'laneTime'        => __('lane', 'mclb-lane-booking'),
+                'send'            => __('Send', 'mclb-lane-booking'),
+                'sendAll'         => __('Send day sheets to all', 'mclb-lane-booking'),
+                'sendAllConfirm'  => __('Send day sheets to every coach with sessions that day?', 'mclb-lane-booking'),
+                'sentToN'         => __('Sent to %n coaches', 'mclb-lane-booking'),
+                'skippedN'        => __('skipped %m (no sessions)', 'mclb-lane-booking'),
+                'noEmailList'     => __('no email:', 'mclb-lane-booking'),
+                'failed'          => __('failed', 'mclb-lane-booking'),
+                'printWeek'       => __('Print week', 'mclb-lane-booking'),
             ],
         ];
 

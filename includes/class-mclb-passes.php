@@ -358,7 +358,7 @@ class MCLB_Passes {
         // Lower the booking's stored price to the net card amount so a later refund
         // only ever refunds what the card paid (pass hours return, never refund).
         MCLB_Bookings::apply_pass_price((int) $booking_id);
-        self::maybe_holder_email($pid, $h, 'used');
+        self::maybe_holder_email($pid, $h, 'used', (int) $booking_id);
         return $h;
     }
 
@@ -376,7 +376,7 @@ class MCLB_Passes {
             if ($take <= 0) { return ['ok' => false, 'error' => 'empty', 'hours' => 0.0]; }
             self::add_row((int) $pass_id, 'redeem', -1 * $take, ['booking_id' => (int) $booking_id, 'actor' => $actor]);
             self::stamp_booking((int) $booking_id, (int) $pass_id, $take);
-            self::maybe_holder_email((int) $pass_id, $take, 'used');
+            self::maybe_holder_email((int) $pass_id, $take, 'used', (int) $booking_id);
             return ['ok' => true, 'hours' => $take];
         } finally {
             if (!$locked) { self::unlock($code); }
@@ -391,7 +391,7 @@ class MCLB_Passes {
         if (!$pid) { return null; }
         self::add_row($pid, 'return', $h, ['booking_id' => (int) $booking_id, 'reason' => $reason]);
         self::stamp_booking((int) $booking_id, null, null);
-        self::maybe_holder_email($pid, $h, 'returned');
+        self::maybe_holder_email($pid, $h, 'returned', (int) $booking_id);
         $pass = self::get($pid);
         return ['pass_id' => $pid, 'code' => $pass ? $pass->code : '', 'hours' => $h, 'balance' => self::balance($pid), 'expires_at' => $pass ? $pass->expires_at : null];
     }
@@ -523,18 +523,70 @@ class MCLB_Passes {
         return (new DateTimeImmutable('now', wp_timezone()))->modify('+' . $m . ' months')->format('Y-m-d H:i:s');
     }
 
-    private static function maybe_holder_email($pass_id, $hours, $kind) {
+    // ── Holder balance emails ────────────────────────────────────────────────
+    // A series draw/cancel touches the same pass several times; batching collapses
+    // those into ONE summary per pass+kind instead of one email per occurrence.
+    private static $holder_batch = null;
+
+    /** Start collecting holder balance emails instead of sending per occurrence. */
+    public static function begin_holder_batch() {
+        if (self::$holder_batch === null) { self::$holder_batch = []; }
+    }
+
+    /** Send one summary per pass+kind collected since begin_holder_batch(). */
+    public static function flush_holder_batch() {
+        if (self::$holder_batch === null) { return; }
+        $batch = self::$holder_batch;
+        self::$holder_batch = null;
+        foreach ($batch as $e) {
+            self::send_holder_email((int) $e['pass_id'], (float) $e['hours'], (string) $e['kind'], (int) $e['count'], $e['booking_ids']);
+        }
+    }
+
+    private static function maybe_holder_email($pass_id, $hours, $kind, $booking_id = 0) {
         if ((int) MCLB_Settings::get('pass_holder_email') !== 1 || !class_exists('MCLB_Mail')) { return; }
+        if (self::$holder_batch !== null) {
+            $k = (int) $pass_id . ':' . $kind;
+            if (!isset(self::$holder_batch[$k])) {
+                self::$holder_batch[$k] = ['pass_id' => (int) $pass_id, 'kind' => $kind, 'hours' => 0.0, 'count' => 0, 'booking_ids' => []];
+            }
+            self::$holder_batch[$k]['hours'] += (float) $hours;
+            self::$holder_batch[$k]['count'] += 1;
+            if ($booking_id) { self::$holder_batch[$k]['booking_ids'][] = (int) $booking_id; }
+            return;
+        }
+        self::send_holder_email((int) $pass_id, (float) $hours, $kind, 1, $booking_id ? [(int) $booking_id] : []);
+    }
+
+    /** The actual holder email — summarises $count sessions (dates listed when >1). */
+    private static function send_holder_email($pass_id, $hours, $kind, $count = 1, array $booking_ids = []) {
+        if (!class_exists('MCLB_Mail')) { return; }
         $pass = self::get($pass_id);
         if (!$pass || sanitize_email((string) $pass->holder_email) === '') { return; }
         $bal  = self::balance($pass_id);
         $hh   = rtrim(rtrim(number_format((float) $hours, 2), '0'), '.');
         $bb   = rtrim(rtrim(number_format((float) $bal, 2), '0'), '.');
+        $n    = max(1, (int) $count);
         $heading = __('Your prepaid pass', 'mclb-lane-booking');
         if ($kind === 'returned') {
-            $body = '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+            $body = ($n > 1)
+                /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
+                ? '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                /* translators: 1: hours, 2: pass code, 3: balance. */
+                : '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
         } else {
-            $body = '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+            $body = ($n > 1)
+                /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
+                ? '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                /* translators: 1: hours, 2: pass code, 3: balance. */
+                : '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+        }
+        if ($n > 1) {
+            $dates = self::booking_dates($booking_ids);
+            if ($dates !== '') {
+                /* translators: %s: comma-separated session dates. */
+                $body .= '<p style="color:#666;">' . esc_html(sprintf(__('Sessions: %s', 'mclb-lane-booking'), $dates)) . '</p>';
+            }
         }
         if ($pass->expires_at) {
             $body .= '<p style="color:#666;">' . sprintf(esc_html__('Pass expires %s (use it to BOOK before then; your session can be later).', 'mclb-lane-booking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
@@ -542,5 +594,20 @@ class MCLB_Passes {
         MCLB_Mail::send($pass->holder_email, $heading . ' — ' . (wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES) ?: 'Cricketers Club'), $body, [
             'heading' => $heading, 'branded' => true, 'tag' => 'pass-balance',
         ]);
+    }
+
+    /** Chronological comma list of session dates for a set of bookings, or ''. */
+    private static function booking_dates(array $booking_ids) {
+        $booking_ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids))));
+        if (empty($booking_ids)) { return ''; }
+        $tz = wp_timezone(); $out = [];
+        foreach ($booking_ids as $bid) {
+            $b = MCLB_Bookings::get($bid);
+            if ($b && $b->starts_at) {
+                $out[(string) $b->starts_at] = wp_date('j M Y', (new DateTimeImmutable($b->starts_at, $tz))->getTimestamp());
+            }
+        }
+        ksort($out);
+        return implode(', ', array_values($out));
     }
 }

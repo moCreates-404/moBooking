@@ -119,6 +119,13 @@ class MCLB_REST_Admin {
         register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/pass', [
             'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'booking_pass'],
         ]);
+        // Coach roster week view + "send day sheets to all" (v1.5.1).
+        register_rest_route(self::NS, '/admin/week', [
+            'methods' => 'GET', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'week'],
+        ]);
+        register_rest_route(self::NS, '/admin/daysheets/all', [
+            'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'daysheets_all'],
+        ]);
         register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/move', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -246,58 +253,7 @@ class MCLB_REST_Admin {
         // ghosted cancelled BLOCKS unless "show cancelled" is on.
         $bookings = [];
         foreach (MCLB_Bookings::for_day_admin($date, true) as $b) {
-            $held      = ($b->status === MCLB_Bookings::STATUS_HELD);
-            $cancelled = ($b->status === MCLB_Bookings::STATUS_CANCELLED);
-            $paid      = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
-            $bookings[] = [
-                'id'          => (int) $b->id,
-                'lane_id'     => (int) $b->lane_id,
-                'starts_at'   => $b->starts_at,
-                'ends_at'     => $b->ends_at,
-                'start_min'   => self::min_of_day($b->starts_at, $midnight, $tz),
-                'end_min'     => self::min_of_day($b->ends_at, $midnight, $tz),
-                'status'      => $b->status,
-                'held'        => $held,
-                'cancelled'   => $cancelled,
-                'source'      => (string) $b->source,
-                // Booked-at (v1.4.2): formatted server-side in site tz. created_by
-                // is the staff initials (column), with the audit-line parse as the
-                // fallback for pre-v7 rows; '' = unknown/online.
-                'created_label' => $b->created_at ? (MCLB_Settings::friendly_date_short((new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) . ', ' . wp_date(get_option('time_format') ?: 'g:i a', (new DateTimeImmutable($b->created_at, $tz))->getTimestamp())) : '',
-                'created_by'    => (string) ($b->created_by !== null && $b->created_by !== '' ? $b->created_by : MCLB_Bookings::creation_initials($b->admin_note)),
-                // Per-line coupon snapshot (v1.4.2): null = not yet backfilled,
-                // [] = none, [{codes,amount,credit}] = this line's discount incl tax.
-                'coupons'       => ($b->coupons !== null && $b->coupons !== '') ? json_decode($b->coupons, true) : null,
-                'customer'    => trim((string) $b->customer_name),
-                'email'       => (string) $b->customer_email,
-                'phone'       => $b->customer_phone ? MCLB_Phone::format_au($b->customer_phone) : '',
-                'phone_raw'   => (string) $b->customer_phone,
-                'coach_id'    => $b->assigned_coach_id ? (int) $b->assigned_coach_id : 0,
-                'coach_label' => $b->assigned_coach_id ? MCLB_Coaches::label((int) $b->assigned_coach_id) : '',
-                // Coach's effective window (partial coach time, v1.4.1): minutes-of-day
-                // for the chip/tooltip/day-sheet, + the raw datetimes for editing.
-                'coach_start_min' => ($b->assigned_coach_id && $b->coach_starts_at) ? self::min_of_day($b->coach_starts_at, $midnight, $tz) : null,
-                'coach_end_min'   => ($b->assigned_coach_id && $b->coach_ends_at) ? self::min_of_day($b->coach_ends_at, $midnight, $tz) : null,
-                'coach_starts_at' => $b->coach_starts_at ?: '',
-                'coach_ends_at'   => $b->coach_ends_at ?: '',
-                'coach_partial'   => (bool) ($b->assigned_coach_id && $b->coach_starts_at),
-                'price'       => $b->price !== null ? (float) $b->price : null,
-                'price_original' => $b->price_original !== null ? (float) $b->price_original : null,
-                'coach_fee'   => $b->coach_fee !== null ? (float) $b->coach_fee : null,
-                'coach_fee_original' => $b->coach_fee_original !== null ? (float) $b->coach_fee_original : null,
-                // Prepaid-pass cover (v1.5.0): snapshot columns → chip/badge/panel.
-                'pass_hours'   => $b->pass_hours !== null ? (float) $b->pass_hours : null,
-                'pass_code'    => ($b->pass_id && class_exists('MCLB_Passes') && ($pp = MCLB_Passes::get((int) $b->pass_id))) ? $pp->code : '',
-                'pass_balance' => ($b->pass_id && class_exists('MCLB_Passes')) ? MCLB_Passes::balance((int) $b->pass_id) : null,
-                'counter_due' => $b->counter_due !== null ? (float) $b->counter_due : null,
-                'counter_paid'=> $paid,
-                'order_id'    => $b->order_id ? (int) $b->order_id : 0,
-                'note'        => (string) $b->admin_note,
-                'staff_note'  => (string) $b->staff_note,
-                'badges'      => $held ? [] : self::badges($b, $paid, $cancelled),
-                'refundable'  => (!$held && !$cancelled && (string) $b->source === 'online' && $b->order_id),
-                'series_id'   => $b->series_id ? (int) $b->series_id : 0,
-            ];
+            $bookings[] = self::block_payload($b, $midnight, $tz);
         }
         // Series position (N of M) for any booking in a series — one extra query.
         $series_ids = array_values(array_filter(array_map(function ($r) { return (int) $r['series_id']; }, $bookings)));
@@ -318,16 +274,34 @@ class MCLB_REST_Admin {
         // Coaches (all bookable, with rate) for chips + the filter dropdown, plus
         // each coach's day-sheet status for this date (sent / changed-since-sent).
         $coaches = [];
+        $seen    = [];
         foreach (MCLB_Coaches::options() as $cid => $name) {
-            $rate    = MCLB_Coaches::rate((int) $cid);
-            $st      = MCLB_Daysheets::status((int) $cid, $date);
+            $st        = MCLB_Daysheets::status((int) $cid, $date);
             $coaches[] = [
                 'id'            => (int) $cid,
                 'name'          => $name,
-                'rate'          => $rate,
+                'rate'          => MCLB_Coaches::rate((int) $cid),
                 'sheet_sent_at' => $st['sent_at'],
                 'sheet_changed' => $st['changed'],
             ];
+            $seen[(int) $cid] = true;
+        }
+        // Roster fix (a): a coach unticked as bookable / removed from the CPT who
+        // still holds a session must still get a row, so no session disappears.
+        foreach ($bookings as $bk) {
+            $cid = (int) $bk['coach_id'];
+            if ($cid && empty($seen[$cid]) && !$bk['cancelled'] && !$bk['held']) {
+                $st        = MCLB_Daysheets::status($cid, $date);
+                $coaches[] = [
+                    'id'            => $cid,
+                    'name'          => MCLB_Coaches::label($cid), // fallback name for unlisted/removed
+                    'rate'          => MCLB_Coaches::rate($cid),
+                    'sheet_sent_at' => $st['sent_at'],
+                    'sheet_changed' => $st['changed'],
+                    'unlisted'      => true,
+                ];
+                $seen[$cid] = true;
+            }
         }
 
         return rest_ensure_response([
@@ -335,6 +309,7 @@ class MCLB_REST_Admin {
             'date_label' => MCLB_Settings::friendly_date($midnight->getTimestamp()),
             'now'        => current_time('mysql'),
             'increment' => $increment,
+            'names_mode' => MCLB_Settings::get('daysheet_names') ?: 'full', // roster PRINT uses this (screen shows full)
             'grid'      => ['open_min' => $min_open, 'close_min' => $max_close],
             'types'     => $grouped,
             'bookings'  => $bookings,
@@ -343,6 +318,209 @@ class MCLB_REST_Admin {
             'coaches'   => $coaches,
             'canRefund' => current_user_can(MCLB_Caps::REFUND),
         ]);
+    }
+
+    /**
+     * Build one booking's calendar-block payload (shared by the day + week views so
+     * the lane grid and the coach roster render identical blocks). Minutes-of-day
+     * are relative to $midnight (the day the block belongs to).
+     */
+    private static function block_payload($b, DateTimeImmutable $midnight, DateTimeZone $tz) {
+        $held      = ($b->status === MCLB_Bookings::STATUS_HELD);
+        $cancelled = ($b->status === MCLB_Bookings::STATUS_CANCELLED);
+        $paid      = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
+        return [
+            'id'          => (int) $b->id,
+            'lane_id'     => (int) $b->lane_id,
+            'lane_name'   => (string) $b->lane_name,
+            'starts_at'   => $b->starts_at,
+            'ends_at'     => $b->ends_at,
+            'start_min'   => self::min_of_day($b->starts_at, $midnight, $tz),
+            'end_min'     => self::min_of_day($b->ends_at, $midnight, $tz),
+            'status'      => $b->status,
+            'held'        => $held,
+            'cancelled'   => $cancelled,
+            'source'      => (string) $b->source,
+            'created_label' => $b->created_at ? (MCLB_Settings::friendly_date_short((new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) . ', ' . wp_date(get_option('time_format') ?: 'g:i a', (new DateTimeImmutable($b->created_at, $tz))->getTimestamp())) : '',
+            'created_by'    => (string) ($b->created_by !== null && $b->created_by !== '' ? $b->created_by : MCLB_Bookings::creation_initials($b->admin_note)),
+            'coupons'       => ($b->coupons !== null && $b->coupons !== '') ? json_decode($b->coupons, true) : null,
+            'customer'    => trim((string) $b->customer_name),
+            'email'       => (string) $b->customer_email,
+            'phone'       => $b->customer_phone ? MCLB_Phone::format_au($b->customer_phone) : '',
+            'phone_raw'   => (string) $b->customer_phone,
+            'coach_id'    => $b->assigned_coach_id ? (int) $b->assigned_coach_id : 0,
+            'coach_label' => $b->assigned_coach_id ? MCLB_Coaches::label((int) $b->assigned_coach_id) : '',
+            'coach_start_min' => ($b->assigned_coach_id && $b->coach_starts_at) ? self::min_of_day($b->coach_starts_at, $midnight, $tz) : null,
+            'coach_end_min'   => ($b->assigned_coach_id && $b->coach_ends_at) ? self::min_of_day($b->coach_ends_at, $midnight, $tz) : null,
+            'coach_starts_at' => $b->coach_starts_at ?: '',
+            'coach_ends_at'   => $b->coach_ends_at ?: '',
+            'coach_partial'   => (bool) ($b->assigned_coach_id && $b->coach_starts_at),
+            'price'       => $b->price !== null ? (float) $b->price : null,
+            'price_original' => $b->price_original !== null ? (float) $b->price_original : null,
+            'coach_fee'   => $b->coach_fee !== null ? (float) $b->coach_fee : null,
+            'coach_fee_original' => $b->coach_fee_original !== null ? (float) $b->coach_fee_original : null,
+            'pass_hours'   => $b->pass_hours !== null ? (float) $b->pass_hours : null,
+            'pass_code'    => ($b->pass_id && class_exists('MCLB_Passes') && ($pp = MCLB_Passes::get((int) $b->pass_id))) ? $pp->code : '',
+            'pass_balance' => ($b->pass_id && class_exists('MCLB_Passes')) ? MCLB_Passes::balance((int) $b->pass_id) : null,
+            'counter_due' => $b->counter_due !== null ? (float) $b->counter_due : null,
+            'counter_paid'=> $paid,
+            'order_id'    => $b->order_id ? (int) $b->order_id : 0,
+            'note'        => (string) $b->admin_note,
+            'staff_note'  => (string) $b->staff_note,
+            'badges'      => $held ? [] : self::badges($b, $paid, $cancelled),
+            'refundable'  => (!$held && !$cancelled && (string) $b->source === 'online' && $b->order_id),
+            'series_id'   => $b->series_id ? (int) $b->series_id : 0,
+        ];
+    }
+
+    /**
+     * Week roster (v1.5.1): Mon–Sun from the given start date, ONE range query for
+     * confirmed coach-assigned bookings, grouped per day → coach. Returns per-day
+     * blocks + per-coach day totals (hours + fees) + the week totals, plus the
+     * names of coaches with no sessions that day (for the collapsed line). Sheet
+     * status is computed from the in-memory rows (no per-day/coach queries).
+     */
+    public static function week($request) {
+        global $wpdb;
+        $tz    = wp_timezone();
+        $start = self::sanitize_date((string) $request->get_param('start'));
+        if ($start === '') { $start = wp_date('Y-m-d'); }
+        $d0     = new DateTimeImmutable($start . ' 00:00:00', $tz);
+        $monday = $d0->modify('-' . ((int) $d0->format('N') - 1) . ' days'); // ISO Monday
+        $wStart = $monday->format('Y-m-d H:i:s');
+        $wEnd   = $monday->modify('+7 days')->format('Y-m-d H:i:s');
+
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM ' . MCLB_Bookings::table() . ' WHERE status = %s AND assigned_coach_id IS NOT NULL AND starts_at < %s AND ends_at > %s ORDER BY starts_at, id',
+            MCLB_Bookings::STATUS_CONFIRMED, $wEnd, $wStart
+        ));
+        $series_ids = array_values(array_filter(array_map(function ($r) { return (int) $r->series_id; }, $rows)));
+        $pos        = $series_ids ? MCLB_Bookings::series_positions($series_ids) : [];
+
+        // Group rows by day → coach.
+        $byDay = [];
+        foreach ($rows as $r) { $byDay[substr((string) $r->starts_at, 0, 10)][(int) $r->assigned_coach_id][] = $r; }
+
+        $bookable = MCLB_Coaches::options(); // id => name (currently bookable)
+        $win      = self::roster_week_window($monday);
+        $weekTot  = []; // id => ['name','hours','fees','has_rate']
+
+        $days = [];
+        for ($i = 0; $i < 7; $i++) {
+            $day      = $monday->modify('+' . $i . ' days');
+            $date     = $day->format('Y-m-d');
+            $midnight = new DateTimeImmutable($date . ' 00:00:00', $tz);
+            $dayCoach = isset($byDay[$date]) ? $byDay[$date] : [];
+
+            $blocks = [];
+            foreach ($dayCoach as $cid => $crows) {
+                foreach ($crows as $r) {
+                    $blk = self::block_payload($r, $midnight, $tz);
+                    if ($blk['series_id'] && isset($pos[$blk['id']])) { $blk['series_n'] = $pos[$blk['id']][0]; $blk['series_m'] = $pos[$blk['id']][1]; }
+                    $blocks[] = $blk;
+                }
+            }
+
+            // Coach rows: bookable ∪ any coach with sessions today (fix a).
+            $ids = array_values(array_unique(array_merge(array_map('intval', array_keys($bookable)), array_map('intval', array_keys($dayCoach)))));
+            $coaches = [];
+            $none    = [];
+            foreach ($ids as $cid) {
+                $name = isset($bookable[$cid]) ? $bookable[$cid] : MCLB_Coaches::label($cid);
+                $rate = MCLB_Coaches::rate($cid);
+                $crows = isset($dayCoach[$cid]) ? $dayCoach[$cid] : [];
+                if (empty($crows)) { $none[] = $name; continue; }
+                $hours = 0.0; $fees = 0.0;
+                foreach ($crows as $r) {
+                    list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
+                    $hours += MCLB_Bookings::hours_between($cs, $ce);
+                    if ($r->coach_fee !== null) { $fees += (float) $r->coach_fee; }
+                }
+                $st = MCLB_Daysheets::status_rows($cid, $date, $crows);
+                $coaches[] = [
+                    'id' => $cid, 'name' => $name, 'rate' => $rate, 'has_rate' => ($rate !== null),
+                    'hours' => round($hours, 2), 'fees' => round($fees, 2),
+                    'sheet_sent_at' => $st['sent_at'], 'sheet_changed' => $st['changed'],
+                    'unlisted' => !isset($bookable[$cid]),
+                ];
+                if (!isset($weekTot[$cid])) { $weekTot[$cid] = ['id' => $cid, 'name' => $name, 'hours' => 0.0, 'fees' => 0.0, 'has_rate' => ($rate !== null)]; }
+                $weekTot[$cid]['hours'] += $hours;
+                $weekTot[$cid]['fees']  += $fees;
+            }
+            $days[] = [
+                'date'     => $date,
+                'label'    => wp_date('l, j F Y', $midnight->getTimestamp()),
+                'bookings' => $blocks,
+                'coaches'  => $coaches,
+                'none'     => $none,
+            ];
+        }
+        foreach ($weekTot as &$wt) { $wt['hours'] = round($wt['hours'], 2); $wt['fees'] = round($wt['fees'], 2); }
+        unset($wt);
+
+        return rest_ensure_response([
+            'start'       => $monday->format('Y-m-d'),
+            'start_label' => MCLB_Settings::friendly_date_short($monday->getTimestamp()),
+            'now'         => current_time('mysql'),
+            'increment'   => (int) MCLB_Settings::get('booking_increment') ?: 60,
+            'names_mode'  => MCLB_Settings::get('daysheet_names') ?: 'full',
+            'grid'        => ['open_min' => $win[0], 'close_min' => $win[1]],
+            'days'        => $days,
+            'week_totals' => array_values($weekTot),
+            'canRefund'   => current_user_can(MCLB_Caps::REFUND),
+        ]);
+    }
+
+    /** Union of opening windows across the week's weekdays (minutes), for the roster scale. */
+    private static function roster_week_window(DateTimeImmutable $monday) {
+        $hours = (array) MCLB_Settings::get('hours');
+        $open = null; $close = null;
+        for ($i = 0; $i < 7; $i++) {
+            $wd  = (int) $monday->modify('+' . $i . ' days')->format('N');
+            $row = isset($hours[$wd]) && is_array($hours[$wd]) ? $hours[$wd] : null;
+            if (!$row || !empty($row['closed'])) { continue; }
+            $o = self::hhmm_to_min($row['open'] ?? ''); $c = self::hhmm_to_min($row['close'] ?? '');
+            if ($o === null || $c === null || $c <= $o) { continue; }
+            $open  = ($open === null) ? $o : min($open, $o);
+            $close = ($close === null) ? $c : max($close, $c);
+        }
+        if ($open === null) { return [540, 1020]; } // 9:00–17:00 fallback
+        return [$open, $close];
+    }
+
+    private static function hhmm_to_min($t) {
+        return preg_match('/^(\d{1,2}):(\d{2})/', (string) $t, $m) ? ((int) $m[1] * 60 + (int) $m[2]) : null;
+    }
+
+    /**
+     * "Send day sheets to all" (v1.5.1): sends each coach-with-sessions their sheet
+     * for $date, guarded by a short per-date transient against double-sends, and
+     * reports sent / skipped (no sessions) / no-email (sessions but no contact).
+     */
+    public static function daysheets_all($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $date = self::sanitize_date((string) $request->get_param('date'));
+        if ($date === '') { return new WP_Error('mclb_invalid', __('Pick a valid date.', 'mclb-lane-booking'), ['status' => 400]); }
+
+        $lock = 'mclb_sendall_' . $date;
+        if (get_transient($lock)) {
+            return rest_ensure_response(['ok' => false, 'busy' => true, 'message' => __('Day sheets for that date are already being sent — please wait a moment.', 'mclb-lane-booking')]);
+        }
+        set_transient($lock, 1, 30); // blocks a second click for 30s
+
+        $withSessions = MCLB_Daysheets::coaches_with_sessions($date); // id => rows
+        $bookable     = MCLB_Coaches::options();
+        $reroute      = (MCLB_Mail::test_recipient() !== '');
+        $sent = 0; $failed = 0; $no_email = [];
+        foreach ($withSessions as $cid => $rows) {
+            $name = isset($bookable[$cid]) ? $bookable[$cid] : MCLB_Coaches::label((int) $cid);
+            if (!$reroute && MCLB_Coaches::contact((int) $cid) === '') { $no_email[] = $name; continue; }
+            $r = MCLB_Daysheets::send_for_coach((int) $cid, $date, 'manual-all:' . $actor);
+            if (!empty($r['ok'])) { $sent++; } else { $failed++; }
+        }
+        $skipped = max(0, count($bookable) - count($withSessions)); // coaches with no sessions
+        return rest_ensure_response(['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'failed' => $failed, 'no_email' => $no_email]);
     }
 
     /** Payment badges for a booking block. */
@@ -732,6 +910,7 @@ class MCLB_REST_Admin {
         if ($pass_code !== '' && class_exists('MCLB_Passes')) {
             $pass = MCLB_Passes::get_by_code($pass_code);
             if ($pass && MCLB_Passes::is_usable($pass) && MCLB_Passes::lock($pass->code)) {
+                MCLB_Passes::begin_holder_batch(); // ONE holder summary for the whole draw
                 try {
                     foreach ($created as $bid) {
                         $bb   = MCLB_Bookings::get($bid);
@@ -742,6 +921,7 @@ class MCLB_REST_Admin {
                         self::log($bid, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $pass->code));
                     }
                 } finally {
+                    MCLB_Passes::flush_holder_batch();
                     MCLB_Passes::unlock($pass->code);
                 }
             }
@@ -851,6 +1031,7 @@ class MCLB_REST_Admin {
         // email + ONE staff alert list every cancelled date with its outcome.
         $cancelled = 0;
         $items     = []; // [ ['booking'=>row, 'outcome'=>...] ] for the combined emails
+        if (class_exists('MCLB_Passes')) { MCLB_Passes::begin_holder_batch(); } // ONE holder summary for returned hours
         foreach ($targets as $r) {
             if (MCLB_Bookings::claim_cancel((int) $r->id)) {
                 $cancelled++;
@@ -868,6 +1049,7 @@ class MCLB_REST_Admin {
                 $items[] = ['booking' => $r, 'outcome' => $outcome];
             }
         }
+        if (class_exists('MCLB_Passes')) { MCLB_Passes::flush_holder_batch(); }
         $has_email = sanitize_email((string) $b->customer_email) !== '';
         if (!empty($items) && class_exists('MCLB_Emails')) {
             if ((int) MCLB_Settings::get('alert_cancel') === 1) {

@@ -108,15 +108,26 @@ class MCLB_Daysheets {
         return $out;
     }
 
-    /** Stable hash of a coach's day, for "changed since sent". */
-    public static function day_hash($coach_id, $date) {
-        $rows = self::coaches_with_sessions($date)[(int) $coach_id] ?? [];
-        $sig  = [];
-        foreach ($rows as $r) {
+    /** Stable hash of a set of a coach's rows, for "changed since sent". */
+    public static function hash_rows($rows) {
+        $sig = [];
+        foreach ((array) $rows as $r) {
             $sig[] = $r->id . '|' . $r->starts_at . '|' . $r->ends_at . '|' . $r->coach_starts_at . '|' . $r->coach_ends_at . '|' . $r->lane_name . '|' . $r->customer_name . '|' . $r->customer_phone . '|' . $r->staff_note;
         }
         sort($sig);
         return md5(implode("\n", $sig));
+    }
+
+    /** Stable hash of a coach's day (queries the rows). */
+    public static function day_hash($coach_id, $date) {
+        return self::hash_rows(self::coaches_with_sessions($date)[(int) $coach_id] ?? []);
+    }
+
+    /** status() variant computed from already-loaded rows (one-query week roster). */
+    public static function status_rows($coach_id, $date, $rows) {
+        $last = self::last_sent($coach_id, $date);
+        if (!$last) { return ['sent_at' => null, 'changed' => false]; }
+        return ['sent_at' => $last['sent_at'], 'changed' => ($last['hash'] !== self::hash_rows($rows))];
     }
 
     /** Customer name formatted per the "names" setting. */

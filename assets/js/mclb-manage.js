@@ -24,17 +24,35 @@
   // Booleans too: treat only real true / "1" / 1 as true.
   var CANREFUND = CFG.canRefund === true || CFG.canRefund === '1' || CFG.canRefund === 1;
 
+  function lsGet(k, d) { try { var v = localStorage.getItem('mclb_' + k); return v === null ? d : v; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem('mclb_' + k, v); } catch (e) {} }
+
+  var ROS_ROWH = 48;   // coach-row height
+  var ROS_GUT = 150;   // coach-label column width
+  var ROS_MINHR = 64;  // minimum px per hour; the timeline otherwise stretches to fill the width
+
   var state = {
     date: root.getAttribute('data-today') || CFG.today,
     showCancelled: false,
     coachFilter: 0,
+    view: (lsGet('view', 'lanes') === 'roster') ? 'roster' : 'lanes', // Lanes | Roster (per device)
+    rosterWeek: lsGet('rosterWeek', '0') === '1',                      // Day | Week within Roster
+    showAll: lsGet('rosterAll', '0') === '1',                          // expand no-session coaches
+    week: null,        // cached /week payload
     data: null,
     nonce: CFG.nonce,
     panelOpen: false,
     panelEl: null,
     dragging: false,
-    timer: null
+    timer: null,
+    loadSeq: 0        // guards against a slow response landing after the date changed
   };
+
+  // Reload the ACTIVE view (day grid/roster from /day, or the week roster from /week).
+  function reload(silent) {
+    if (state.view === 'roster' && state.rosterWeek) { state.week = null; return loadWeek(silent); }
+    return load(silent);
+  }
 
   // Disable every button in the open panel and show "Saving…" on the active one,
   // so a slow write can't be double-submitted and the user gets feedback.
@@ -184,15 +202,16 @@
   // ── load + auto-refresh ──────────────────────────────────────────────────────
   function load(silent) {
     if (!silent) { root.innerHTML = '<p class="mclb-manage__loading">' + esc(I18N.loading || 'Loading…') + '</p>'; }
+    var seq = ++state.loadSeq;
     return api('/day?date=' + encodeURIComponent(state.date) + '&show_cancelled=' + (state.showCancelled ? '1' : '0'))
       .then(function (res) {
+        if (seq !== state.loadSeq) { return; } // a newer load started — ignore this stale response
         if (res.session || res.status === 401) { root.innerHTML = sessionHtml(); return; }
         if (!res.ok) { root.innerHTML = '<p class="mclb-manage__err">' + esc(errText(res)) + '</p>'; return; }
         state.data = res.body;
-        state.nonce = state.nonce; // unchanged
         render();
       })
-      .catch(function () { root.innerHTML = '<p class="mclb-manage__err">Could not load the calendar.</p>'; });
+      .catch(function () { if (seq === state.loadSeq) { root.innerHTML = '<p class="mclb-manage__err">Could not load the calendar.</p>'; } });
   }
   function sessionHtml() {
     return '<p class="mclb-manage__err">' + esc(I18N.sessionGone) + ' <a href="' + esc(CFG.loginUrl) + '">' + esc(I18N.cancel ? 'Log in' : 'Log in') + '</a></p>';
@@ -200,7 +219,7 @@
   function scheduleRefresh() {
     if (state.timer) { clearInterval(state.timer); }
     state.timer = setInterval(function () {
-      if (!state.panelOpen && !state.dragging) { load(true); }
+      if (!state.panelOpen && !state.dragging) { reload(true); }
     }, 60000);
   }
 
@@ -209,6 +228,7 @@
     var d = state.data;
     root.innerHTML = '';
     root.appendChild(toolbar());
+    if (state.view === 'roster') { renderRoster(); return; }
     root.appendChild(collectStrip());
     var rel = releasedStrip();
     if (rel) { root.appendChild(rel); }
@@ -245,43 +265,80 @@
     var date = el('input', 'mclb-cal__date'); date.type = 'date'; date.value = state.date;
     prev.onclick = function () { shiftDate(-1); };
     next.onclick = function () { shiftDate(1); };
-    today.onclick = function () { state.date = CFG.today; load(); };
-    date.onchange = function () { if (date.value) { state.date = date.value; load(); } };
+    today.onclick = function () { state.date = CFG.today; reload(); };
+    date.onchange = function () { if (date.value) { state.date = date.value; reload(); } };
     nav.appendChild(prev); nav.appendChild(date); nav.appendChild(next); nav.appendChild(today);
 
     var filters = el('div', 'mclb-cal__filters');
-    var coach = el('select', 'mclb-cal__coach');
-    coach.appendChild(opt('0', I18N.allCoaches || 'All coaches'));
-    (state.data.coaches || []).forEach(function (c) { coach.appendChild(opt(String(c.id), c.name)); });
-    coach.value = String(state.coachFilter);
-    coach.onchange = function () { state.coachFilter = parseInt(coach.value, 10) || 0; render(); };
-    var lbl = el('label', 'mclb-cal__showcancel');
-    var cb = el('input'); cb.type = 'checkbox'; cb.checked = state.showCancelled;
-    cb.onchange = function () { state.showCancelled = cb.checked; render(); };
-    lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + (I18N.showCancel || 'Show cancelled')));
-    filters.appendChild(coach); filters.appendChild(lbl);
+
+    // Lanes / Roster view toggle (v1.5.1), remembered per device.
+    var vtog = el('div', 'mclb-cal__viewtog');
+    var vlanes = el('button', 'button mclb-cal__btn' + (state.view === 'lanes' ? ' is-active' : ''), I18N.lanesView || 'Lanes');
+    var vros   = el('button', 'button mclb-cal__btn' + (state.view === 'roster' ? ' is-active' : ''), I18N.rosterView || 'Roster');
+    vlanes.onclick = function () { if (state.view !== 'lanes') { state.view = 'lanes'; lsSet('view', 'lanes'); render(); } };
+    vros.onclick   = function () { if (state.view !== 'roster') { state.view = 'roster'; lsSet('view', 'roster'); if (state.rosterWeek && !state.week) { render(); } else { render(); } } };
+    vtog.appendChild(vlanes); vtog.appendChild(vros);
+    filters.appendChild(vtog);
+
+    if (state.view === 'roster') {
+      // Day / Week + Show-all + Send-to-all + Print (roster only).
+      var dtog = el('div', 'mclb-cal__viewtog');
+      var bDay  = el('button', 'button mclb-cal__btn' + (!state.rosterWeek ? ' is-active' : ''), I18N.day || 'Day');
+      var bWeek = el('button', 'button mclb-cal__btn' + (state.rosterWeek ? ' is-active' : ''), I18N.week || 'Week');
+      bDay.onclick  = function () { if (state.rosterWeek) { state.rosterWeek = false; lsSet('rosterWeek', '0'); render(); } };
+      bWeek.onclick = function () { if (!state.rosterWeek) { state.rosterWeek = true; lsSet('rosterWeek', '1'); state.week = null; render(); } };
+      dtog.appendChild(bDay); dtog.appendChild(bWeek); filters.appendChild(dtog);
+
+      var allLbl = el('label', 'mclb-cal__showcancel');
+      var allCb = el('input'); allCb.type = 'checkbox'; allCb.checked = state.showAll;
+      allCb.onchange = function () { state.showAll = allCb.checked; lsSet('rosterAll', allCb.checked ? '1' : '0'); render(); };
+      allLbl.appendChild(allCb); allLbl.appendChild(document.createTextNode(' ' + (I18N.showAllCoaches || 'Show all coaches')));
+      filters.appendChild(allLbl);
+
+      var sendAll = el('button', 'button mclb-cal__btn', I18N.sendAll || 'Send day sheets to all');
+      sendAll.onclick = function () { openSendAll(); };
+      filters.appendChild(sendAll);
+      if (state.rosterWeek) {
+        var pw = el('button', 'button mclb-cal__btn', I18N.printWeek || 'Print week');
+        pw.onclick = function () { window.print(); };
+        filters.appendChild(pw);
+      }
+    } else {
+      var coach = el('select', 'mclb-cal__coach');
+      coach.appendChild(opt('0', I18N.allCoaches || 'All coaches'));
+      (state.data.coaches || []).forEach(function (c) { coach.appendChild(opt(String(c.id), c.name)); });
+      coach.value = String(state.coachFilter);
+      coach.onchange = function () { state.coachFilter = parseInt(coach.value, 10) || 0; render(); };
+      var lbl = el('label', 'mclb-cal__showcancel');
+      var cb = el('input'); cb.type = 'checkbox'; cb.checked = state.showCancelled;
+      cb.onchange = function () { state.showCancelled = cb.checked; render(); };
+      lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + (I18N.showCancel || 'Show cancelled')));
+      filters.appendChild(coach); filters.appendChild(lbl);
+
+      // Day-sheet controls for the selected coach (viewed date).
+      if (state.coachFilter) {
+        var cobj = (state.data.coaches || []).filter(function (c) { return c.id === state.coachFilter; })[0];
+        if (cobj) {
+          var sheet = el('span', 'mclb-cal__sheet');
+          if (cobj.sheet_sent_at) {
+            sheet.appendChild(el('span', 'mclb-cal__sheetnote', (I18N.sheetSent || 'Sheet sent') + (cobj.sheet_changed ? ' · ' + (I18N.sheetChanged || 'changed since sent') : '')));
+          }
+          var sbtn = el('button', 'button mclb-cal__btn', cobj.sheet_sent_at ? (I18N.resend || 'Resend day sheet') : (I18N.sendSheet || 'Send day sheet'));
+          sbtn.onclick = function () { openSendSheet(cobj); };
+          sheet.appendChild(sbtn);
+          filters.appendChild(sheet);
+        }
+      }
+    }
 
     // Prepaid passes (v1.5.0): issue / look up / void from the counter.
     var passesBtn = el('button', 'button mclb-cal__btn', I18N.passes || 'Passes');
     passesBtn.onclick = function () { openPasses(); };
     filters.appendChild(passesBtn);
 
-    // Day-sheet controls for the selected coach (viewed date).
-    if (state.coachFilter) {
-      var cobj = (state.data.coaches || []).filter(function (c) { return c.id === state.coachFilter; })[0];
-      if (cobj) {
-        var sheet = el('span', 'mclb-cal__sheet');
-        if (cobj.sheet_sent_at) {
-          sheet.appendChild(el('span', 'mclb-cal__sheetnote', (I18N.sheetSent || 'Sheet sent') + (cobj.sheet_changed ? ' · ' + (I18N.sheetChanged || 'changed since sent') : '')));
-        }
-        var sbtn = el('button', 'button mclb-cal__btn', cobj.sheet_sent_at ? (I18N.resend || 'Resend day sheet') : (I18N.sendSheet || 'Send day sheet'));
-        sbtn.onclick = function () { openSendSheet(cobj); };
-        sheet.appendChild(sbtn);
-        filters.appendChild(sheet);
-      }
-    }
-
-    var dlabel = el('div', 'mclb-cal__datelabel', (state.data && state.data.date_label) || '');
+    var labelText = (state.data && state.data.date_label) || '';
+    if (state.view === 'roster' && state.rosterWeek && state.week) { labelText = (I18N.weekOf || 'Week of') + ' ' + (state.week.start_label || state.week.start); }
+    var dlabel = el('div', 'mclb-cal__datelabel', labelText);
     bar.appendChild(nav); bar.appendChild(dlabel); bar.appendChild(filters);
     return bar;
   }
@@ -1644,10 +1701,11 @@
   }
 
   // ── Send day sheet (from the coach filter) ───────────────────────────────────
-  function openSendSheet(coach) {
+  function openSendSheet(coach, date) {
+    date = date || state.date;
     openPanel(function (panel) {
       panelHead(panel, I18N.sendSheet || 'Send day sheet');
-      panel.appendChild(el('p', 'mclb-panel__ctx', coach.name + ' · ' + state.date));
+      panel.appendChild(el('p', 'mclb-panel__ctx', coach.name + ' · ' + date));
       if (CFG.testRecipient) {
         panel.appendChild(el('p', 'mclb-panel__warn', (I18N.testMode || 'Test mode:') + ' ' + (I18N.testGoesTo || 'this will go to') + ' ' + CFG.testRecipient + ' — ' + (I18N.notTheCoach || 'not the coach') + '.'));
       }
@@ -1662,11 +1720,11 @@
         initialsSet(ini.value.trim());
         confirmStep(actions, (I18N.sendConfirm || 'Send the day sheet now?'), function (yesBtn) {
           setBusy(yesBtn, true); err.style.display = 'none';
-          api('/daysheet', { method: 'POST', body: { coach_id: coach.id, date: state.date, actor: ini.value.trim() } })
+          api('/daysheet', { method: 'POST', body: { coach_id: coach.id, date: date, actor: ini.value.trim() } })
             .then(function (res) {
               if (res.ok && res.body && res.body.ok) {
                 yesBtn.textContent = (I18N.sentOk || 'Sent ✓');
-                setTimeout(function () { closePanel(); load(true); }, 900);
+                setTimeout(function () { closePanel(); reload(true); }, 900);
               } else {
                 setBusy(yesBtn, false);
                 showErr(err, (res.body && res.body.result) ? ((I18N.notSent || 'Not sent') + ': ' + res.body.result) : errText(res));
@@ -1679,10 +1737,11 @@
   }
 
   function shiftDate(days) {
+    var step = (state.view === 'roster' && state.rosterWeek) ? days * 7 : days; // Week moves a week
     var d = new Date(state.date + 'T00:00:00');
-    d.setDate(d.getDate() + days);
+    d.setDate(d.getDate() + step);
     state.date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    load();
+    reload();
   }
 
   // ── Prepaid passes panel (v1.5.0): look up / void / reissue + issue ───────────
@@ -1759,6 +1818,225 @@
           issueOut.appendChild(copy);
         });
       };
+    });
+  }
+
+  // ── Coach roster (v1.5.1) ─────────────────────────────────────────────────────
+  function fmtH(h) { return (Math.round((h || 0) * 100) / 100).toString().replace(/\.0+$/, '') + 'h'; }
+  // Short lane label for the narrow roster block: "Running Net 5 (24m)" → "Net 5",
+  // "Bowling Machine 2" → "BM2". Drops any trailing size note in parentheses.
+  function shortLane(name) {
+    var n = String(name || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    n = n.replace(/Running\s+Net\s*/i, 'Net ').replace(/Bowling\s+Machine\s*/i, 'BM');
+    return n.replace(/\s+/g, ' ').trim();
+  }
+  function namesMode() { return (state.rosterWeek && state.week) ? (state.week.names_mode || 'full') : ((state.data && state.data.names_mode) || 'full'); }
+  function sheetName(raw) {
+    raw = (raw || '').trim(); var mode = namesMode();
+    if (raw === '' || mode === 'none') { return ''; }
+    if (mode === 'full') { return raw; }
+    var p = raw.split(/\s+/);
+    return p.length === 1 ? p[0] : (p[0] + ' ' + p[p.length - 1].charAt(0).toUpperCase() + '.');
+  }
+
+  function loadWeek(silent) {
+    var seq = ++state.loadSeq;
+    return api('/week?start=' + encodeURIComponent(weekStart(state.date))).then(function (res) {
+      if (seq !== state.loadSeq) { return; } // a newer load started — ignore this stale response
+      if (res.session || res.status === 401) { root.innerHTML = sessionHtml(); return; }
+      if (res.ok) { state.week = res.body; if (state.view === 'roster' && state.rosterWeek) { render(); } }
+      else if (!silent) { root.innerHTML = '<p class="mclb-manage__err">' + esc(errText(res)) + '</p>'; }
+    }).catch(function () { if (seq === state.loadSeq && !silent) { root.innerHTML = '<p class="mclb-manage__err">Could not load the roster.</p>'; } });
+  }
+  function weekStart(dateStr) { var d = new Date(dateStr + 'T00:00:00'); var dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+
+  function renderRoster() {
+    if (state.rosterWeek) {
+      if (!state.week) { root.appendChild(el('p', 'mclb-manage__loading', esc(I18N.loading || 'Loading…'))); loadWeek(); return; }
+      renderWeek(state.week);
+    } else {
+      renderRosterDay();
+    }
+  }
+
+  // Per-coach day stats from a day's blocks (day view; week gets them server-side).
+  function dayStats(bookings, coaches) {
+    var byId = {};
+    (bookings || []).forEach(function (b) {
+      if (b.held || b.cancelled || !b.coach_id) { return; }
+      var s = (b.coach_start_min != null) ? b.coach_start_min : b.start_min;
+      var e = (b.coach_end_min != null) ? b.coach_end_min : b.end_min;
+      var st = byId[b.coach_id] || (byId[b.coach_id] = { hours: 0, fees: 0 });
+      st.hours += (e - s) / 60;
+      st.fees += (b.coach_fee || 0);
+    });
+    var withS = [], none = [];
+    (coaches || []).forEach(function (c) {
+      if (byId[c.id]) {
+        withS.push({ id: c.id, name: c.name, rate: c.rate, has_rate: c.rate != null, hours: byId[c.id].hours, fees: byId[c.id].fees, sheet_sent_at: c.sheet_sent_at, sheet_changed: c.sheet_changed });
+      } else {
+        none.push(c.name);
+      }
+    });
+    return { withS: withS, none: none };
+  }
+
+  function renderRosterDay() {
+    var d = state.data;
+    var open = d.grid.open_min, close = d.grid.close_min;
+    if (open == null || close == null) { root.appendChild(el('p', 'mclb-manage__empty', I18N.noOpen || 'Closed this day.')); return; }
+    var st = dayStats(d.bookings, d.coaches);
+    var nowMin = (state.date === CFG.today && d.now) ? dtToMin(d.now) : null;
+    var wrap = el('div', 'mclb-ros-wrap');
+    wrap.appendChild(rosterDayGrid(open, close, d.bookings, st.withS, st.none, nowMin, state.date));
+    root.appendChild(wrap);
+  }
+
+  function renderWeek(wk) {
+    var open = wk.grid.open_min, close = wk.grid.close_min;
+    var wrap = el('div', 'mclb-ros-wrap mclb-ros-week');
+    if (wk.week_totals && wk.week_totals.length) {
+      var sum = el('div', 'mclb-ros__summary');
+      sum.appendChild(el('strong', null, (I18N.weekTotals || 'Week totals') + ': '));
+      wk.week_totals.forEach(function (t) {
+        sum.appendChild(el('span', 'mclb-ros__sumchip', t.name + ' ' + fmtH(t.hours) + (t.has_rate ? ' · ' + money(t.fees) : ' · —')));
+      });
+      wrap.appendChild(sum);
+    }
+    (wk.days || []).forEach(function (day) {
+      var sec = el('div', 'mclb-ros-day');
+      sec.appendChild(el('div', 'mclb-ros-day__head', day.label));
+      var nowMin = (day.date === CFG.today && wk.now) ? dtToMin(wk.now) : null;
+      sec.appendChild(rosterDayGrid(open, close, day.bookings, day.coaches, day.none, nowMin, day.date));
+      wrap.appendChild(sec);
+    });
+    root.appendChild(wrap);
+  }
+
+  // One day's roster grid. coaches = [{id,name,rate,has_rate,hours,fees,sheet_*}]
+  // with sessions; none = names with no sessions (collapsed unless Show all).
+  function rosterDayGrid(open, close, bookings, coaches, none, nowMin, date) {
+    var span = Math.max(close - open, 1); // minutes across; blocks/ticks positioned by %
+    var grid = el('div', 'mclb-ros');
+    // Stretch to fill the roster width; keep a legible minimum hour width (scrolls below it).
+    grid.style.minWidth = (ROS_GUT + Math.ceil(span / 60 * ROS_MINHR)) + 'px';
+    var head = el('div', 'mclb-ros__head');
+    head.appendChild(el('div', 'mclb-ros__gut'));
+    var ticks = el('div', 'mclb-ros__ticks');
+    for (var m = open; m < close; m += INC) { var t = el('div', 'mclb-ros__tick', minToLabel(m)); t.style.left = ((m - open) / span * 100) + '%'; ticks.appendChild(t); }
+    head.appendChild(ticks); grid.appendChild(head);
+
+    var byCoach = {};
+    (bookings || []).forEach(function (b) { if (!b.held && !b.cancelled && b.coach_id) { (byCoach[b.coach_id] = byCoach[b.coach_id] || []).push(b); } });
+
+    function row(c, empty) {
+      var r = el('div', 'mclb-ros__row');
+      var lab = el('div', 'mclb-ros__gut mclb-ros__label');
+      lab.appendChild(el('div', 'mclb-ros__name', c.name));
+      if (!empty) {
+        var tEl = el('div', 'mclb-ros__tot', fmtH(c.hours) + ' · ' + (c.has_rate === false ? '—' : money(c.fees || 0)));
+        if (c.has_rate === false) { tEl.appendChild(el('span', 'mclb-ros__norate', ' (' + (I18N.noRate || 'no rate set') + ')')); }
+        lab.appendChild(tEl);
+        lab.appendChild(rosterSheet(c, date));
+      }
+      r.appendChild(lab);
+      var track = el('div', 'mclb-ros__track');
+      if (nowMin != null && nowMin >= open && nowMin <= close) { var nl = el('div', 'mclb-ros__now'); nl.style.left = ((nowMin - open) / span * 100) + '%'; track.appendChild(nl); }
+      (byCoach[c.id] || []).forEach(function (b) { track.appendChild(rosterBlock(b, open, span)); });
+      r.appendChild(track);
+      return r;
+    }
+
+    coaches.forEach(function (c) { grid.appendChild(row(c, false)); });
+    if (state.showAll && none && none.length) {
+      none.forEach(function (nm) { grid.appendChild(row({ id: -1, name: nm }, true)); });
+    } else if (none && none.length) {
+      grid.appendChild(el('div', 'mclb-ros__none', (I18N.noSessions || 'No sessions') + ': ' + none.join(', ')));
+    }
+    return grid;
+  }
+
+  function rosterSheet(c, date) {
+    var wrap = el('div', 'mclb-ros__sheet');
+    var note = c.sheet_sent_at ? ((I18N.sheetSent || 'Sheet sent') + (c.sheet_changed ? ' · ' + (I18N.sheetChanged || 'changed') : '')) : (I18N.notSent || 'Not sent');
+    wrap.appendChild(el('span', 'mclb-ros__sheetnote', note));
+    var btn = el('button', 'button mclb-cal__btn mclb-ros__send', c.sheet_sent_at ? (I18N.resend || 'Resend') : (I18N.send || 'Send'));
+    btn.onclick = function (e) { e.stopPropagation(); openSendSheet(c, date); };
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function rosterBlock(b, open, span) {
+    var block = el('div', 'mclb-mblock mclb-rosblock mclb-mblock--' + b.source);
+    var s = (b.coach_start_min != null) ? b.coach_start_min : b.start_min;
+    var e = (b.coach_end_min != null) ? b.coach_end_min : b.end_min;
+    block.style.left = ((s - open) / span * 100) + '%';
+    block.style.width = 'calc(' + ((e - s) / span * 100) + '% - 2px)';
+    if (b.price_original != null) { block.classList.add('mclb-mblock--overridden'); }
+    if (nowActive(b)) { block.classList.add('mclb-mblock--now'); }
+
+    var cust  = (b.customer || '').trim() || (I18N.guest || 'Guest');
+    var short = shortLane(b.lane_name);
+    // Line 1 = customer (bold, screen — staff-only). Print swaps in the day-sheet
+    // name formatting via the hidden print span; the lane sub shows on both.
+    block.appendChild(el('span', 'mclb-rosblock__name', cust));
+    var pn = sheetName(b.customer);
+    if (pn) { block.appendChild(el('span', 'mclb-rosblock__name mclb-print-only', pn)); }
+    // Line 2 = short lane name.
+    block.appendChild(el('span', 'mclb-rosblock__sub', short));
+
+    var seriesLabel = (b.series_id && b.series_m > 1) ? (I18N.series || 'Series') + ' · ' + (I18N.ofN || '%n of %m').replace('%n', b.series_n).replace('%m', b.series_m) : '';
+    if (seriesLabel) { block.appendChild(el('span', 'mclb-rosblock__sub', seriesLabel)); }
+    if (b.coach_partial && (b.end_min - b.start_min) > (e - s)) {
+      block.appendChild(el('span', 'mclb-rosblock__sub', (I18N.laneTime || 'lane') + ' ' + minToLabel(b.start_min) + '–' + minToLabel(b.end_min)));
+    }
+    var pill = b.badges.filter(function (x) { return x.kind === 'due' || x.kind === 'refund'; })[0]
+            || b.badges.filter(function (x) { return x.kind === 'counter_paid' || x.kind === 'paid_online'; })[0];
+    var badges = el('div', 'mclb-rosblock__badges');
+    if (pill) { badges.appendChild(el('span', 'mclb-badge mclb-badge--' + pill.kind, pill.label)); }
+    if (passHours(b)) { badges.appendChild(el('span', 'mclb-badge mclb-badge--pass', I18N.pass || 'Pass')); }
+    if (badges.childNodes.length) { block.appendChild(badges); }
+
+    block.title = (b.lane_name || '') + ' · ' + minToLabel(s) + '–' + minToLabel(e) + ' · ' + cust
+      + (seriesLabel ? ' · ' + seriesLabel : '')
+      + (pill ? ' · ' + pill.label : '')
+      + (passHours(b) ? ' · ' + passChip(b) : '');
+    block.onclick = function () { openDetail(b); };
+    return block;
+  }
+
+  // "Send day sheets to all coaches" for a chosen day (defaults to tomorrow).
+  function openSendAll() {
+    openPanel(function (panel) {
+      panelHead(panel, I18N.sendAll || 'Send day sheets to all');
+      if (CFG.testRecipient) {
+        panel.appendChild(el('p', 'mclb-panel__warn', (I18N.testMode || 'Test mode:') + ' ' + (I18N.allSheetsTo || 'every day sheet will go to') + ' ' + CFG.testRecipient + ' — ' + (I18N.notTheCoaches || 'not the coaches') + '.'));
+      }
+      var dsel = field(panel, I18N.day || 'Day', mkInput('date'));
+      var tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+      dsel.value = tmr.getFullYear() + '-' + pad(tmr.getMonth() + 1) + '-' + pad(tmr.getDate());
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+      var out = el('div', 'mclb-panel__passout'); panel.appendChild(out);
+      var actions = el('div', 'mclb-panel__actions');
+      actions.appendChild(actionBtn(I18N.sendAll || 'Send day sheets to all', function (btn) {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        initialsSet(ini.value.trim());
+        confirmStep(actions, (I18N.sendAllConfirm || 'Send day sheets to every coach with sessions that day?'), function (yes) {
+          setBusy(yes, true); err.style.display = 'none';
+          api('/daysheets/all', { method: 'POST', body: { date: dsel.value, actor: ini.value.trim() } }).then(function (res) {
+            setBusy(yes, false);
+            if (!res.ok || (res.body && res.body.busy)) { showErr(err, (res.body && res.body.message) || errText(res)); return; }
+            var b = res.body;
+            var msg = (I18N.sentToN || 'Sent to %n coaches').replace('%n', b.sent) + ' · ' + (I18N.skippedN || 'skipped %m (no sessions)').replace('%m', b.skipped);
+            if (b.no_email && b.no_email.length) { msg += ' · ' + (I18N.noEmailList || 'no email:') + ' ' + b.no_email.join(', '); }
+            if (b.failed) { msg += ' · ' + b.failed + ' ' + (I18N.failed || 'failed'); }
+            out.innerHTML = ''; out.appendChild(el('p', 'mclb-panel__ok', msg));
+            reload(true);
+          });
+        });
+      }));
+      panel.appendChild(actions);
     });
   }
 

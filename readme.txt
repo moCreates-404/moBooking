@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.5.0
+Stable tag: 1.5.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,33 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.5.1 =
+* Coach roster view (WEB-10): a Lanes / Roster toggle in the Manage view (front
+  page + wp-admin Calendar) gives a visual calendar of coach schedules — one row
+  per coach, the same hour scale, now-line and sticky headers as the lane view.
+  Session blocks use the coach's actual time (partial coach time), and show the
+  lane, customer, "Series · N of M", the payment badge (incl. Pass) and the lane
+  time in smaller text when it's longer than the coach time. Clicking a block
+  opens the same booking panel as the lane view.
+* Day and Week: Week shows seven stacked day rosters (Mon–Sun) with sticky day
+  headings; prev/next moves a week, in one range request. Coaches with no
+  sessions collapse into a "No sessions: …" line (a "Show all coaches" toggle
+  expands them); per-coach day totals (hours + fees) show on the row, with a
+  week-totals summary row at the top. Totals skip fees for a coach with no rate.
+* Day sheets from the roster: the per-coach status + "Send" (as before), plus
+  one "Send day sheets to all" button (pick the day, defaults to tomorrow) that
+  skips coaches with no sessions, respects the email test recipient, guards
+  against double-sends, and reports "Sent to N · skipped M (no sessions) · no
+  email: …". The nightly automatic send is now a clearly-labelled on/off setting
+  (default on); the manual buttons work whether it's on or off.
+* A print stylesheet + "Print week" button for a landscape week roster (one day
+  per page, no toolbar/panel); printed rosters use the day-sheet name setting.
+* Roster is staff-only (same capability as Manage); never shown to logged-out
+  users or coaches. No database change (stays v8).
+* Prepaid pass holder emails: drawing from (or cancelling) a whole series now
+  sends the holder ONE summary ("Nh used across M sessions … balance") instead
+  of one email per occurrence.
 
 = 1.5.0 =
 * Prepaid lane-hour passes (WEB-02): staff issue a pass worth N whole lane hours

@@ -200,10 +200,11 @@ class MCLB_Admin {
 
         // Day sheets
         add_settings_section('mclb_ds', __('Coach day sheets', 'mclb-lane-booking'), [$this, 'ds_intro'], $ds);
-        add_settings_field('daysheet_enabled', __('Enable', 'mclb-lane-booking'), function () {
+        add_settings_field('daysheet_enabled', __('Automatic send', 'mclb-lane-booking'), function () {
             printf('<input type="hidden" name="%s" value="1">', esc_attr($this->name('daysheet_submitted')));
             printf('<input type="hidden" name="%s" value="0">', esc_attr($this->name('daysheet_enabled')));
-            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions on a schedule', 'mclb-lane-booking'));
+            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions automatically on a schedule', 'mclb-lane-booking'));
+            printf('<p class="description">%s</p>', esc_html__('Turn this off to send only by hand — the “Send” / “Send to all” buttons on the Roster keep working either way.', 'mclb-lane-booking'));
         }, $ds, 'mclb_ds');
         add_settings_field('daysheet_send_time', __('Send time', 'mclb-lane-booking'), function () {
             printf('<input type="time" name="%s" value="%s">', esc_attr($this->name('daysheet_send_time')), esc_attr($this->val('daysheet_send_time')));
