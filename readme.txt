@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.4.3
+Stable tag: 1.5.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -38,6 +38,35 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.5.0 =
+* Prepaid lane-hour passes (WEB-02): staff issue a pass worth N whole lane hours
+  (payment taken on the Square POS first; the receipt reference is stored). Each
+  pass has a long, shareable bearer code (CC-XXXX-XXXX) and an expiry (default 12
+  months; a pass is valid as long as it is unexpired when the booking is MADE —
+  the session can be later). The balance is derived from an append-only ledger
+  (issue / reserve / redeem / release / return / adjust / void / expire); nothing
+  is ever a mutable balance column.
+* Passes cover LANE hours only (coach fees are still due at the counter). A
+  covered hour prices at $0 through the one pricing seam, so it works everywhere
+  — online checkout, staff bookings and recurring series.
+* Online: a "prepaid pass code" box on the cart and checkout. Covered hours show
+  on the order, emails and thank-you page as "Prepaid pass CC-XXXX-XXXX: 2h"; any
+  remaining hours are paid by card. An order fully covered by a pass is $0 and
+  skips payment. Applying/removing the code or changing the cart re-allocates the
+  cover (earliest session first). An abandoned cart releases its hours
+  automatically.
+* Staff: "Draw from pass" on a new or existing counter booking and per occurrence
+  on a recurring series (the preview flags "covered by pass" vs "pass empty: due
+  at counter"). A "Paid by pass" badge shows on the calendar.
+* Cancelling a booking that used pass hours returns them to the pass (shown in the
+  cancellation email); only the card-paid part follows the refund tiers. Moving a
+  booking keeps, returns or draws hours as the duration changes.
+* Admin: a Passes screen (search, issue, adjust, void/reissue, per-pass ledger,
+  CSV export, balance check). Booking Staff do counter operations (issue, look up,
+  void/reissue, draw) from the Manage view. Lost a code? Void + reissue carries
+  the balance to a new code and kills the old one instantly.
+* DB v8 adds the passes + pass-ledger tables and a pass snapshot on the booking.
 
 = 1.4.3 =
 * Cancellation emails (WEB-12): every cancellation now emails both the customer

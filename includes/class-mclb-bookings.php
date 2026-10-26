@@ -99,6 +99,8 @@ class MCLB_Bookings {
   series_id bigint(20) unsigned DEFAULT NULL,
   coupons text DEFAULT NULL,
   created_by varchar(20) DEFAULT NULL,
+  pass_id bigint(20) unsigned DEFAULT NULL,
+  pass_hours decimal(6,2) DEFAULT NULL,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -1112,7 +1114,7 @@ class MCLB_Bookings {
     /**
      * Minutes/hours between two site-local datetimes (DST-correct via wp_timezone).
      */
-    private static function hours_between($starts_at, $ends_at) {
+    public static function hours_between($starts_at, $ends_at) {
         $tz = wp_timezone();
         $s  = (new DateTimeImmutable((string) $starts_at, $tz))->getTimestamp();
         $e  = (new DateTimeImmutable((string) $ends_at, $tz))->getTimestamp();
@@ -1272,8 +1274,15 @@ class MCLB_Bookings {
             if ($busy) { $wpdb->query('ROLLBACK'); return ['ok' => false, 'conflict' => true, 'reason' => 'coach', 'conflict_id' => (int) $busy]; }
         }
 
+        // Prepaid-pass cover follows the move (v1.5.0): adjust the reservation to
+        // the new whole-duration, then price net of the (adjusted) cover.
+        $pass_ctx = [];
+        if (class_exists('MCLB_Passes') && MCLB_Passes::redeemed_hours_for_booking($id) > 0) {
+            MCLB_Passes::adjust_for_move($id, $starts_at, $ends_at);
+            $pass_ctx = ['booking_id' => $id];
+        }
         $new_lane_name  = get_the_title($new_lane_id);
-        $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at);
+        $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at, $pass_ctx);
         $old_price      = (float) $b->price;
         list($efcs, $efce) = self::coach_window($starts_at, $ends_at, $coach_cs, $coach_ce);
         $coach_fee_new  = $coach_id > 0 ? MCLB_Coaches::fee((float) $b->coach_rate, $efcs, $efce) : null;
@@ -1344,6 +1353,27 @@ class MCLB_Bookings {
     public static function set_price($id, $price) {
         global $wpdb;
         return $wpdb->update(self::table(), ['price' => round((float) $price, 2), 'updated_at' => current_time('mysql')], ['id' => (int) $id]) !== false;
+    }
+
+    /**
+     * Recompute price + counter_due net of prepaid-pass cover (v1.5.0), used after
+     * a pass is drawn onto / returned from a confirmed booking. Lane price goes
+     * net of the pass (via the pricing seam, booking context); counter_due = the
+     * net lane part (manual) + the coach fee.
+     */
+    public static function apply_pass_price($id) {
+        global $wpdb;
+        $b = self::get($id);
+        if (!$b) { return; }
+        $net        = self::lane_price((int) $b->lane_id, $b->starts_at, $b->ends_at, ['booking_id' => (int) $id]);
+        $coach_part = ($b->coach_fee !== null) ? (float) $b->coach_fee : 0.0;
+        $lane_part  = ((string) $b->source === 'manual') ? $net : 0.0;
+        $due        = round($lane_part + $coach_part, 2);
+        $wpdb->update(self::table(), [
+            'price'       => $net,
+            'counter_due' => $due > 0 ? $due : null,
+            'updated_at'  => current_time('mysql'),
+        ], ['id' => (int) $id]);
     }
 
     // ── Shared seams (ONE place each; forward-compat for v1.4.1 / v1.5.0) ────────
@@ -1462,8 +1492,12 @@ class MCLB_Bookings {
      * pricing lives, so v1.5.0's prepaid lane-hour passes can be applied here
      * without touching the create / series / move / cart paths.
      */
-    public static function lane_price($lane_id, $starts_at, $ends_at) {
-        return round((float) MCLB_Lane::get_price((int) $lane_id) * self::hours_between($starts_at, $ends_at), 2);
+    public static function lane_price($lane_id, $starts_at, $ends_at, $context = []) {
+        $price = round((float) MCLB_Lane::get_price((int) $lane_id) * self::hours_between($starts_at, $ends_at), 2);
+        // ONE pricing seam: prepaid passes (v1.5.0) zero covered hours for the
+        // contextual hold/booking via this filter. Context-free callers (generic
+        // quotes) pass no context and are unaffected.
+        return (float) apply_filters('mclb_lane_price', $price, (int) $lane_id, $starts_at, $ends_at, (array) $context);
     }
 
     // ── Recurring bookings (Phase 1.4.0) ────────────────────────────────────────

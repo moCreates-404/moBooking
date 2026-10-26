@@ -85,6 +85,14 @@
   // Coupon snapshot (v1.4.2): the day payload sends coupons as null (unchecked),
   // [] (none), or [{codes,amount,credit}] for this line's discount incl tax.
   function couponEntry(b) { return (b.coupons && b.coupons.length) ? b.coupons[0] : null; }
+  // Prepaid-pass cover (v1.5.0).
+  function passHours(b) { return (b.pass_hours && b.pass_hours > 0) ? b.pass_hours : 0; }
+  function passChip(b) {
+    var h = passHours(b); if (!h) { return ''; }
+    var hh = (Math.round(h * 100) / 100).toString().replace(/\.0+$/, '');
+    var left = (b.pass_balance != null) ? ' · ' + (Math.round(b.pass_balance * 100) / 100).toString().replace(/\.0+$/, '') + 'h ' + (I18N.left || 'left') : '';
+    return (I18N.paidByPass || 'Paid by pass') + ' (' + hh + 'h)' + (b.pass_code ? ' · ' + b.pass_code : '') + left;
+  }
   function couponText(b) {
     var e = couponEntry(b); if (!e) { return ''; }
     var codes = (e.codes || []).join(', ');
@@ -252,6 +260,11 @@
     cb.onchange = function () { state.showCancelled = cb.checked; render(); };
     lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + (I18N.showCancel || 'Show cancelled')));
     filters.appendChild(coach); filters.appendChild(lbl);
+
+    // Prepaid passes (v1.5.0): issue / look up / void from the counter.
+    var passesBtn = el('button', 'button mclb-cal__btn', I18N.passes || 'Passes');
+    passesBtn.onclick = function () { openPasses(); };
+    filters.appendChild(passesBtn);
 
     // Day-sheet controls for the selected coach (viewed date).
     if (state.coachFilter) {
@@ -520,6 +533,7 @@
       + (pill ? ' · ' + pill.label : '')
       + (b.price_original != null ? ' · ' + (I18N.priceOverridden || 'price overridden') : '')
       + (couponEntry(b) ? ' · ' + couponText(b) : '')
+      + (passHours(b) ? ' · ' + passChip(b) : '')
       + (createdText(b) ? ' · ' + createdText(b) : '');
 
     // Line 2 (coach chip + payment pill on one row) — hidden on ≤30-min blocks,
@@ -530,6 +544,7 @@
       if (pill) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + pill.kind, pill.label)); }
       var ce = couponEntry(b);
       if (ce) { row.appendChild(el('span', 'mclb-badge mclb-badge--' + (ce.credit ? 'credit' : 'coupon'), ce.credit ? (I18N.credit || 'Credit') : (I18N.coupon || 'Coupon'))); }
+      if (passHours(b)) { row.appendChild(el('span', 'mclb-badge mclb-badge--pass', I18N.pass || 'Pass')); }
       if (row.childNodes.length) { block.appendChild(row); }
     }
 
@@ -776,16 +791,22 @@
       bookBody.appendChild(preview);
       var coachRates = {};
       var coachLoaded = false;
+      var passState = { valid: false, balance: 0, code: '' }; // live pass preview (fix 2)
       function laneVal() { var v = parseFloat(priceIn.value); return isNaN(v) ? 0 : v; }
+      function passCoveredHrs() { return passState.valid ? Math.min(Math.floor(passState.balance), Math.floor(hours)) : 0; }
       function updatePreview() {
         var isCoach = coach.value !== '0';
         var rate = coachRates[coach.value]; if (rate == null) { rate = 0; }
         var chrs = isCoach ? ct.hours() : 0;      // coach fee = rate × COACH hours (v1.4.1)
         var cfee = Math.round(rate * chrs * 100) / 100;
         var l = laneVal();
-        // Only show the coach part when a coach is actually selected (fix #4).
+        // Prepaid pass (fix 2): covered whole lane hours come off the lane price.
+        var cov = passCoveredHrs();
+        var passAmt = Math.round(cov * laneRate * 100) / 100;
+        var laneNet = Math.max(0, Math.round((l - passAmt) * 100) / 100);
+        var passStr = cov > 0 ? (' − ' + (I18N.pass || 'Pass') + ' ' + cov + 'h (' + money(passAmt) + ')') : '';
         var coachStr = isCoach ? (' + ' + (I18N.perSessionCoach || 'Coach') + ' ' + money(cfee) + ' (' + fmtHrs(chrs) + ' × ' + money(rate) + ')') : '';
-        preview.textContent = (I18N.perSessionLane || 'Lane') + ' ' + money(l) + coachStr + ' = ' + (I18N.due || 'Due') + ' ' + money(l + (isCoach ? cfee : 0));
+        preview.textContent = (I18N.perSessionLane || 'Lane') + ' ' + money(l) + passStr + coachStr + ' = ' + (I18N.due || 'Due') + ' ' + money(laneNet + (isCoach ? cfee : 0));
         reasonWrap.style.display = (Math.abs(l - baseLane) > 0.001) ? '' : 'none';
       }
       // Debounced free-coach fetch for the current coach window; keeps the chosen
@@ -816,6 +837,32 @@
       ct.onChange(function () { updatePreview(); scheduleCoachRefresh(); });
       priceIn.oninput = updatePreview;
       refreshCoaches(); updatePreview();
+
+      // Prepaid pass (v1.5.0): optional code — covered whole lane hours price $0.
+      var passCode = field(bookBody, I18N.passCode || 'Pass code (optional)', mkInput('text'));
+      passCode.placeholder = 'CC-XXXX-XXXX'; passCode.style.textTransform = 'uppercase';
+      var passNote = el('p', 'mclb-panel__sub'); bookBody.appendChild(passNote);
+      var passTimer = null;
+      function lookupPass() {
+        var code = passCode.value.trim();
+        if (code === '') { passState = { valid: false, balance: 0, code: '' }; passNote.textContent = ''; updatePreview(); return; }
+        if (save) { save.disabled = true; } // hold Save while the check runs (fix 2)
+        api('/pass/lookup?code=' + encodeURIComponent(code) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
+          if (res.ok && res.body && res.body.usable) {
+            passState = { valid: true, balance: res.body.balance, code: res.body.code };
+            var cov = passCoveredHrs(), after = Math.max(0, passState.balance - cov);
+            passNote.style.color = '#1a7f37';
+            passNote.textContent = (I18N.pass || 'Pass') + ' ' + passState.code + ' · ' + (I18N.covers || 'covers') + ' ' + cov + 'h · ' + after + 'h ' + (I18N.leftAfter || 'left after');
+          } else {
+            passState = { valid: false, balance: 0, code: '' };
+            passNote.style.color = '#b32d2e';
+            passNote.textContent = I18N.passInvalid || 'That pass code is invalid or expired.';
+          }
+          if (save) { save.disabled = !coachLoaded; }
+          updatePreview();
+        });
+      }
+      passCode.oninput = function () { if (passTimer) { clearTimeout(passTimer); } passTimer = setTimeout(lookupPass, 350); };
 
       var ovWrap = el('label', 'mclb-panel__override');
       var ov = el('input'); ov.type = 'checkbox';
@@ -881,6 +928,7 @@
           coach_id: parseInt(coach.value, 10) || 0, override: ov.checked ? 1 : 0
         };
         if (coach.value !== '0' && ct.partial()) { body.coach_start = ct.startHHMM(); body.coach_end = ct.endHHMM(); }
+        if (passCode.value.trim()) { body.pass_code = passCode.value.trim(); }
         return body;
       }
 
@@ -900,6 +948,7 @@
           };
           if (coach.value !== '0' && ct.partial()) { cbody.coach_start = ct.startHHMM(); cbody.coach_end = ct.endHHMM(); }
           if (blocking && ov.checked) { cbody.book_over_reason = boReason.value.trim(); }
+          if (passCode.value.trim()) { cbody.pass_code = passCode.value.trim(); }
           runWrite(save, err, api('/booking', { method: 'POST', body: cbody }));
           return;
         }
@@ -921,13 +970,28 @@
           + (p.per_coach > 0 ? (' + ' + (I18N.perSessionCoach || 'Coach') + ' ' + money(p.per_coach)) : '')
           + ' = ' + money(p.per_due) + ' ' + (I18N.perSession || 'per session');
         seriesBox.appendChild(el('p', 'mclb-series-result__per', perLine));
-        var head = el('p', 'mclb-series-result__head', (p.available + ' / ' + p.count + ' ' + (I18N.datesAvailable || 'dates available') + ' · ' + money(p.total) + ' ' + (I18N.total || 'total')));
-        seriesBox.appendChild(head);
+        // Total line — net of pass cover when a valid pass is applied (fix 3).
+        var headText;
+        if (p.pass && p.pass.code) {
+          var durHrs = Math.floor((endMin - startMin) / 60);
+          var coveredCount = p.dates.filter(function (d) { return d.available && d.pass === 'covered'; }).length;
+          var counter = Math.round((coveredCount * p.per_coach + (p.available - coveredCount) * p.per_due) * 100) / 100;
+          headText = p.available + ' / ' + p.count + ' ' + (I18N.datesAvailable || 'dates available')
+            + ' · ' + (I18N.dueAtCounter || 'Due at counter:') + ' ' + money(counter)
+            + ' · ' + (coveredCount * durHrs) + 'h ' + (I18N.fromPass || 'from pass') + ' ' + p.pass.code;
+        } else {
+          headText = p.available + ' / ' + p.count + ' ' + (I18N.datesAvailable || 'dates available') + ' · ' + money(p.total) + ' ' + (I18N.total || 'total');
+        }
+        seriesBox.appendChild(el('p', 'mclb-series-result__head', headText));
+        if (p.pass && p.pass.error) { seriesBox.appendChild(el('p', 'mclb-panel__warn', I18N.passInvalid || 'That pass code is invalid or expired.')); }
         var list = el('div', 'mclb-series-list');
         p.dates.forEach(function (d) {
           var row = el('div', 'mclb-series-row ' + (d.available ? 'is-ok' : 'is-bad'));
           row.appendChild(el('span', 'mclb-series-row__date', d.label));
-          row.appendChild(el('span', 'mclb-series-row__state', d.available ? '✓' : ('✗ ' + seriesReason(d.reason))));
+          var state = d.available ? '✓' : ('✗ ' + seriesReason(d.reason));
+          if (d.available && d.pass === 'covered') { state += ' · ' + (I18N.coveredByPass || 'covered by pass'); }
+          else if (d.available && d.pass === 'empty') { state += ' · ' + (I18N.passEmpty || 'pass empty: due at counter'); }
+          row.appendChild(el('span', 'mclb-series-row__state', state));
           list.appendChild(row);
         });
         seriesBox.appendChild(list);
@@ -1026,6 +1090,53 @@
       }
       if (b.series_id && b.series_m > 1) {
         panel.appendChild(el('p', 'mclb-panel__ctx', (I18N.series || 'Series') + ' · ' + (I18N.ofN || '%n of %m').replace('%n', b.series_n).replace('%m', b.series_m)));
+      }
+
+      // ── Prepaid pass (v1.5.0): show cover + return, or draw onto a manual booking.
+      if (passHours(b)) {
+        var prow = el('p', 'mclb-panel__ctx mclb-panel__pass', passChip(b));
+        panel.appendChild(prow);
+        if (b.source === 'manual' && !b.counter_paid) {
+          var retBtn = el('button', 'button mclb-panel__act', I18N.returnToPass || 'Return hours to pass');
+          panel.appendChild(retBtn);
+          retBtn.onclick = function () {
+            if (!needInitials()) { return; }
+            runWrite(retBtn, err, api('/booking/' + b.id + '/pass', { method: 'POST', body: { op: 'return', actor: ini.value.trim() } }));
+          };
+        }
+      } else if (b.source === 'manual' && !b.counter_paid) {
+        var dpToggle = el('button', 'button mclb-panel__act', I18N.drawFromPass || 'Draw from pass');
+        panel.appendChild(dpToggle);
+        var dpForm = el('div', 'mclb-panel__edit'); dpForm.style.display = 'none'; panel.appendChild(dpForm);
+        var dpCode = field(dpForm, I18N.passCode || 'Pass code', mkInput('text')); dpCode.placeholder = 'CC-XXXX-XXXX'; dpCode.style.textTransform = 'uppercase';
+        var dpNote = el('p', 'mclb-panel__sub'); dpForm.appendChild(dpNote);
+        var dpSave = el('button', 'button button-primary mclb-panel__save', I18N.drawFromPass || 'Draw from pass'); dpForm.appendChild(dpSave);
+        var dpDur = Math.floor((b.end_min - b.start_min) / 60), dpTimer = null;
+        dpToggle.onclick = function () { dpForm.style.display = (dpForm.style.display === 'none') ? '' : 'none'; };
+        dpCode.oninput = function () {
+          if (dpTimer) { clearTimeout(dpTimer); }
+          dpTimer = setTimeout(function () {
+            var c = dpCode.value.trim();
+            if (c === '') { dpNote.textContent = ''; return; }
+            dpSave.disabled = true;
+            api('/pass/lookup?code=' + encodeURIComponent(c) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
+              dpSave.disabled = false;
+              if (res.ok && res.body && res.body.usable) {
+                var cov = Math.min(Math.floor(res.body.balance), dpDur), after = Math.max(0, res.body.balance - cov);
+                dpNote.style.color = '#1a7f37';
+                dpNote.textContent = (I18N.pass || 'Pass') + ' ' + res.body.code + ' · ' + (I18N.covers || 'covers') + ' ' + cov + 'h · ' + after + 'h ' + (I18N.leftAfter || 'left after');
+              } else {
+                dpNote.style.color = '#b32d2e';
+                dpNote.textContent = I18N.passInvalid || 'That pass code is invalid or expired.';
+              }
+            });
+          }, 350);
+        };
+        dpSave.onclick = function () {
+          if (!needInitials()) { return; }
+          if (!dpCode.value.trim()) { showErr(err, I18N.passCodeNeeded || 'Enter a pass code.'); return; }
+          runWrite(dpSave, err, api('/booking/' + b.id + '/pass', { method: 'POST', body: { op: 'draw', code: dpCode.value.trim(), actor: ini.value.trim() } }));
+        };
       }
 
       // ── Edit details (name / email / phone / staff note) — the audit log below
@@ -1572,6 +1683,83 @@
     d.setDate(d.getDate() + days);
     state.date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     load();
+  }
+
+  // ── Prepaid passes panel (v1.5.0): look up / void / reissue + issue ───────────
+  function openPasses() {
+    openPanel(function (panel) {
+      panelHead(panel, I18N.passes || 'Passes');
+      var ini = initialsField(panel);
+      var err = errBox(panel);
+
+      // Look up a code → balance + void / reissue.
+      panel.appendChild(el('p', 'mclb-panel__ctx', I18N.passLookupHint || 'Look up a pass to check its balance or void it.'));
+      var lkCode = field(panel, I18N.passCode || 'Pass code', mkInput('text')); lkCode.placeholder = 'CC-XXXX-XXXX'; lkCode.style.textTransform = 'uppercase';
+      var lkOut  = el('div', 'mclb-panel__passout'); panel.appendChild(lkOut);
+      var lkBtn  = el('button', 'button mclb-panel__act', I18N.checkBalance || 'Check balance');
+      panel.appendChild(lkBtn);
+      lkBtn.onclick = function () {
+        if (!lkCode.value.trim()) { showErr(err, I18N.passCodeNeeded || 'Enter a pass code.'); return; }
+        lkOut.innerHTML = ''; setBusy(lkBtn, true);
+        api('/pass/lookup?code=' + encodeURIComponent(lkCode.value.trim()) + '&actor=' + encodeURIComponent(ini.value.trim() || 'x')).then(function (res) {
+          setBusy(lkBtn, false);
+          if (!res.ok) { showErr(err, errText(res)); return; }
+          var p = res.body;
+          lkOut.appendChild(el('p', 'mclb-panel__ctx', p.code + ' · ' + (p.holder || '—') + ' · ' + p.balance + 'h · ' + p.status + (p.expires_at ? ' · ' + (I18N.expires || 'expires') + ' ' + p.expires_at.substr(0, 10) : '')));
+          if (p.status === 'active') {
+            var acts = el('div', 'mclb-panel__actions');
+            acts.appendChild(actionBtn(I18N.voidPass || 'Void', function (btn) {
+              if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; } initialsSet(ini.value.trim());
+              confirmStep(acts, I18N.voidConfirm || 'Void this pass? The code stops working now.', function (yes) {
+                setBusy(yes, true);
+                api('/pass/' + p.id + '/void', { method: 'POST', body: { actor: ini.value.trim() } }).then(function (r) { setBusy(yes, false); if (r.ok) { lkOut.innerHTML = ''; lkOut.appendChild(el('p', 'mclb-panel__ok', I18N.voided || 'Voided.')); } else { showErr(err, errText(r)); } });
+              });
+            }, 'is-danger'));
+            acts.appendChild(actionBtn(I18N.reissuePass || 'Void + reissue', function (btn) {
+              if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; } initialsSet(ini.value.trim());
+              setBusy(btn, true);
+              api('/pass/' + p.id + '/reissue', { method: 'POST', body: { actor: ini.value.trim() } }).then(function (r) { setBusy(btn, false); if (r.ok) { lkOut.innerHTML = ''; lkOut.appendChild(el('p', 'mclb-panel__ok', (I18N.newCode || 'New code:') + ' ' + r.body.code)); } else { showErr(err, errText(r)); } });
+            }));
+            lkOut.appendChild(acts);
+          }
+          // p.id isn't in the lookup payload — fetch it: add below.
+        });
+      };
+
+      // Issue a new pass.
+      panel.appendChild(el('hr'));
+      panel.appendChild(el('strong', null, I18N.issuePass || 'Issue a pass'));
+      panel.appendChild(el('p', 'mclb-panel__ctx', I18N.issuePassHint || 'Take payment on Square first, then issue the pass and record the receipt.'));
+      var iName = field(panel, I18N.name || 'Holder name', mkInput('text'));
+      var iEmail = field(panel, I18N.email || 'Email', mkInput('email'));
+      var iPhone = field(panel, I18N.phone || 'Phone', mkInput('tel'));
+      var iHours = field(panel, I18N.hours || 'Hours', mkInput('number')); iHours.min = '1'; iHours.step = '1';
+      var iExp = field(panel, I18N.expiryMonths || 'Expiry (months, blank = default)', mkInput('number')); iExp.min = '0'; iExp.step = '1';
+      var iPos = field(panel, I18N.posRef || 'POS receipt / reference', mkInput('text'));
+      var iNote = field(panel, I18N.notes || 'Note', mkInput('text'));
+      var issueOut = el('div', 'mclb-panel__passout'); panel.appendChild(issueOut);
+      var iBtn = el('button', 'button button-primary mclb-panel__save', I18N.issuePass || 'Issue a pass');
+      panel.appendChild(iBtn);
+      iBtn.onclick = function () {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        if (!iHours.value || parseInt(iHours.value, 10) < 1) { showErr(err, I18N.passHoursNeeded || 'Enter the hours.'); return; }
+        if (!iPos.value.trim()) { showErr(err, I18N.posRefNeeded || 'A POS receipt / reference is required.'); return; }
+        initialsSet(ini.value.trim());
+        setBusy(iBtn, true); err.style.display = 'none';
+        api('/pass/issue', { method: 'POST', body: {
+          holder_name: iName.value, holder_email: iEmail.value, holder_phone: iPhone.value,
+          hours: iHours.value, expiry_months: iExp.value, pos_ref: iPos.value, note: iNote.value, actor: ini.value.trim()
+        } }).then(function (res) {
+          setBusy(iBtn, false);
+          if (!res.ok) { showErr(err, errText(res)); return; }
+          issueOut.innerHTML = '';
+          issueOut.appendChild(el('p', 'mclb-panel__ok', (I18N.passIssued || 'Pass issued:') + ' ' + res.body.code + ' · ' + res.body.balance + 'h'));
+          var copy = el('button', 'button', I18N.copy || 'Copy code');
+          copy.onclick = function () { try { navigator.clipboard.writeText(res.body.code); copy.textContent = I18N.copied || 'Copied'; } catch (e) {} };
+          issueOut.appendChild(copy);
+        });
+      };
+    });
   }
 
   // ── boot ──────────────────────────────────────────────────────────────────────

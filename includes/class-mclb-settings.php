@@ -79,6 +79,8 @@ class MCLB_Settings {
             'credit_expiry_days'      => 30, // store-credit coupon lifetime in days (0 = never); set on issue (v1.4.3)
             'guest_self_cancel'       => 1,  // allow guests to cancel via a signed email link (WEB-17; reverses the 30 Sep "guests contact admin" rule)
             'club_phone'              => '', // shown on the "inside cutoff — call us" message; empty falls back to the mclb_club_phone filter
+            'pass_expiry_months'      => 12, // default prepaid-pass lifetime in months (0 = no expiry); per-pass override at issue (v1.5.0)
+            'pass_holder_email'       => 1,  // email the holder when pass hours are used/returned (per-pass opt-out at issue)
             // Emails (Phase 8a-2)
             'email_test_recipient'      => '', // dev safety: reroutes EVERY plugin email (incl. day sheets) here
             'email_bookings'            => '', // lane-order WC admin emails + staff alerts
@@ -242,6 +244,9 @@ class MCLB_Settings {
         if (isset($in['club_phone'])) {
             $out['club_phone'] = sanitize_text_field($in['club_phone']);
         }
+        if (isset($in['pass_expiry_months'])) {
+            $out['pass_expiry_months'] = min(120, absint($in['pass_expiry_months'])); // 0 = never
+        }
         // Checkbox: the General tab always posts a hidden value="0" companion (see
         // MCLB_Admin::checkbox_field), so an unchecked box reliably records 0 rather
         // than sticking on the previous value through this per-tab merge.
@@ -280,7 +285,7 @@ class MCLB_Settings {
         if (isset($in['guest_self_cancel'])) {
             $out['guest_self_cancel'] = empty($in['guest_self_cancel']) ? 0 : 1;
         }
-        foreach (['email_manual_confirmation', 'email_customer_on_cancel', 'alert_cancel', 'alert_coach_request', 'alert_manual_created', 'alert_move'] as $cb) {
+        foreach (['email_manual_confirmation', 'email_customer_on_cancel', 'alert_cancel', 'alert_coach_request', 'alert_manual_created', 'alert_move', 'pass_holder_email'] as $cb) {
             if (isset($in[$cb])) {
                 $out[$cb] = empty($in[$cb]) ? 0 : 1;
             }

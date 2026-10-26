@@ -60,6 +60,11 @@
 .mclb-panel__coupon.is-credit { color: #1d4ed8; }
 .mclb-panel__notify { margin-top: 10px; }
 .mclb-panel__sub { color: var(--mclb-muted, #777); font-size: 12px; }
+/* Prepaid passes (v1.5.0) */
+.mclb-badge--pass { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.mclb-panel__pass { font-weight: 600; color: #92400e; }
+.mclb-panel__passout { margin: 8px 0; }
+.mclb-panel__ok { color: #1a7f37; font-weight: 700; }
 
 /* Partial coach time (v1.4.1) */
 .mclb-coachtime__row { display: flex; align-items: center; gap: 8px; }

@@ -36,7 +36,24 @@ class MCLB_Refunds {
         if (!MCLB_Bookings::claim_cancel($booking_id)) {
             return ['ok' => false, 'error' => 'not_confirmed']; // already cancelled / never confirmed
         }
-        // Slot released the instant claim_cancel() flipped the status. Now refund.
+        // Slot released the instant claim_cancel() flipped the status.
+        // $0 card part (e.g. a fully prepaid-pass-covered booking): nothing to
+        // refund — cancel cleanly, no $0 refund call, no "refund" wording. The
+        // pass hours return via the mclb_booking_cancelled hook (fix c, v1.5.0).
+        if ((float) $b->price <= 0) {
+            $outcome = [
+                'type' => 'cancelled', 'amount' => 0.0,
+                'actor' => isset($ctx['actor']) ? (string) $ctx['actor'] : '',
+                'actor_note' => isset($ctx['actor_note']) ? (string) $ctx['actor_note'] : '',
+                'via_link' => !empty($ctx['via_link']), 'manual_flag' => false,
+            ];
+            if (class_exists('MCLB_Cancel')) {
+                MCLB_Cancel::finish($b, $outcome, ['notify' => array_key_exists('notify', $ctx) ? (bool) $ctx['notify'] : true]);
+            }
+            return ['ok' => true, 'refunded' => false, 'amount' => 0.0, 'outcome' => $outcome];
+        }
+
+        // Now refund the card part.
         $refunded = self::refund_line($b, $reason);
         // Single cancel seam + WEB-12 emails (v1.4.3). Only reached by the winner
         // of claim_cancel() above, so the WC refund hook can't double-fire it.

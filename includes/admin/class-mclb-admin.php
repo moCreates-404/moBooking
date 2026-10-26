@@ -145,6 +145,7 @@ class MCLB_Admin {
         $this->number_field($g, 'mclb_wc', 'credit_expiry_days', __('Store-credit expiry', 'mclb-lane-booking'), __('days a cancellation credit coupon lasts (0 = never); set when the coupon is issued', 'mclb-lane-booking'), 0, 3650);
         $this->checkbox_field($g, 'mclb_wc', 'guest_self_cancel', __('Guest self-cancel', 'mclb-lane-booking'), __('Let customers cancel from a secure link in their confirmation email (no login)', 'mclb-lane-booking'));
         $this->text_field($g, 'mclb_wc', 'club_phone', __('Club phone', 'mclb-lane-booking'), __('shown when a booking is too close to its start time to cancel online (the theme can supply this via the mclb_club_phone filter)', 'mclb-lane-booking'));
+        $this->number_field($g, 'mclb_wc', 'pass_expiry_months', __('Prepaid pass expiry', 'mclb-lane-booking'), __('months a new pass lasts (0 = never); per-pass override at issue. A pass is valid if unexpired when the booking is made.', 'mclb-lane-booking'), 0, 120);
         add_settings_field('terms_page_id', __('Terms & Conditions page', 'mclb-lane-booking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
 
         // General → Emails
@@ -168,6 +169,7 @@ class MCLB_Admin {
         $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mclb-lane-booking'), __('Email the Bookings address when an online booking asks for a coach', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mclb-lane-booking'), __('Email the Bookings address when staff create a manual booking', 'mclb-lane-booking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mclb-lane-booking'), __('Email the Bookings address when staff move a booking', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_emails', 'pass_holder_email', __('Prepaid pass balance emails', 'mclb-lane-booking'), __('Email the pass holder when hours are used or returned (if an email is on the pass)', 'mclb-lane-booking'));
         $this->text_field($g, 'mclb_emails', 'email_test_recipient', __('Email test recipient', 'mclb-lane-booking'), __('Dev safety: when set, EVERY plugin email (incl. day sheets) is rerouted here. On a non-production site nothing is sent unless this is set.', 'mclb-lane-booking'));
 
         // General → hours

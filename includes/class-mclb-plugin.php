@@ -44,6 +44,7 @@ class MCLB_Plugin {
         MCLB_Cart::init();
         MCLB_Order::init();
         MCLB_Coupon_Backfill::init();
+        MCLB_Passes::init(); // prepaid lane-hour passes (WEB-02)
         MCLB_Account::init();
         MCLB_Manage_Booking::init(); // guest self-cancel page (WEB-17)
 
@@ -65,6 +66,7 @@ class MCLB_Plugin {
             new MCLB_Admin();
             new MCLB_Closures_Admin();
             new MCLB_Bookings_Admin();
+            new MCLB_Passes_Admin();
             new MCLB_Report();
         }
 

@@ -111,9 +111,13 @@ class MCLB_Order {
         }
     }
 
-    /** Payment succeeded (any gateway, incl. Square): confirm the booking(s). */
+    /** Payment succeeded (incl. a $0 pass-covered order WC auto-completes):
+     *  confirm the booking(s), then redeem any reserved pass hours (v1.5.0). */
     public static function on_payment_complete($order_id) {
         MCLB_Bookings::confirm_by_order((int) $order_id);
+        if (class_exists('MCLB_Passes')) {
+            MCLB_Passes::redeem_for_order((int) $order_id);
+        }
     }
 
     /** Order cancelled or refunded: release the slot(s) back to available. */

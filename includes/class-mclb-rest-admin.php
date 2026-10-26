@@ -102,6 +102,23 @@ class MCLB_REST_Admin {
             'permission_callback' => $manage,
             'callback'            => [__CLASS__, 'closure_exception_undo'],
         ]);
+        // Prepaid passes (v1.5.0) — staff (mclb_manage_bookings) can issue, look up,
+        // void/reissue, and draw a pass onto a booking. Adjust is admin-only (wp-admin).
+        register_rest_route(self::NS, '/admin/pass/issue', [
+            'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'pass_issue'],
+        ]);
+        register_rest_route(self::NS, '/admin/pass/lookup', [
+            'methods' => 'GET', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'pass_lookup'],
+        ]);
+        register_rest_route(self::NS, '/admin/pass/(?P<id>\d+)/void', [
+            'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'pass_void'],
+        ]);
+        register_rest_route(self::NS, '/admin/pass/(?P<id>\d+)/reissue', [
+            'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'pass_reissue'],
+        ]);
+        register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/pass', [
+            'methods' => 'POST', 'permission_callback' => $manage, 'callback' => [__CLASS__, 'booking_pass'],
+        ]);
         register_rest_route(self::NS, '/admin/booking/(?P<id>\d+)/move', [
             'methods'             => 'POST',
             'permission_callback' => $manage,
@@ -268,6 +285,10 @@ class MCLB_REST_Admin {
                 'price_original' => $b->price_original !== null ? (float) $b->price_original : null,
                 'coach_fee'   => $b->coach_fee !== null ? (float) $b->coach_fee : null,
                 'coach_fee_original' => $b->coach_fee_original !== null ? (float) $b->coach_fee_original : null,
+                // Prepaid-pass cover (v1.5.0): snapshot columns → chip/badge/panel.
+                'pass_hours'   => $b->pass_hours !== null ? (float) $b->pass_hours : null,
+                'pass_code'    => ($b->pass_id && class_exists('MCLB_Passes') && ($pp = MCLB_Passes::get((int) $b->pass_id))) ? $pp->code : '',
+                'pass_balance' => ($b->pass_id && class_exists('MCLB_Passes')) ? MCLB_Passes::balance((int) $b->pass_id) : null,
                 'counter_due' => $b->counter_due !== null ? (float) $b->counter_due : null,
                 'counter_paid'=> $paid,
                 'order_id'    => $b->order_id ? (int) $b->order_id : 0,
@@ -499,6 +520,14 @@ class MCLB_REST_Admin {
             /* translators: 1: original price, 2: new price, 3: reason. */
             self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($price_original), self::money($price), $reason));
         }
+        // Prepaid pass (v1.5.0): draw whole lane hours onto this new manual booking.
+        $pass_code = MCLB_Pass_Code::normalise((string) $request->get_param('pass_code'));
+        if ($pass_code !== '' && class_exists('MCLB_Passes')) {
+            $pd = self::apply_pass_draw($id, $pass_code, $actor);
+            if (!is_wp_error($pd)) {
+                self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $pd['hours'], 2), '0'), '.'), $pd['code']));
+            }
+        }
         // Customer confirmation (if enabled + an email is on file) + optional staff alert (8a-2).
         $emailed = false;
         if (class_exists('MCLB_Emails')) {
@@ -624,6 +653,27 @@ class MCLB_REST_Admin {
             }
         }
         $per_due = round($p['price'] + $coach_fee, 2);
+
+        // Prepaid pass (fix e): flag each AVAILABLE date "covered by pass" or
+        // "pass empty: due at counter" against a running balance, in order.
+        $pass_code = MCLB_Pass_Code::normalise((string) $request->get_param('pass_code'));
+        $pass_info = null;
+        if ($pass_code !== '' && class_exists('MCLB_Passes')) {
+            $pass = MCLB_Pass_Code::looks_valid($pass_code) ? MCLB_Passes::get_by_code($pass_code) : null;
+            if ($pass && MCLB_Passes::is_usable($pass)) {
+                $left = (float) floor(MCLB_Passes::balance((int) $pass->id));
+                $dur  = (int) floor(MCLB_Bookings::hours_between($s0['starts_at'], $s0['ends_at']));
+                foreach ($dates as &$d) {
+                    if (empty($d['available'])) { continue; }
+                    if ($left >= $dur && $dur > 0) { $d['pass'] = 'covered'; $left -= $dur; }
+                    else { $d['pass'] = 'empty'; }
+                }
+                unset($d);
+                $pass_info = ['code' => $pass->code, 'balance' => MCLB_Passes::balance((int) $pass->id)];
+            } else {
+                $pass_info = ['error' => true];
+            }
+        }
         return rest_ensure_response([
             'ok'        => true,
             'dates'     => $dates,
@@ -633,6 +683,7 @@ class MCLB_REST_Admin {
             'per_coach' => $coach_fee,
             'per_due'   => $per_due,
             'per_price' => $per_due, // back-compat: the amount collected per session
+            'pass'      => $pass_info,
             'total'     => round($per_due * $available, 2),
             'time'      => wp_date($tf, (new DateTimeImmutable($s0['starts_at'], $tz))->getTimestamp()) . '–' . wp_date($tf, (new DateTimeImmutable($s0['ends_at'], $tz))->getTimestamp()),
         ]);
@@ -673,6 +724,28 @@ class MCLB_REST_Admin {
         $skipped   = $res['skipped'];
         $series_id = $res['series_id'];
         $m         = count($created);
+
+        // Prepaid pass (fix e): draw whole lane hours per occurrence in order until
+        // the balance runs out; later occurrences then fall to the counter. One lock
+        // for the whole series.
+        $pass_code = MCLB_Pass_Code::normalise((string) $request->get_param('pass_code'));
+        if ($pass_code !== '' && class_exists('MCLB_Passes')) {
+            $pass = MCLB_Passes::get_by_code($pass_code);
+            if ($pass && MCLB_Passes::is_usable($pass) && MCLB_Passes::lock($pass->code)) {
+                try {
+                    foreach ($created as $bid) {
+                        $bb   = MCLB_Bookings::get($bid);
+                        $want = (int) floor(MCLB_Bookings::hours_between($bb->starts_at, $bb->ends_at));
+                        $r    = MCLB_Passes::redeem_booking((int) $pass->id, (int) $bid, $want, $actor, true);
+                        if (empty($r['ok'])) { break; } // pass empty → the rest stay at counter
+                        MCLB_Bookings::apply_pass_price((int) $bid);
+                        self::log($bid, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $pass->code));
+                    }
+                } finally {
+                    MCLB_Passes::unlock($pass->code);
+                }
+            }
+        }
 
         // Audit each occurrence + (optionally) record the whole-series prepayment.
         $total = 0.0;
@@ -1397,6 +1470,106 @@ class MCLB_REST_Admin {
         MCLB_Cancel::finish($b, $outcome, ['notify' => $notify]);
         self::log($id, $actor, __('cancelled', 'mclb-lane-booking'));
         return rest_ensure_response(['ok' => true, 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
+    }
+
+    // ── Prepaid passes (v1.5.0) ──────────────────────────────────────────────
+
+    /** Draw a pass onto an already-confirmed MANUAL booking (whole lane hours). */
+    public static function apply_pass_draw($booking_id, $code, $actor) {
+        $b = MCLB_Bookings::get((int) $booking_id);
+        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]); }
+        if ((string) $b->source !== 'manual') {
+            return new WP_Error('mclb_pass_manual', __('A pass can only be drawn onto a counter (manual) booking.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        $pass = MCLB_Passes::get_by_code($code);
+        if (!$pass || !MCLB_Passes::is_usable($pass)) {
+            return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mclb-lane-booking'), ['status' => 400]);
+        }
+        $want = (int) floor(MCLB_Bookings::hours_between($b->starts_at, $b->ends_at));
+        if (!MCLB_Passes::lock($pass->code)) {
+            return new WP_Error('mclb_pass_busy', __('That pass is busy — try again.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        try {
+            $r = MCLB_Passes::redeem_booking((int) $pass->id, (int) $booking_id, $want, $actor, true);
+        } finally {
+            MCLB_Passes::unlock($pass->code);
+        }
+        if (empty($r['ok'])) {
+            return new WP_Error('mclb_pass_empty', __('That pass has no hours left.', 'mclb-lane-booking'), ['status' => 409]);
+        }
+        MCLB_Bookings::apply_pass_price((int) $booking_id);
+        return ['ok' => true, 'hours' => $r['hours'], 'code' => $pass->code, 'balance' => MCLB_Passes::balance((int) $pass->id)];
+    }
+
+    public static function booking_pass($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $id = (int) $request['id'];
+        $op = ($request->get_param('op') === 'return') ? 'return' : 'draw';
+        if ($op === 'return') {
+            $r = MCLB_Passes::return_booking($id, sprintf(__('returned by %s', 'mclb-lane-booking'), $actor));
+            if (!$r) { return new WP_Error('mclb_pass_none', __('No pass hours on this booking.', 'mclb-lane-booking'), ['status' => 409]); }
+            MCLB_Bookings::apply_pass_price($id);
+            self::log($id, $actor, sprintf(__('returned %1$sh to pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $r['code']));
+            return rest_ensure_response(['ok' => true, 'balance' => $r['balance'], 'code' => $r['code']]);
+        }
+        $code = MCLB_Pass_Code::normalise((string) $request->get_param('code'));
+        $res  = self::apply_pass_draw($id, $code, $actor);
+        if (is_wp_error($res)) { return $res; }
+        self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $res['hours'], 2), '0'), '.'), $res['code']));
+        return rest_ensure_response($res);
+    }
+
+    public static function pass_issue($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $pos = sanitize_text_field((string) $request->get_param('pos_ref'));
+        if ($pos === '') { return new WP_Error('mclb_pass_pos', __('A POS receipt / reference is required (payment is taken on Square first).', 'mclb-lane-booking'), ['status' => 400]); }
+        $months  = ($request->get_param('expiry_months') !== null && $request->get_param('expiry_months') !== '') ? absint($request->get_param('expiry_months')) : MCLB_Passes::default_expiry_months();
+        $expires = $months > 0 ? (new DateTimeImmutable('now', wp_timezone()))->modify('+' . $months . ' months')->format('Y-m-d H:i:s') : null;
+        $res = MCLB_Passes::issue([
+            'holder_name'  => sanitize_text_field((string) $request->get_param('holder_name')),
+            'holder_email' => sanitize_email((string) $request->get_param('holder_email')),
+            'holder_phone' => sanitize_text_field((string) $request->get_param('holder_phone')),
+            'hours'        => (float) $request->get_param('hours'),
+            'expires_at'   => $expires,
+            'note'         => sanitize_textarea_field((string) $request->get_param('note')),
+            'pos_ref'      => $pos,
+            'created_by'   => $actor,
+        ]);
+        if (is_wp_error($res)) { return $res; }
+        return rest_ensure_response([
+            'ok' => true, 'code' => $res->code, 'balance' => MCLB_Passes::balance((int) $res->id),
+            'expires_at' => $res->expires_at, 'id' => (int) $res->id,
+        ]);
+    }
+
+    public static function pass_lookup($request) {
+        if (self::actor($request) === null) { return self::need_initials(); }
+        $code = MCLB_Pass_Code::normalise((string) $request->get_param('code'));
+        $pass = MCLB_Pass_Code::looks_valid($code) ? MCLB_Passes::get_by_code($code) : null;
+        if (!$pass) { return new WP_Error('mclb_pass_invalid', __('No pass found for that code.', 'mclb-lane-booking'), ['status' => 404]); }
+        return rest_ensure_response([
+            'ok' => true, 'id' => (int) $pass->id, 'code' => $pass->code, 'holder' => (string) $pass->holder_name,
+            'balance' => MCLB_Passes::balance((int) $pass->id), 'status' => (string) $pass->status,
+            'expires_at' => $pass->expires_at, 'usable' => MCLB_Passes::is_usable($pass),
+        ]);
+    }
+
+    public static function pass_void($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $res = MCLB_Passes::void((int) $request['id'], $actor, __('voided at counter', 'mclb-lane-booking'));
+        if (is_wp_error($res)) { return $res; }
+        return rest_ensure_response(['ok' => true]);
+    }
+
+    public static function pass_reissue($request) {
+        $actor = self::actor($request);
+        if ($actor === null) { return self::need_initials(); }
+        $res = MCLB_Passes::reissue((int) $request['id'], $actor);
+        if (is_wp_error($res)) { return $res; }
+        return rest_ensure_response(['ok' => true, 'code' => $res->code, 'balance' => MCLB_Passes::balance((int) $res->id), 'id' => (int) $res->id]);
     }
 
     // ── POST /admin/daysheet (manual send) ───────────────────────────────────

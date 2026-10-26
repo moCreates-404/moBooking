@@ -255,6 +255,15 @@ class MCLB_Emails {
         $html .= self::booking_table($b, false) . self::coach_hours_line($b);
         $line = self::outcome_customer_text($outcome);
         if ($line !== '') { $html .= '<p style="font-weight:bold;">' . esc_html($line) . '</p>'; }
+        // Prepaid-pass hours returned (v1.5.0): the cancel hook recorded the return
+        // earlier this request; show it as its own line.
+        if (!empty($GLOBALS['mclb_pass_return'][(int) $b->id])) {
+            $r  = $GLOBALS['mclb_pass_return'][(int) $b->id];
+            $hh = rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.');
+            $bb = rtrim(rtrim(number_format((float) $r['balance'], 2), '0'), '.');
+            $exp = !empty($r['expires_at']) ? ' ' . sprintf(__('(expires %s)', 'mclb-lane-booking'), wp_date('j M Y', strtotime((string) $r['expires_at']))) : '';
+            $html .= '<p style="font-weight:bold;">' . esc_html(sprintf(__('%1$s hours returned to pass %2$s (balance %3$sh%4$s).', 'mclb-lane-booking'), $hh, $r['code'], $bb, $exp)) . '</p>';
+        }
         // Guest email-link cancels: a safety line in case a link was used by someone
         // other than the booker (v1.4.3).
         if (!empty($outcome['via_link'])) {
