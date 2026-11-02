@@ -23,10 +23,10 @@ if (!defined('ABSPATH')) {
 
 // ── Fill these in from Freemius → Product → Settings → Keys ─────────────────
 if (!defined('MCLB_FS_ID')) {
-    define('MCLB_FS_ID', '');          // e.g. '12345'
+    define('MCLB_FS_ID', '43795');
 }
 if (!defined('MCLB_FS_PUBLIC_KEY')) {
-    define('MCLB_FS_PUBLIC_KEY', '');  // e.g. 'pk_abc123…'
+    define('MCLB_FS_PUBLIC_KEY', 'pk_740ecbddddca90499efa6d5bb92ef');
 }
 
 if (!function_exists('mobooking_fs')) {
