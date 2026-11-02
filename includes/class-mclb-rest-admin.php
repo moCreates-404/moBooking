@@ -162,10 +162,10 @@ class MCLB_REST_Admin {
 
     public static function can_manage() {
         if (!is_user_logged_in()) {
-            return new WP_Error('mclb_unauth', __('Please log in.', 'mclb-lane-booking'), ['status' => 401]);
+            return new WP_Error('mclb_unauth', __('Please log in.', 'mobooking'), ['status' => 401]);
         }
         if (!current_user_can(MCLB_Caps::MANAGE)) {
-            return new WP_Error('mclb_forbidden', __('You don’t have access to the booking manager.', 'mclb-lane-booking'), ['status' => 403]);
+            return new WP_Error('mclb_forbidden', __('You don’t have access to the booking manager.', 'mobooking'), ['status' => 403]);
         }
         return true;
     }
@@ -180,7 +180,7 @@ class MCLB_REST_Admin {
     }
 
     private static function need_initials() {
-        return new WP_Error('mclb_need_initials', __('Staff initials are required for this action.', 'mclb-lane-booking'), ['status' => 400]);
+        return new WP_Error('mclb_need_initials', __('Staff initials are required for this action.', 'mobooking'), ['status' => 400]);
     }
 
     /** Timestamped audit line in the agreed format: "[Y-m-d H:i] XX: action". */
@@ -207,7 +207,7 @@ class MCLB_REST_Admin {
     public static function day($request) {
         $date = self::sanitize_date((string) $request->get_param('date'));
         if ($date === '') {
-            return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_date', __('Invalid date.', 'mobooking'), ['status' => 400]);
         }
         $tz        = wp_timezone();
         $midnight  = new DateTimeImmutable($date . ' 00:00:00', $tz);
@@ -501,11 +501,11 @@ class MCLB_REST_Admin {
         $actor = self::actor($request);
         if ($actor === null) { return self::need_initials(); }
         $date = self::sanitize_date((string) $request->get_param('date'));
-        if ($date === '') { return new WP_Error('mclb_invalid', __('Pick a valid date.', 'mclb-lane-booking'), ['status' => 400]); }
+        if ($date === '') { return new WP_Error('mclb_invalid', __('Pick a valid date.', 'mobooking'), ['status' => 400]); }
 
         $lock = 'mclb_sendall_' . $date;
         if (get_transient($lock)) {
-            return rest_ensure_response(['ok' => false, 'busy' => true, 'message' => __('Day sheets for that date are already being sent — please wait a moment.', 'mclb-lane-booking')]);
+            return rest_ensure_response(['ok' => false, 'busy' => true, 'message' => __('Day sheets for that date are already being sent — please wait a moment.', 'mobooking')]);
         }
         set_transient($lock, 1, 30); // blocks a second click for 30s
 
@@ -527,17 +527,17 @@ class MCLB_REST_Admin {
     private static function badges($b, $paid, $cancelled) {
         $out = [];
         if ((string) $b->source === 'online' && $b->status === MCLB_Bookings::STATUS_CONFIRMED) {
-            $out[] = ['kind' => 'paid_online', 'label' => __('Paid online', 'mclb-lane-booking')];
+            $out[] = ['kind' => 'paid_online', 'label' => __('Paid online', 'mobooking')];
         }
         if ($b->counter_due !== null && (float) $b->counter_due > 0) {
             if ($cancelled && $paid) {
                 /* translators: %s: amount. */
-                $out[] = ['kind' => 'refund', 'label' => sprintf(__('Refund at counter %s', 'mclb-lane-booking'), self::money($b->counter_due))];
+                $out[] = ['kind' => 'refund', 'label' => sprintf(__('Refund at counter %s', 'mobooking'), self::money($b->counter_due))];
             } elseif ($paid) {
-                $out[] = ['kind' => 'counter_paid', 'label' => __('Counter paid', 'mclb-lane-booking')];
+                $out[] = ['kind' => 'counter_paid', 'label' => __('Counter paid', 'mobooking')];
             } else {
                 /* translators: %s: amount. */
-                $out[] = ['kind' => 'due', 'label' => sprintf(__('Due %s', 'mclb-lane-booking'), self::money($b->counter_due))];
+                $out[] = ['kind' => 'due', 'label' => sprintf(__('Due %s', 'mobooking'), self::money($b->counter_due))];
             }
         }
         return $out;
@@ -551,7 +551,7 @@ class MCLB_REST_Admin {
         $end   = (string) $request->get_param('end');
         $exclude = (int) $request->get_param('exclude');
         if ($date === '' || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $start) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $end)) {
-            return new WP_Error('mclb_bad_range', __('Invalid range.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_range', __('Invalid range.', 'mobooking'), ['status' => 400]);
         }
         $starts_at = "$date $start:00";
         $ends_at   = "$date $end:00";
@@ -582,12 +582,12 @@ class MCLB_REST_Admin {
         if ($cs === '' && $ce === '') { return [null, null]; }
         $re = '/^([01]\d|2[0-3]):[0-5]\d$/';
         if (!preg_match($re, $cs) || !preg_match($re, $ce)) {
-            return new WP_Error('mclb_coach_time', __('Please check the coach start and end times.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_coach_time', __('Please check the coach start and end times.', 'mobooking'), ['status' => 400]);
         }
         $csd = "$date $cs:00";
         $ced = "$date $ce:00";
         if (!MCLB_Bookings::validate_coach_time($starts_at, $ends_at, $csd, $ced)) {
-            return new WP_Error('mclb_coach_time', __('Coach time must sit within the booking and on the booking increment.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_coach_time', __('Coach time must sit within the booking and on the booking increment.', 'mobooking'), ['status' => 400]);
         }
         return [$csd, $ced];
     }
@@ -615,23 +615,23 @@ class MCLB_REST_Admin {
 
         // Phone is required on a manual booking (loose validation: 8+ digits).
         if (!MCLB_Phone::valid($phone)) {
-            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mobooking'), ['status' => 400]);
         }
 
         $lane = get_post($lane_id);
         $re   = '/^([01]\d|2[0-3]):[0-5]\d$/';
         if (!$lane || $lane->post_type !== 'mclb_lane' || $date === '' || !preg_match($re, $start) || !preg_match($re, $end)) {
-            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mobooking'), ['status' => 400]);
         }
         $starts_at = "$date $start:00";
         $ends_at   = "$date $end:00";
         if ($ends_at <= $starts_at) {
-            return new WP_Error('mclb_invalid', __('The end time must be after the start.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('The end time must be after the start.', 'mobooking'), ['status' => 400]);
         }
         // Override gate covers hours/closures/past only; a booking clash is left to
         // the FOR-UPDATE insert below so it surfaces cleanly as "slot taken".
         if (!$override && !MCLB_Availability::is_range_bookable_time($lane_id, $starts_at, $ends_at)) {
-            return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to book it anyway.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to book it anyway.', 'mobooking'), ['status' => 409]);
         }
 
         $lane_price = MCLB_Bookings::lane_price($lane_id, $starts_at, $ends_at); // ONE pricing seam
@@ -645,12 +645,12 @@ class MCLB_REST_Admin {
         $override_in    = $request->get_param('override_price');
         if ($override_in !== null && $override_in !== '') {
             if (!is_numeric($override_in) || (float) $override_in < 0) {
-                return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mobooking'), ['status' => 400]);
             }
             $op = round((float) $override_in, 2);
             if (abs($op - $lane_price) > 0.001) {
                 if ($reason === '') {
-                    return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mclb-lane-booking'), ['status' => 400]);
+                    return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mobooking'), ['status' => 400]);
                 }
                 $price          = $op;
                 $price_original = $lane_price;
@@ -684,26 +684,26 @@ class MCLB_REST_Admin {
         $coach_hours = ($coach_id > 0 && $cr[0] !== null && $cr[1] !== null)
             ? ' ' . self::time_label($cr[0]) . '–' . self::time_label($cr[1]) : '';
         $summary = $coach_id > 0
-            ? sprintf(__('created booking with coach %s', 'mclb-lane-booking'), MCLB_Coaches::label($coach_id)) . $coach_hours
-            : __('created booking', 'mclb-lane-booking');
+            ? sprintf(__('created booking with coach %s', 'mobooking'), MCLB_Coaches::label($coach_id)) . $coach_hours
+            : __('created booking', 'mobooking');
         self::log($id, $actor, $summary);
         // Book-over (v1.4.1): a manual booking placed over a blockout records the
         // reason in History only — never in staff_note (per the approved spec).
         $book_over = sanitize_text_field((string) $request->get_param('book_over_reason'));
         if ($book_over !== '') {
             /* translators: %s: staff reason for booking over a blockout. */
-            self::log($id, $actor, sprintf(__('booked over blockout: %s', 'mclb-lane-booking'), $book_over));
+            self::log($id, $actor, sprintf(__('booked over blockout: %s', 'mobooking'), $book_over));
         }
         if ($price_original !== null) {
             /* translators: 1: original price, 2: new price, 3: reason. */
-            self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($price_original), self::money($price), $reason));
+            self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mobooking'), self::money($price_original), self::money($price), $reason));
         }
         // Prepaid pass (v1.5.0): draw whole lane hours onto this new manual booking.
         $pass_code = MCLB_Pass_Code::normalise((string) $request->get_param('pass_code'));
         if ($pass_code !== '' && class_exists('MCLB_Passes')) {
             $pd = self::apply_pass_draw($id, $pass_code, $actor);
             if (!is_wp_error($pd)) {
-                self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $pd['hours'], 2), '0'), '.'), $pd['code']));
+                self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mobooking'), rtrim(rtrim(number_format((float) $pd['hours'], 2), '0'), '.'), $pd['code']));
             }
         }
         // Customer confirmation (if enabled + an email is on file) + optional staff alert (8a-2).
@@ -729,7 +729,7 @@ class MCLB_REST_Admin {
         $re      = '/^([01]\d|2[0-3]):[0-5]\d$/';
         $lane    = get_post($lane_id);
         if (!$lane || $lane->post_type !== 'mclb_lane' || $date === '' || !preg_match($re, $start) || !preg_match($re, $end) || $end <= $start) {
-            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mobooking'), ['status' => 400]);
         }
         $interval = ($repeat === 'fortnightly') ? 14 : 7;
         $tz  = wp_timezone();
@@ -739,7 +739,7 @@ class MCLB_REST_Admin {
         if ($mode === 'until') {
             $until = self::sanitize_date((string) $request->get_param('until'));
             if ($until === '' || $until < $date) {
-                return new WP_Error('mclb_invalid', __('Choose an “until” date on or after the first date.', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_invalid', __('Choose an “until” date on or after the first date.', 'mobooking'), ['status' => 400]);
             }
             while ($cur->format('Y-m-d') <= $until && count($slots) < 52) {
                 $d = $cur->format('Y-m-d');
@@ -755,7 +755,7 @@ class MCLB_REST_Admin {
             }
         }
         if (empty($slots)) {
-            return new WP_Error('mclb_invalid', __('That repeat produced no dates.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('That repeat produced no dates.', 'mobooking'), ['status' => 400]);
         }
 
         // Partial coach time (v1.4.1): one coach sub-range per series, applied to
@@ -765,7 +765,7 @@ class MCLB_REST_Admin {
         $cend     = (string) $request->get_param('coach_end');
         $coach_time = ($coach_id > 0 && preg_match($re, $cstart) && preg_match($re, $cend));
         if ($coach_time && !MCLB_Bookings::validate_coach_time($slots[0]['starts_at'], $slots[0]['ends_at'], substr($slots[0]['starts_at'], 0, 10) . " $cstart:00", substr($slots[0]['starts_at'], 0, 10) . " $cend:00")) {
-            return new WP_Error('mclb_coach_time', __('Coach time must sit within the session and on the booking increment.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_coach_time', __('Coach time must sit within the session and on the booking increment.', 'mobooking'), ['status' => 400]);
         }
         if ($coach_time) {
             foreach ($slots as &$slot) {
@@ -882,7 +882,7 @@ class MCLB_REST_Admin {
         $phone = MCLB_Phone::clean((string) $request->get_param('phone'));
         $note  = sanitize_textarea_field((string) $request->get_param('note'));
         if (!MCLB_Phone::valid($phone)) {
-            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_phone', __('A valid phone number is required.', 'mobooking'), ['status' => 400]);
         }
         $paid_upfront = filter_var($request->get_param('paid_upfront'), FILTER_VALIDATE_BOOLEAN);
 
@@ -918,7 +918,7 @@ class MCLB_REST_Admin {
                         $r    = MCLB_Passes::redeem_booking((int) $pass->id, (int) $bid, $want, $actor, true);
                         if (empty($r['ok'])) { break; } // pass empty → the rest stay at counter
                         MCLB_Bookings::apply_pass_price((int) $bid);
-                        self::log($bid, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $pass->code));
+                        self::log($bid, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mobooking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $pass->code));
                     }
                 } finally {
                     MCLB_Passes::flush_holder_batch();
@@ -933,13 +933,13 @@ class MCLB_REST_Admin {
             $b = MCLB_Bookings::get($bid);
             $total += ($b && $b->counter_due !== null) ? (float) $b->counter_due : 0.0;
             /* translators: 1: n, 2: m. */
-            self::log($bid, $actor, sprintf(__('created (series %1$d of %2$d)', 'mclb-lane-booking'), $i + 1, $m));
+            self::log($bid, $actor, sprintf(__('created (series %1$d of %2$d)', 'mobooking'), $i + 1, $m));
         }
         if ($paid_upfront && $m > 0) {
             foreach ($created as $bid) {
                 MCLB_Bookings::mark_counter_paid($bid);
                 /* translators: 1: total amount, 2: number of sessions, 3: initials. */
-                self::log($bid, $actor, sprintf(__('Paid upfront %1$s for %2$d sessions, %3$s', 'mclb-lane-booking'), self::money($total), $m, $actor));
+                self::log($bid, $actor, sprintf(__('Paid upfront %1$s for %2$d sessions, %3$s', 'mobooking'), self::money($total), $m, $actor));
             }
         }
 
@@ -973,7 +973,7 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
         if (!$b || empty($b->series_id)) {
-            return new WP_Error('mclb_invalid', __('That booking is not part of a series.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('That booking is not part of a series.', 'mobooking'), ['status' => 404]);
         }
         $mode    = ($request->get_param('mode') === 'whole') ? 'whole' : 'following';
         $confirm = filter_var($request->get_param('confirm_paid'), FILTER_VALIDATE_BOOLEAN);
@@ -1035,7 +1035,7 @@ class MCLB_REST_Admin {
         foreach ($targets as $r) {
             if (MCLB_Bookings::claim_cancel((int) $r->id)) {
                 $cancelled++;
-                $label = ($mode === 'whole') ? __('cancelled (whole series)', 'mclb-lane-booking') : __('cancelled (this and following)', 'mclb-lane-booking');
+                $label = ($mode === 'whole') ? __('cancelled (whole series)', 'mobooking') : __('cancelled (this and following)', 'mobooking');
                 self::log((int) $r->id, $actor, $label);
                 $paid_counter = ($r->counter_paid_at !== null && $r->counter_paid_at !== '0000-00-00 00:00:00' && $r->counter_due !== null);
                 if (MCLB_Cancel::is_online_paid($r)) {
@@ -1072,7 +1072,7 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
         if (!$b) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
 
         $fields = [];
@@ -1085,7 +1085,7 @@ class MCLB_REST_Admin {
             if ($new !== $old) {
                 $fields['customer_name'] = $new;
                 /* translators: 1: old, 2: new. */
-                $audit[] = sprintf(__('name %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
+                $audit[] = sprintf(__('name %1$s → %2$s', 'mobooking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
             }
         }
         if ($request->get_param('email') !== null) {
@@ -1094,19 +1094,19 @@ class MCLB_REST_Admin {
             if ($new !== $old) {
                 $fields['customer_email'] = $new;
                 /* translators: 1: old, 2: new. */
-                $audit[] = sprintf(__('email %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
+                $audit[] = sprintf(__('email %1$s → %2$s', 'mobooking'), $old !== '' ? $old : $dash, $new !== '' ? $new : $dash);
             }
         }
         if ($request->get_param('phone') !== null) {
             $new = MCLB_Phone::clean((string) $request->get_param('phone'));
             if ($new !== '' && !MCLB_Phone::valid($new)) {
-                return new WP_Error('mclb_bad_phone', __('Enter a valid phone number.', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_bad_phone', __('Enter a valid phone number.', 'mobooking'), ['status' => 400]);
             }
             $old = (string) $b->customer_phone;
             if ($new !== $old) {
                 $fields['customer_phone'] = $new;
                 /* translators: 1: old, 2: new. */
-                $audit[] = sprintf(__('phone %1$s → %2$s', 'mclb-lane-booking'), $old !== '' ? MCLB_Phone::format_au($old) : $dash, $new !== '' ? MCLB_Phone::format_au($new) : $dash);
+                $audit[] = sprintf(__('phone %1$s → %2$s', 'mobooking'), $old !== '' ? MCLB_Phone::format_au($old) : $dash, $new !== '' ? MCLB_Phone::format_au($new) : $dash);
             }
         }
         if ($request->get_param('staff_note') !== null) {
@@ -1114,7 +1114,7 @@ class MCLB_REST_Admin {
             $old = (string) $b->staff_note;
             if ($new !== $old) {
                 $fields['staff_note'] = $new;
-                $audit[] = __('updated note', 'mclb-lane-booking');
+                $audit[] = __('updated note', 'mobooking');
             }
         }
 
@@ -1138,26 +1138,26 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
         if (!$b) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
         if ((string) $b->source === 'online' || $paid) {
-            return new WP_Error('mclb_no_override', __('Only an unpaid manual booking can have its price overridden.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_no_override', __('Only an unpaid manual booking can have its price overridden.', 'mobooking'), ['status' => 409]);
         }
         $new = $request->get_param('price');
         if ($new === null || $new === '' || !is_numeric($new) || (float) $new < 0) {
-            return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_price', __('Enter a valid price (0 or more).', 'mobooking'), ['status' => 400]);
         }
         $reason = sanitize_text_field((string) $request->get_param('reason'));
         if ($reason === '') {
-            return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_need_reason', __('A reason is required to override the price.', 'mobooking'), ['status' => 400]);
         }
         $res = MCLB_Bookings::override_lane_price($id, (float) $new);
         if (empty($res['ok'])) {
-            return new WP_Error('mclb_write', __('Could not update the price.', 'mclb-lane-booking'), ['status' => 500]);
+            return new WP_Error('mclb_write', __('Could not update the price.', 'mobooking'), ['status' => 500]);
         }
         /* translators: 1: old price, 2: new price, 3: reason. */
-        self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($res['old']), self::money($res['new']), $reason));
+        self::log($id, $actor, sprintf(__('price %1$s → %2$s (%3$s)', 'mobooking'), self::money($res['old']), self::money($res['new']), $reason));
         return rest_ensure_response(['ok' => true]);
     }
 
@@ -1172,12 +1172,12 @@ class MCLB_REST_Admin {
         $re      = '/^([01]\d|2[0-3]):[0-5]\d$/';
         $lane    = get_post($lane_id);
         if (!$lane || $lane->post_type !== 'mclb_lane' || $date === '' || !preg_match($re, $start) || !preg_match($re, $end)) {
-            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('Please check the lane, date and times.', 'mobooking'), ['status' => 400]);
         }
         $starts_at = "$date $start:00";
         $ends_at   = "$date $end:00";
         if ($ends_at <= $starts_at) {
-            return new WP_Error('mclb_invalid', __('The end time must be after the start.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('The end time must be after the start.', 'mobooking'), ['status' => 400]);
         }
         return [
             'lane_id'   => $lane_id,
@@ -1191,7 +1191,7 @@ class MCLB_REST_Admin {
     public static function booking_move_preview($request) {
         $id = (int) $request['id'];
         if (!MCLB_Bookings::get($id)) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
         $p = self::move_params($request);
         if (is_wp_error($p)) { return $p; }
@@ -1227,11 +1227,11 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
         if (!$b) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
         if ($b->status !== MCLB_Bookings::STATUS_CONFIRMED) {
             // Held (checkout in progress), cancelled or refunded — not movable.
-            return new WP_Error('mclb_not_movable', __('Only a confirmed booking can be moved.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_not_movable', __('Only a confirmed booking can be moved.', 'mobooking'), ['status' => 409]);
         }
         $p = self::move_params($request);
         if (is_wp_error($p)) { return $p; }
@@ -1239,7 +1239,7 @@ class MCLB_REST_Admin {
         // Override covers hours / closure / past only; a real clash is left to the
         // FOR-UPDATE move so it surfaces cleanly as "slot taken".
         if (!$p['override'] && !MCLB_Availability::is_range_bookable_time($p['lane_id'], $p['starts_at'], $p['ends_at'])) {
-            return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to move it there anyway.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to move it there anyway.', 'mobooking'), ['status' => 409]);
         }
 
         // Price-down on an online-paid booking: the staff member picks refund vs no
@@ -1256,8 +1256,8 @@ class MCLB_REST_Admin {
                 $nm = $c ? (trim((string) $c->customer_name) ?: ('#' . (int) $res['conflict_id'])) : '';
                 $reason = $res['reason'] ?? 'lane';
                 $msg = ($reason === 'coach')
-                    ? sprintf(__('That coach is already booked for an overlapping time (%s).', 'mclb-lane-booking'), $nm)
-                    : sprintf(__('That slot was just taken (%s). Refresh and try another.', 'mclb-lane-booking'), $nm);
+                    ? sprintf(__('That coach is already booked for an overlapping time (%s).', 'mobooking'), $nm)
+                    : sprintf(__('That slot was just taken (%s). Refresh and try another.', 'mobooking'), $nm);
                 return new WP_Error('mclb_move_conflict', $msg, ['status' => 409]);
             }
             return self::write_error($res);
@@ -1270,7 +1270,7 @@ class MCLB_REST_Admin {
 
         // Primary audit line in the agreed format.
         /* translators: 1: from, 2: to. */
-        self::log($id, $actor, sprintf(__('moved %1$s → %2$s', 'mclb-lane-booking'), $old_label, $new_label));
+        self::log($id, $actor, sprintf(__('moved %1$s → %2$s', 'mobooking'), $old_label, $new_label));
 
         // Partial coach time (v1.4.1): a coach sub-range that ran past the new
         // (shorter) session was clamped to fit. Record it so staff see why the
@@ -1278,7 +1278,7 @@ class MCLB_REST_Admin {
         $coach_clamped = !empty($res['coach_clamped']);
         if ($coach_clamped && $new['coach_starts_at'] !== null && $new['coach_ends_at'] !== null) {
             /* translators: 1: coach start time, 2: coach end time. */
-            self::log($id, $actor, sprintf(__('coach time clamped to the new session (%1$s–%2$s)', 'mclb-lane-booking'), self::time_label($new['coach_starts_at']), self::time_label($new['coach_ends_at'])));
+            self::log($id, $actor, sprintf(__('coach time clamped to the new session (%1$s–%2$s)', 'mobooking'), self::time_label($new['coach_starts_at']), self::time_label($new['coach_ends_at'])));
         }
 
         // Money follow-through (the move transaction already set counter_due; the
@@ -1287,34 +1287,34 @@ class MCLB_REST_Admin {
             if ($money['mode'] === 'refund_or_none') {
                 $amount = round($money['old_price'] - $money['new_lane_price'], 2);
                 if ($refund_choice === 'refund') {
-                    $r = MCLB_Refunds::refund_delta(MCLB_Bookings::get($id), $amount, __('Booking moved to a lower-priced slot', 'mclb-lane-booking'));
+                    $r = MCLB_Refunds::refund_delta(MCLB_Bookings::get($id), $amount, __('Booking moved to a lower-priced slot', 'mobooking'));
                     if (!empty($r['ok'])) {
                         MCLB_Bookings::set_price($id, $money['new_lane_price']); // net card amount, so a later cancel reconciles
                         /* translators: 1: amount, 2: old price, 3: new price. */
-                        self::log($id, $actor, sprintf(__('refunded %1$s to card (lane %2$s → %3$s)', 'mclb-lane-booking'), self::money($r['amount']), self::money($money['old_price']), self::money($money['new_lane_price'])));
+                        self::log($id, $actor, sprintf(__('refunded %1$s to card (lane %2$s → %3$s)', 'mobooking'), self::money($r['amount']), self::money($money['old_price']), self::money($money['new_lane_price'])));
                     } else {
-                        self::log($id, $actor, __('move to lower-priced slot — automatic refund FAILED, refund manually', 'mclb-lane-booking'));
+                        self::log($id, $actor, __('move to lower-priced slot — automatic refund FAILED, refund manually', 'mobooking'));
                     }
                 } else {
                     if ($refund_reason === '') {
-                        $refund_reason = __('no reason given', 'mclb-lane-booking');
+                        $refund_reason = __('no reason given', 'mobooking');
                     }
                     /* translators: 1: amount, 2: reason. */
-                    self::log($id, $actor, sprintf(__('moved to lower-priced slot, no refund of %1$s (%2$s)', 'mclb-lane-booking'), self::money($amount), $refund_reason));
+                    self::log($id, $actor, sprintf(__('moved to lower-priced slot, no refund of %1$s (%2$s)', 'mobooking'), self::money($amount), $refund_reason));
                 }
             } elseif ($money['mode'] === 'counter_up') {
                 /* translators: %s: amount to collect. */
-                self::log($id, $actor, sprintf(__('lane price up — %s to collect at counter', 'mclb-lane-booking'), self::money($money['delta'])));
+                self::log($id, $actor, sprintf(__('lane price up — %s to collect at counter', 'mobooking'), self::money($money['delta'])));
             }
             // Keep the WC order line + customer-facing meta in step (best-effort).
             MCLB_Order::update_item_for_move(MCLB_Bookings::get($id));
         } elseif ($money['mode'] === 'manual_recompute' && abs($money['delta']) > 0.001) {
             /* translators: 1: old, 2: new. */
-            self::log($id, $actor, sprintf(__('lane price %1$s → %2$s', 'mclb-lane-booking'), self::money($money['old_price']), self::money($money['new_lane_price'])));
+            self::log($id, $actor, sprintf(__('lane price %1$s → %2$s', 'mobooking'), self::money($money['old_price']), self::money($money['new_lane_price'])));
         }
 
         if ($money['mode'] === 'locked_paid' && abs($money['delta']) > 0.001) {
-            self::log($id, $actor, __('moved after counter payment taken — price difference may need manual adjustment', 'mclb-lane-booking'));
+            self::log($id, $actor, __('moved after counter payment taken — price difference may need manual adjustment', 'mobooking'));
         }
 
         // Customer "your booking has moved" email (v1.3.2) + optional staff alert.
@@ -1358,19 +1358,19 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
         if (!$b) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
         if ((string) $b->source !== 'manual') {
-            return new WP_Error('mclb_not_manual', __('Only a manual booking sends this confirmation — online bookings use the WooCommerce order email.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_not_manual', __('Only a manual booking sends this confirmation — online bookings use the WooCommerce order email.', 'mobooking'), ['status' => 409]);
         }
         if (sanitize_email((string) $b->customer_email) === '') {
-            return new WP_Error('mclb_no_email', __('No email address is on file for this booking.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_no_email', __('No email address is on file for this booking.', 'mobooking'), ['status' => 409]);
         }
         $r = class_exists('MCLB_Emails') ? MCLB_Emails::send_manual_confirmation($id, true) : ['ok' => false];
         if (empty($r['ok'])) {
-            return new WP_Error('mclb_send_failed', __('Could not send the confirmation — please try again.', 'mclb-lane-booking'), ['status' => 500]);
+            return new WP_Error('mclb_send_failed', __('Could not send the confirmation — please try again.', 'mobooking'), ['status' => 500]);
         }
-        self::log($id, $actor, __('resent booking confirmation', 'mclb-lane-booking'));
+        self::log($id, $actor, __('resent booking confirmation', 'mobooking'));
         return rest_ensure_response(['ok' => true]);
     }
 
@@ -1385,7 +1385,7 @@ class MCLB_REST_Admin {
         $coach_id = (int) $request->get_param('coach_id');
         $note     = sanitize_text_field((string) $request->get_param('note'));
         $b        = MCLB_Bookings::get($id);
-        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]); }
+        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]); }
 
         // Coach time-of-day (HH:MM) for the coach sub-range; validated per booking.
         $ct_start = (string) $request->get_param('coach_start');
@@ -1405,7 +1405,7 @@ class MCLB_REST_Admin {
             $cs = $partial ? "$d $ct_start:00" : null;
             $ce = $partial ? "$d $ct_end:00" : null;
             if ($partial && !MCLB_Bookings::validate_coach_time($t->starts_at, $t->ends_at, $cs, $ce)) {
-                $last_err = new WP_Error('mclb_coach_time', __('Coach time must sit within the booking and on the booking increment.', 'mclb-lane-booking'), ['status' => 400]);
+                $last_err = new WP_Error('mclb_coach_time', __('Coach time must sit within the booking and on the booking increment.', 'mobooking'), ['status' => 400]);
                 continue;
             }
             $res = MCLB_Bookings::assign_coach_locked((int) $t->id, $coach_id, $note, $cs, $ce);
@@ -1413,15 +1413,15 @@ class MCLB_REST_Admin {
             if (!empty($res['override_cleared'])) { $override_cleared = true; }
             $time = $partial ? ' ' . self::time_label($cs) . '–' . self::time_label($ce) : '';
             $summary = $coach_id > 0
-                ? sprintf(__('assigned coach %s', 'mclb-lane-booking'), MCLB_Coaches::label($coach_id)) . $time
-                : __('removed coach', 'mclb-lane-booking');
-            if ($note !== '') { $summary .= ' ' . sprintf(__('(note: %s)', 'mclb-lane-booking'), $note); }
-            if ($override_cleared) { $summary .= ' ' . __('— coach-fee override cleared', 'mclb-lane-booking'); }
+                ? sprintf(__('assigned coach %s', 'mobooking'), MCLB_Coaches::label($coach_id)) . $time
+                : __('removed coach', 'mobooking');
+            if ($note !== '') { $summary .= ' ' . sprintf(__('(note: %s)', 'mobooking'), $note); }
+            if ($override_cleared) { $summary .= ' ' . __('— coach-fee override cleared', 'mobooking'); }
             self::log((int) $t->id, $actor, $summary);
             $done++;
         }
         if ($done === 0) {
-            return $last_err ?: new WP_Error('mclb_coach', __('Could not update the coach.', 'mclb-lane-booking'), ['status' => 409]);
+            return $last_err ?: new WP_Error('mclb_coach', __('Could not update the coach.', 'mobooking'), ['status' => 409]);
         }
         return rest_ensure_response(['ok' => true, 'updated' => $done, 'override_cleared' => $override_cleared]);
     }
@@ -1439,20 +1439,20 @@ class MCLB_REST_Admin {
         if ($actor === null) { return self::need_initials(); }
         $id = (int) $request['id'];
         $b  = MCLB_Bookings::get($id);
-        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]); }
-        if ((int) $b->assigned_coach_id <= 0) { return new WP_Error('mclb_no_coach', __('This booking has no coach.', 'mclb-lane-booking'), ['status' => 409]); }
+        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]); }
+        if ((int) $b->assigned_coach_id <= 0) { return new WP_Error('mclb_no_coach', __('This booking has no coach.', 'mobooking'), ['status' => 409]); }
         $paid = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00');
-        if ($paid) { return new WP_Error('mclb_locked', __('The counter payment has been taken — the coach fee can’t be changed.', 'mclb-lane-booking'), ['status' => 409]); }
+        if ($paid) { return new WP_Error('mclb_locked', __('The counter payment has been taken — the coach fee can’t be changed.', 'mobooking'), ['status' => 409]); }
         $new = $request->get_param('fee');
         if ($new === null || $new === '' || !is_numeric($new) || (float) $new < 0) {
-            return new WP_Error('mclb_bad_fee', __('Enter a valid coach fee (0 or more).', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_fee', __('Enter a valid coach fee (0 or more).', 'mobooking'), ['status' => 400]);
         }
         $reason = sanitize_text_field((string) $request->get_param('reason'));
-        if ($reason === '') { return new WP_Error('mclb_need_reason', __('A reason is required to override the coach fee.', 'mclb-lane-booking'), ['status' => 400]); }
+        if ($reason === '') { return new WP_Error('mclb_need_reason', __('A reason is required to override the coach fee.', 'mobooking'), ['status' => 400]); }
         $res = MCLB_Bookings::override_coach_fee($id, (float) $new);
-        if (empty($res['ok'])) { return new WP_Error('mclb_write', __('Could not update the coach fee.', 'mclb-lane-booking'), ['status' => 500]); }
+        if (empty($res['ok'])) { return new WP_Error('mclb_write', __('Could not update the coach fee.', 'mobooking'), ['status' => 500]); }
         /* translators: 1: old fee, 2: new fee, 3: reason. */
-        self::log($id, $actor, sprintf(__('coach fee %1$s → %2$s (%3$s)', 'mclb-lane-booking'), self::money($res['old']), self::money($res['new']), $reason));
+        self::log($id, $actor, sprintf(__('coach fee %1$s → %2$s (%3$s)', 'mobooking'), self::money($res['old']), self::money($res['new']), $reason));
         return rest_ensure_response(['ok' => true]);
     }
 
@@ -1472,16 +1472,16 @@ class MCLB_REST_Admin {
         if ($actor === null) { return self::need_initials(); }
         $id = (int) $request['id'];
         $c  = MCLB_Closures::get($id);
-        if (!$c) { return new WP_Error('mclb_invalid', __('Blockout not found.', 'mclb-lane-booking'), ['status' => 404]); }
+        if (!$c) { return new WP_Error('mclb_invalid', __('Blockout not found.', 'mobooking'), ['status' => 404]); }
 
         $date = (string) $request->get_param('date');
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            return new WP_Error('mclb_bad_date', __('A valid date is required.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_date', __('A valid date is required.', 'mobooking'), ['status' => 400]);
         }
         // The blockout must actually fall on that date, or there is nothing to free.
         $w = MCLB_Availability::closure_window($c, $date);
         if (!$w) {
-            return new WP_Error('mclb_no_closure_here', __('That blockout does not apply on that date.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_no_closure_here', __('That blockout does not apply on that date.', 'mobooking'), ['status' => 409]);
         }
 
         // lane_id 0 = whole blockout for that date; a specific lane releases one
@@ -1489,27 +1489,27 @@ class MCLB_REST_Admin {
         // blockout only makes sense for that same lane.
         $lane_id = (int) $request->get_param('lane_id');
         if ($lane_id && (int) $c->lane_id && $lane_id !== (int) $c->lane_id) {
-            return new WP_Error('mclb_bad_lane', __('That lane is not covered by this blockout.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_lane', __('That lane is not covered by this blockout.', 'mobooking'), ['status' => 400]);
         }
 
         // "Ended early": release from a time inside the blockout window.
         $release_from = trim((string) $request->get_param('release_from'));
         if ($release_from !== '') {
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $release_from)) {
-                return new WP_Error('mclb_bad_time', __('Enter a valid end time (HH:MM).', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_bad_time', __('Enter a valid end time (HH:MM).', 'mobooking'), ['status' => 400]);
             }
             $tz   = wp_timezone();
             $cut  = (new DateTimeImmutable("$date $release_from:00", $tz))->getTimestamp();
             $ws   = (new DateTimeImmutable($w['starts_at'], $tz))->getTimestamp();
             $we   = (new DateTimeImmutable($w['ends_at'], $tz))->getTimestamp();
             if ($cut <= $ws || $cut >= $we) {
-                return new WP_Error('mclb_time_range', __('The end time must fall inside the blockout.', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_time_range', __('The end time must fall inside the blockout.', 'mobooking'), ['status' => 400]);
             }
         }
 
         $ex_id = MCLB_Closures::add_exception($id, $date, $lane_id, ($release_from !== '' ? $release_from : null), $actor);
         if (!$ex_id) {
-            return new WP_Error('mclb_write', __('Could not release the blockout.', 'mclb-lane-booking'), ['status' => 500]);
+            return new WP_Error('mclb_write', __('Could not release the blockout.', 'mobooking'), ['status' => 500]);
         }
         return rest_ensure_response([
             'ok'        => true,
@@ -1532,7 +1532,7 @@ class MCLB_REST_Admin {
         if ($actor === null) { return self::need_initials(); }
         $id = (int) $request['id'];
         $ex = MCLB_Closures::get_exception($id);
-        if (!$ex) { return new WP_Error('mclb_invalid', __('That release was already undone.', 'mclb-lane-booking'), ['status' => 404]); }
+        if (!$ex) { return new WP_Error('mclb_invalid', __('That release was already undone.', 'mobooking'), ['status' => 404]); }
 
         $date = (string) $ex->exception_date;
         $c    = MCLB_Closures::get((int) $ex->closure_id);
@@ -1561,14 +1561,14 @@ class MCLB_REST_Admin {
                     $be = new DateTimeImmutable((string) $b->ends_at, $tz);
                     if ($bs < $winE && $be > $winS) {
                         /* translators: %d: booking id booked inside the released window. */
-                        return new WP_Error('mclb_booked_over', sprintf(__('Can’t restore: #%d is booked in this window.', 'mclb-lane-booking'), (int) $b->id), ['status' => 409]);
+                        return new WP_Error('mclb_booked_over', sprintf(__('Can’t restore: #%d is booked in this window.', 'mobooking'), (int) $b->id), ['status' => 409]);
                     }
                 }
             }
         }
 
         if (!MCLB_Closures::delete_exception($id)) {
-            return new WP_Error('mclb_write', __('Could not undo the release.', 'mclb-lane-booking'), ['status' => 500]);
+            return new WP_Error('mclb_write', __('Could not undo the release.', 'mobooking'), ['status' => 500]);
         }
         return rest_ensure_response(['ok' => true, 'date' => $date, 'released' => MCLB_Closures::released_for_day($date)]);
     }
@@ -1588,7 +1588,7 @@ class MCLB_REST_Admin {
             if (empty($res['ok'])) {
                 return self::write_error($res);
             }
-            self::log($id, $actor, __('reversed counter payment', 'mclb-lane-booking'));
+            self::log($id, $actor, __('reversed counter payment', 'mobooking'));
             return rest_ensure_response(['ok' => true]);
         }
 
@@ -1598,7 +1598,7 @@ class MCLB_REST_Admin {
             return self::write_error($res);
         }
         $amt = ($before && $before->counter_due !== null) ? self::money($before->counter_due) : '';
-        self::log($id, $actor, trim(__('marked counter paid', 'mclb-lane-booking') . ' ' . $amt));
+        self::log($id, $actor, trim(__('marked counter paid', 'mobooking') . ' ' . $amt));
         return rest_ensure_response(['ok' => true]);
     }
 
@@ -1616,30 +1616,30 @@ class MCLB_REST_Admin {
 
         $b = MCLB_Bookings::get($id);
         if (!$b) {
-            return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]);
         }
         $has_email = sanitize_email((string) $b->customer_email) !== '';
 
         if ($mode === 'refund') {
             if (!current_user_can(MCLB_Caps::REFUND)) {
-                return new WP_Error('mclb_forbidden', __('You can’t issue refunds.', 'mclb-lane-booking'), ['status' => 403]);
+                return new WP_Error('mclb_forbidden', __('You can’t issue refunds.', 'mobooking'), ['status' => 403]);
             }
             if ((string) $b->source !== 'online' || !$b->order_id) {
-                return new WP_Error('mclb_no_refund', __('This booking has no online payment to refund. Use “Cancel only”.', 'mclb-lane-booking'), ['status' => 400]);
+                return new WP_Error('mclb_no_refund', __('This booking has no online payment to refund. Use “Cancel only”.', 'mobooking'), ['status' => 400]);
             }
             // cancel_and_refund fires the single seam + the WEB-12 emails.
-            $res = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'), ['actor' => $actor, 'notify' => $notify]);
+            $res = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mobooking'), ['actor' => $actor, 'notify' => $notify]);
             if (empty($res['ok'])) {
-                return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mclb-lane-booking'), ['status' => 409]);
+                return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mobooking'), ['status' => 409]);
             }
-            self::log($id, $actor, !empty($res['refunded']) ? __('cancelled + refunded', 'mclb-lane-booking') : __('cancelled — automatic refund FAILED, refund manually', 'mclb-lane-booking'));
+            self::log($id, $actor, !empty($res['refunded']) ? __('cancelled + refunded', 'mobooking') : __('cancelled — automatic refund FAILED, refund manually', 'mobooking'));
             return rest_ensure_response(['ok' => true, 'refunded' => !empty($res['refunded']), 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
         }
 
         // Cancel only (no refund). Classify the money outcome so the email is
         // accurate (addition a: an online-paid booking must not just say "cancelled").
         if (!MCLB_Bookings::claim_cancel($id)) {
-            return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_nochange', __('That booking was not in a cancellable state.', 'mobooking'), ['status' => 409]);
         }
         $paid_counter = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00' && $b->counter_due !== null);
         if (MCLB_Cancel::is_online_paid($b)) {
@@ -1650,7 +1650,7 @@ class MCLB_REST_Admin {
             $outcome = ['type' => 'cancelled', 'amount' => 0.0, 'actor' => $actor, 'manual_flag' => false];
         }
         MCLB_Cancel::finish($b, $outcome, ['notify' => $notify]);
-        self::log($id, $actor, __('cancelled', 'mclb-lane-booking'));
+        self::log($id, $actor, __('cancelled', 'mobooking'));
         return rest_ensure_response(['ok' => true, 'emailed' => ($notify && $has_email), 'has_email' => $has_email]);
     }
 
@@ -1659,17 +1659,17 @@ class MCLB_REST_Admin {
     /** Draw a pass onto an already-confirmed MANUAL booking (whole lane hours). */
     public static function apply_pass_draw($booking_id, $code, $actor) {
         $b = MCLB_Bookings::get((int) $booking_id);
-        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mclb-lane-booking'), ['status' => 404]); }
+        if (!$b) { return new WP_Error('mclb_invalid', __('Booking not found.', 'mobooking'), ['status' => 404]); }
         if ((string) $b->source !== 'manual') {
-            return new WP_Error('mclb_pass_manual', __('A pass can only be drawn onto a counter (manual) booking.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_pass_manual', __('A pass can only be drawn onto a counter (manual) booking.', 'mobooking'), ['status' => 409]);
         }
         $pass = MCLB_Passes::get_by_code($code);
         if (!$pass || !MCLB_Passes::is_usable($pass)) {
-            return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mobooking'), ['status' => 400]);
         }
         $want = (int) floor(MCLB_Bookings::hours_between($b->starts_at, $b->ends_at));
         if (!MCLB_Passes::lock($pass->code)) {
-            return new WP_Error('mclb_pass_busy', __('That pass is busy — try again.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_pass_busy', __('That pass is busy — try again.', 'mobooking'), ['status' => 409]);
         }
         try {
             $r = MCLB_Passes::redeem_booking((int) $pass->id, (int) $booking_id, $want, $actor, true);
@@ -1677,7 +1677,7 @@ class MCLB_REST_Admin {
             MCLB_Passes::unlock($pass->code);
         }
         if (empty($r['ok'])) {
-            return new WP_Error('mclb_pass_empty', __('That pass has no hours left.', 'mclb-lane-booking'), ['status' => 409]);
+            return new WP_Error('mclb_pass_empty', __('That pass has no hours left.', 'mobooking'), ['status' => 409]);
         }
         MCLB_Bookings::apply_pass_price((int) $booking_id);
         return ['ok' => true, 'hours' => $r['hours'], 'code' => $pass->code, 'balance' => MCLB_Passes::balance((int) $pass->id)];
@@ -1689,16 +1689,16 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $op = ($request->get_param('op') === 'return') ? 'return' : 'draw';
         if ($op === 'return') {
-            $r = MCLB_Passes::return_booking($id, sprintf(__('returned by %s', 'mclb-lane-booking'), $actor));
-            if (!$r) { return new WP_Error('mclb_pass_none', __('No pass hours on this booking.', 'mclb-lane-booking'), ['status' => 409]); }
+            $r = MCLB_Passes::return_booking($id, sprintf(__('returned by %s', 'mobooking'), $actor));
+            if (!$r) { return new WP_Error('mclb_pass_none', __('No pass hours on this booking.', 'mobooking'), ['status' => 409]); }
             MCLB_Bookings::apply_pass_price($id);
-            self::log($id, $actor, sprintf(__('returned %1$sh to pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $r['code']));
+            self::log($id, $actor, sprintf(__('returned %1$sh to pass %2$s', 'mobooking'), rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.'), $r['code']));
             return rest_ensure_response(['ok' => true, 'balance' => $r['balance'], 'code' => $r['code']]);
         }
         $code = MCLB_Pass_Code::normalise((string) $request->get_param('code'));
         $res  = self::apply_pass_draw($id, $code, $actor);
         if (is_wp_error($res)) { return $res; }
-        self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mclb-lane-booking'), rtrim(rtrim(number_format((float) $res['hours'], 2), '0'), '.'), $res['code']));
+        self::log($id, $actor, sprintf(__('drew %1$sh from pass %2$s', 'mobooking'), rtrim(rtrim(number_format((float) $res['hours'], 2), '0'), '.'), $res['code']));
         return rest_ensure_response($res);
     }
 
@@ -1706,7 +1706,7 @@ class MCLB_REST_Admin {
         $actor = self::actor($request);
         if ($actor === null) { return self::need_initials(); }
         $pos = sanitize_text_field((string) $request->get_param('pos_ref'));
-        if ($pos === '') { return new WP_Error('mclb_pass_pos', __('A POS receipt / reference is required (payment is taken on Square first).', 'mclb-lane-booking'), ['status' => 400]); }
+        if ($pos === '') { return new WP_Error('mclb_pass_pos', __('A POS receipt / reference is required (payment is taken on Square first).', 'mobooking'), ['status' => 400]); }
         $months  = ($request->get_param('expiry_months') !== null && $request->get_param('expiry_months') !== '') ? absint($request->get_param('expiry_months')) : MCLB_Passes::default_expiry_months();
         $expires = $months > 0 ? (new DateTimeImmutable('now', wp_timezone()))->modify('+' . $months . ' months')->format('Y-m-d H:i:s') : null;
         $res = MCLB_Passes::issue([
@@ -1730,7 +1730,7 @@ class MCLB_REST_Admin {
         if (self::actor($request) === null) { return self::need_initials(); }
         $code = MCLB_Pass_Code::normalise((string) $request->get_param('code'));
         $pass = MCLB_Pass_Code::looks_valid($code) ? MCLB_Passes::get_by_code($code) : null;
-        if (!$pass) { return new WP_Error('mclb_pass_invalid', __('No pass found for that code.', 'mclb-lane-booking'), ['status' => 404]); }
+        if (!$pass) { return new WP_Error('mclb_pass_invalid', __('No pass found for that code.', 'mobooking'), ['status' => 404]); }
         return rest_ensure_response([
             'ok' => true, 'id' => (int) $pass->id, 'code' => $pass->code, 'holder' => (string) $pass->holder_name,
             'balance' => MCLB_Passes::balance((int) $pass->id), 'status' => (string) $pass->status,
@@ -1741,7 +1741,7 @@ class MCLB_REST_Admin {
     public static function pass_void($request) {
         $actor = self::actor($request);
         if ($actor === null) { return self::need_initials(); }
-        $res = MCLB_Passes::void((int) $request['id'], $actor, __('voided at counter', 'mclb-lane-booking'));
+        $res = MCLB_Passes::void((int) $request['id'], $actor, __('voided at counter', 'mobooking'));
         if (is_wp_error($res)) { return $res; }
         return rest_ensure_response(['ok' => true]);
     }
@@ -1764,7 +1764,7 @@ class MCLB_REST_Admin {
         $coach_id = (int) $request->get_param('coach_id');
         $date     = self::sanitize_date((string) $request->get_param('date'));
         if (!$coach_id || $date === '') {
-            return new WP_Error('mclb_invalid', __('Pick a coach and a valid date.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('Pick a coach and a valid date.', 'mobooking'), ['status' => 400]);
         }
         $res = MCLB_Daysheets::send_for_coach($coach_id, $date, 'manual:' . $actor);
         return rest_ensure_response(['ok' => !empty($res['ok']), 'result' => $res['result'] ?? '']);
@@ -1785,7 +1785,7 @@ class MCLB_REST_Admin {
         $note       = sanitize_text_field((string) $request->get_param('note'));
         $re         = '/^([01]\d|2[0-3]):[0-5]\d$/';
         if ($date === '' || !preg_match($re, $start) || !preg_match($re, $end) || $end <= $start) {
-            return new WP_Error('mclb_invalid', __('Please check the date and times.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_invalid', __('Please check the date and times.', 'mobooking'), ['status' => 400]);
         }
         $id = MCLB_Closures::insert([
             'lane_id'    => $lane_id,
@@ -1797,7 +1797,7 @@ class MCLB_REST_Admin {
         ]);
         return $id
             ? rest_ensure_response(['ok' => true, 'id' => (int) $id])
-            : new WP_Error('mclb_db', __('Could not save the blockout.', 'mclb-lane-booking'), ['status' => 500]);
+            : new WP_Error('mclb_db', __('Could not save the blockout.', 'mobooking'), ['status' => 500]);
     }
 
     public static function blockout($request) {
@@ -1808,10 +1808,10 @@ class MCLB_REST_Admin {
         $id = (int) $request['id'];
         $c  = MCLB_Closures::get($id);
         if (!$c) {
-            return new WP_Error('mclb_not_found', __('Blockout not found.', 'mclb-lane-booking'), ['status' => 404]);
+            return new WP_Error('mclb_not_found', __('Blockout not found.', 'mobooking'), ['status' => 404]);
         }
         if ($c->kind !== 'oneoff') {
-            return new WP_Error('mclb_recurring_readonly', __('Recurring blockouts are edited on the Closures screen.', 'mclb-lane-booking'), ['status' => 403]);
+            return new WP_Error('mclb_recurring_readonly', __('Recurring blockouts are edited on the Closures screen.', 'mobooking'), ['status' => 403]);
         }
         if ($request->get_method() === 'DELETE') {
             MCLB_Closures::delete($id);
@@ -1832,27 +1832,27 @@ class MCLB_REST_Admin {
 
     private static function write_error($res) {
         if (!empty($res['lock_error'])) {
-            return new WP_Error('mclb_busy', __('The booking system is busy — please try again.', 'mclb-lane-booking'), ['status' => 503]);
+            return new WP_Error('mclb_busy', __('The booking system is busy — please try again.', 'mobooking'), ['status' => 503]);
         }
         if (!empty($res['conflict'])) {
             $reason = $res['reason'] ?? 'lane';
             return ($reason === 'coach')
-                ? new WP_Error('mclb_coach_conflict', __('That coach is already booked for an overlapping time.', 'mclb-lane-booking'), ['status' => 409])
-                : new WP_Error('mclb_slot_taken', __('That slot was just taken. Refresh and try another.', 'mclb-lane-booking'), ['status' => 409]);
+                ? new WP_Error('mclb_coach_conflict', __('That coach is already booked for an overlapping time.', 'mobooking'), ['status' => 409])
+                : new WP_Error('mclb_slot_taken', __('That slot was just taken. Refresh and try another.', 'mobooking'), ['status' => 409]);
         }
         $map = [
-            'coach_no_rate'      => __('That coach has no hourly rate set.', 'mclb-lane-booking'),
-            'coach_not_bookable' => __('That coach isn’t available for bookings.', 'mclb-lane-booking'),
-            'locked_need_note'   => __('Counter payment already taken — a note is required to change the coach.', 'mclb-lane-booking'),
-            'nothing_due'        => __('Nothing is due on this booking.', 'mclb-lane-booking'),
-            'already_paid'       => __('The counter payment was already recorded.', 'mclb-lane-booking'),
-            'not_paid'           => __('No counter payment to reverse.', 'mclb-lane-booking'),
-            'not_confirmed'      => __('That booking is not confirmed.', 'mclb-lane-booking'),
-            'not_found'          => __('Booking not found.', 'mclb-lane-booking'),
-            'need_note'          => __('A note is required.', 'mclb-lane-booking'),
+            'coach_no_rate'      => __('That coach has no hourly rate set.', 'mobooking'),
+            'coach_not_bookable' => __('That coach isn’t available for bookings.', 'mobooking'),
+            'locked_need_note'   => __('Counter payment already taken — a note is required to change the coach.', 'mobooking'),
+            'nothing_due'        => __('Nothing is due on this booking.', 'mobooking'),
+            'already_paid'       => __('The counter payment was already recorded.', 'mobooking'),
+            'not_paid'           => __('No counter payment to reverse.', 'mobooking'),
+            'not_confirmed'      => __('That booking is not confirmed.', 'mobooking'),
+            'not_found'          => __('Booking not found.', 'mobooking'),
+            'need_note'          => __('A note is required.', 'mobooking'),
         ];
         $err = $res['error'] ?? 'error';
-        $msg = $map[$err] ?? __('Could not complete that action.', 'mclb-lane-booking');
+        $msg = $map[$err] ?? __('Could not complete that action.', 'mobooking');
         return new WP_Error('mclb_' . $err, $msg, ['status' => ($err === 'not_found' ? 404 : 409)]);
     }
 

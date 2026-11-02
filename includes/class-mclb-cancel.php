@@ -115,7 +115,7 @@ class MCLB_Cancel {
 
         if ($tier === 'refund') {
             // Real card refund via the existing atomic path (which fires finish()).
-            $res = MCLB_Refunds::cancel_and_refund((int) $b->id, __('Customer self-cancel (within refund window)', 'mclb-lane-booking'), [
+            $res = MCLB_Refunds::cancel_and_refund((int) $b->id, __('Customer self-cancel (within refund window)', 'mobooking'), [
                 'actor' => $actor_label, 'actor_note' => $actor_note, 'notify' => $notify, 'via_link' => $via_link,
             ]);
             return ['ok' => !empty($res['ok']), 'outcome' => $res['outcome'] ?? null];
@@ -130,7 +130,7 @@ class MCLB_Cancel {
             $order = wc_get_order((int) $b->order_id);
             if ($order) {
                 /* translators: 1: booking id, 2: coupon code. */
-                $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mclb-lane-booking'), (int) $b->id, $credit['code']));
+                $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mobooking'), (int) $b->id, $credit['code']));
             }
         }
         $outcome = [

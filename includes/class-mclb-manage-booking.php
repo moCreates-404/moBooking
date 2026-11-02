@@ -53,7 +53,7 @@ class MCLB_Manage_Booking {
 
         if (self::rate_limited()) {
             status_header(429);
-            self::page(__('Please wait', 'mclb-lane-booking'), '<p>' . esc_html__('Too many requests — please wait a moment and try again.', 'mclb-lane-booking') . '</p>');
+            self::page(__('Please wait', 'mobooking'), '<p>' . esc_html__('Too many requests — please wait a moment and try again.', 'mobooking') . '</p>');
             exit;
         }
 
@@ -97,31 +97,31 @@ class MCLB_Manage_Booking {
         if (!$target) { self::invalid(); }
 
         if (!self::is_cancellable($target)) {
-            self::page(__('Booking', 'mclb-lane-booking'), '<p>' . esc_html__('This booking can no longer be cancelled online.', 'mclb-lane-booking') . '</p>');
+            self::page(__('Booking', 'mobooking'), '<p>' . esc_html__('This booking can no longer be cancelled online.', 'mobooking') . '</p>');
             exit;
         }
 
-        $label = trim((string) $target->customer_name) ?: __('customer', 'mclb-lane-booking');
+        $label = trim((string) $target->customer_name) ?: __('customer', 'mobooking');
         $res   = MCLB_Cancel::self_cancel($target, $label, [
             'notify'     => true,
-            'actor_note' => __('via email link', 'mclb-lane-booking'), // addition e
+            'actor_note' => __('via email link', 'mobooking'), // addition e
             'via_link'   => true, // adds the "didn't cancel this?" safety line to the email
         ]);
 
         if (!empty($res['blocked'])) {
-            self::page(__('Booking', 'mclb-lane-booking'), self::blocked_html());
+            self::page(__('Booking', 'mobooking'), self::blocked_html());
             exit;
         }
         if (empty($res['ok'])) {
-            self::page(__('Booking', 'mclb-lane-booking'), '<p>' . esc_html__('Sorry — that booking could not be cancelled. Please contact the club.', 'mclb-lane-booking') . '</p>');
+            self::page(__('Booking', 'mobooking'), '<p>' . esc_html__('Sorry — that booking could not be cancelled. Please contact the club.', 'mobooking') . '</p>');
             exit;
         }
-        $body  = '<p class="mclb-mb-ok">' . esc_html__('Your booking has been cancelled.', 'mclb-lane-booking') . '</p>';
+        $body  = '<p class="mclb-mb-ok">' . esc_html__('Your booking has been cancelled.', 'mobooking') . '</p>';
         $body .= self::detail_html($target);
         $line  = MCLB_Emails::outcome_customer_text($res['outcome']);
         if ($line !== '') { $body .= '<p><strong>' . esc_html($line) . '</strong></p>'; }
-        $body .= '<p class="mclb-mb-sub">' . esc_html__('This link no longer cancels that booking. You can close this page.', 'mclb-lane-booking') . '</p>';
-        self::page(__('Booking cancelled', 'mclb-lane-booking'), $body);
+        $body .= '<p class="mclb-mb-sub">' . esc_html__('This link no longer cancels that booking. You can close this page.', 'mobooking') . '</p>';
+        self::page(__('Booking cancelled', 'mobooking'), $body);
         exit;
     }
 
@@ -129,34 +129,34 @@ class MCLB_Manage_Booking {
 
     private static function render_list($token, $anchor) {
         $sibs = self::siblings($anchor);
-        $body = '<p>' . sprintf(esc_html__('Hi %s, here are your bookings:', 'mclb-lane-booking'), esc_html(self::holder_name($anchor))) . '</p>';
+        $body = '<p>' . sprintf(esc_html__('Hi %s, here are your bookings:', 'mobooking'), esc_html(self::holder_name($anchor))) . '</p>';
         foreach ($sibs as $b) {
             $body .= '<div class="mclb-mb-card">' . self::detail_html($b);
             if (self::is_cancellable($b)) {
                 $url   = add_query_arg(['mclb_manage' => $token, 'confirm' => (int) $b->id], home_url('/'));
-                $body .= '<p><a class="mclb-mb-btn" href="' . esc_url($url) . '">' . esc_html__('Cancel this booking', 'mclb-lane-booking') . '</a></p>';
+                $body .= '<p><a class="mclb-mb-btn" href="' . esc_url($url) . '">' . esc_html__('Cancel this booking', 'mobooking') . '</a></p>';
             } else {
                 $body .= '<p class="mclb-mb-sub">' . esc_html(self::not_cancellable_reason($b)) . '</p>';
             }
             $body .= '</div>';
         }
-        self::page(__('Manage your booking', 'mclb-lane-booking'), $body);
+        self::page(__('Manage your booking', 'mobooking'), $body);
     }
 
     private static function render_confirm($token, $anchor, $target) {
         if (!self::is_cancellable($target)) {
-            self::page(__('Booking', 'mclb-lane-booking'), self::detail_html($target) . '<p class="mclb-mb-sub">' . esc_html(self::not_cancellable_reason($target)) . '</p>');
+            self::page(__('Booking', 'mobooking'), self::detail_html($target) . '<p class="mclb-mb-sub">' . esc_html(self::not_cancellable_reason($target)) . '</p>');
             return;
         }
         $tier = MCLB_Cancel::self_cancel_tier($target)['tier'];
         if ($tier === 'blocked') {
-            self::page(__('Booking', 'mclb-lane-booking'), self::detail_html($target) . self::blocked_html());
+            self::page(__('Booking', 'mobooking'), self::detail_html($target) . self::blocked_html());
             return;
         }
         $when = self::when_label($target);
         $q    = sprintf(
             /* translators: 1: lane, 2: when. */
-            __('Cancel %1$s, %2$s?', 'mclb-lane-booking'),
+            __('Cancel %1$s, %2$s?', 'mobooking'),
             (string) $target->lane_name,
             $when
         );
@@ -168,10 +168,10 @@ class MCLB_Manage_Booking {
         $body .= '<input type="hidden" name="' . self::QV . '" value="' . esc_attr($token) . '">';
         $body .= '<input type="hidden" name="booking_id" value="' . (int) $target->id . '">';
         $body .= wp_nonce_field('mclb_guest_cancel', '_wpnonce', true, false);
-        $body .= '<button type="submit" class="mclb-mb-btn mclb-mb-btn--danger">' . esc_html__('Yes, cancel this booking', 'mclb-lane-booking') . '</button> ';
-        $body .= '<a class="mclb-mb-back" href="' . esc_url(add_query_arg('mclb_manage', $token, home_url('/'))) . '">' . esc_html__('Back', 'mclb-lane-booking') . '</a>';
+        $body .= '<button type="submit" class="mclb-mb-btn mclb-mb-btn--danger">' . esc_html__('Yes, cancel this booking', 'mobooking') . '</button> ';
+        $body .= '<a class="mclb-mb-back" href="' . esc_url(add_query_arg('mclb_manage', $token, home_url('/'))) . '">' . esc_html__('Back', 'mobooking') . '</a>';
         $body .= '</form>';
-        self::page(__('Confirm cancellation', 'mclb-lane-booking'), $body);
+        self::page(__('Confirm cancellation', 'mobooking'), $body);
     }
 
     // ── Policy preview (future tense, before cancelling) ───────────────────────
@@ -180,21 +180,21 @@ class MCLB_Manage_Booking {
         $money = class_exists('MCLB_Coaches') ? MCLB_Coaches::money((float) $b->price) : (string) $b->price;
         if (!MCLB_Cancel::is_online_paid($b)) {
             $paid_counter = ($b->counter_paid_at !== null && $b->counter_paid_at !== '0000-00-00 00:00:00' && $b->counter_due !== null);
-            if ($paid_counter) { return __('The club will arrange any refund with you directly.', 'mclb-lane-booking'); }
-            if ((string) $b->source === 'manual') { return __('Please contact the club about any payment on this booking.', 'mclb-lane-booking'); }
+            if ($paid_counter) { return __('The club will arrange any refund with you directly.', 'mobooking'); }
+            if ((string) $b->source === 'manual') { return __('Please contact the club about any payment on this booking.', 'mobooking'); }
             return '';
         }
         if ($tier === 'refund') {
             // Only promise a card refund if the order's gateway can actually do one
             // automatically (COD etc. can't) — otherwise the club arranges it.
             return self::gateway_can_refund($b)
-                ? sprintf(__('You’ll receive a %s refund to your card.', 'mclb-lane-booking'), $money)
-                : sprintf(__('A refund of %s will be arranged by the club.', 'mclb-lane-booking'), $money);
+                ? sprintf(__('You’ll receive a %s refund to your card.', 'mobooking'), $money)
+                : sprintf(__('A refund of %s will be arranged by the club.', 'mobooking'), $money);
         }
         // credit tier
         $days = (int) MCLB_Settings::get('credit_expiry_days');
-        $exp  = $days > 0 ? ' ' . sprintf(__('(expires %s)', 'mclb-lane-booking'), wp_date('j M Y', time() + $days * DAY_IN_SECONDS)) : '';
-        return sprintf(__('You’ll receive %1$s in store credit%2$s to use on a future booking.', 'mclb-lane-booking'), $money, $exp);
+        $exp  = $days > 0 ? ' ' . sprintf(__('(expires %s)', 'mobooking'), wp_date('j M Y', time() + $days * DAY_IN_SECONDS)) : '';
+        return sprintf(__('You’ll receive %1$s in store credit%2$s to use on a future booking.', 'mobooking'), $money, $exp);
     }
 
     /** Can the order's payment gateway refund automatically (supports 'refunds')? */
@@ -210,8 +210,8 @@ class MCLB_Manage_Booking {
         $cutoff = (int) MCLB_Settings::get('self_cancel_hours');
         $phone  = MCLB_Settings::club_phone();
         $msg    = $phone !== ''
-            ? sprintf(__('This booking is within %1$d hours of its start time and can’t be cancelled online. Call us on %2$s to discuss.', 'mclb-lane-booking'), $cutoff, $phone)
-            : sprintf(__('This booking is within %d hours of its start time and can’t be cancelled online. Please contact the club to discuss.', 'mclb-lane-booking'), $cutoff);
+            ? sprintf(__('This booking is within %1$d hours of its start time and can’t be cancelled online. Call us on %2$s to discuss.', 'mobooking'), $cutoff, $phone)
+            : sprintf(__('This booking is within %d hours of its start time and can’t be cancelled online. Please contact the club to discuss.', 'mobooking'), $cutoff);
         return '<p class="mclb-mb-sub">' . esc_html($msg) . '</p>';
     }
 
@@ -224,9 +224,9 @@ class MCLB_Manage_Booking {
     }
 
     private static function not_cancellable_reason($b) {
-        if ((string) $b->status === MCLB_Bookings::STATUS_CANCELLED) { return __('Already cancelled.', 'mclb-lane-booking'); }
-        if ((string) $b->starts_at <= current_time('mysql')) { return __('This booking has passed.', 'mclb-lane-booking'); }
-        return __('This booking can’t be cancelled online.', 'mclb-lane-booking');
+        if ((string) $b->status === MCLB_Bookings::STATUS_CANCELLED) { return __('Already cancelled.', 'mobooking'); }
+        if ((string) $b->starts_at <= current_time('mysql')) { return __('This booking has passed.', 'mobooking'); }
+        return __('This booking can’t be cancelled online.', 'mobooking');
     }
 
     /** The bookings a token may show/act on: the anchor's order OR series mates. */
@@ -260,7 +260,7 @@ class MCLB_Manage_Booking {
 
     private static function holder_name($b) {
         $name = trim((string) $b->customer_name);
-        if ($name === '') { return __('there', 'mclb-lane-booking'); }
+        if ($name === '') { return __('there', 'mobooking'); }
         $parts = preg_split('/\s+/', $name);
         $first = $parts[0];
         $last  = (count($parts) > 1) ? ' ' . strtoupper(substr(end($parts), 0, 1)) . '.' : '';
@@ -291,7 +291,7 @@ class MCLB_Manage_Booking {
 
     private static function invalid() {
         status_header(404);
-        self::page(__('Link not valid', 'mclb-lane-booking'), '<p>' . esc_html__('This link isn’t valid. If you need to change a booking, please contact the club.', 'mclb-lane-booking') . '</p>');
+        self::page(__('Link not valid', 'mobooking'), '<p>' . esc_html__('This link isn’t valid. If you need to change a booking, please contact the club.', 'mobooking') . '</p>');
         exit;
     }
 
@@ -372,7 +372,7 @@ class MCLB_Manage_Booking {
     if ($phone !== '') {
         printf(
             /* translators: 1: club name, 2: phone number. */
-            esc_html__('%1$s · Call us on %2$s', 'mclb-lane-booking'),
+            esc_html__('%1$s · Call us on %2$s', 'mobooking'),
             esc_html($club),
             esc_html($phone)
         );

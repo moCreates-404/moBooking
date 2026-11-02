@@ -56,10 +56,10 @@ class MCLB_Coaches {
         $title = get_the_title($coach_id);
         if ($title) {
             /* translators: %s: coach name of a coach no longer in the bookable list. */
-            return sprintf(__('%s (unlisted)', 'mclb-lane-booking'), $title);
+            return sprintf(__('%s (unlisted)', 'mobooking'), $title);
         }
         /* translators: %d: coach id. */
-        return sprintf(__('Coach #%d', 'mclb-lane-booking'), $coach_id);
+        return sprintf(__('Coach #%d', 'mobooking'), $coach_id);
     }
 
     // ── Fee math ─────────────────────────────────────────────────────────────

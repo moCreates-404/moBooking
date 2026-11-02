@@ -36,7 +36,7 @@ class MCLB_Coachday {
         $data  = MCLB_Daysheet_Token::verify($token);
         if (!$data) {
             status_header(403);
-            self::page(__('This link has expired', 'mclb-lane-booking'), '<p>' . esc_html__('This day-sheet link is no longer valid. Ask the club for a fresh one.', 'mclb-lane-booking') . '</p>');
+            self::page(__('This link has expired', 'mobooking'), '<p>' . esc_html__('This day-sheet link is no longer valid. Ask the club for a fresh one.', 'mobooking') . '</p>');
             exit;
         }
 
@@ -56,7 +56,7 @@ class MCLB_Coachday {
         if (empty($rows)) {
             self::page(
                 $first . ' — ' . $label,
-                '<p>' . esc_html__('No sessions scheduled for this day.', 'mclb-lane-booking') . '</p>'
+                '<p>' . esc_html__('No sessions scheduled for this day.', 'mobooking') . '</p>'
             );
             return;
         }
@@ -112,7 +112,7 @@ class MCLB_Coachday {
             $ct = self::coach_times($r, $tz, $tf);
             $tl .= '<div class="mclb-cd-block" style="top:' . ($head + ($s - $top) * $ppm) . 'px;height:' . (max($e - $s, 30) * $ppm - 2) . 'px;left:' . ($x + 2) . 'px;width:' . ($colW - 6) . 'px;">'
                 . '<strong>' . esc_html($ct['start']) . '</strong>'
-                . ($ct['partial'] ? '<br><span class="mclb-cd-sub">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), $ct['lane'])) . '</span>' : '')
+                . ($ct['partial'] ? '<br><span class="mclb-cd-sub">' . esc_html(sprintf(__('lane %s', 'mobooking'), $ct['lane'])) . '</span>' : '')
                 . ($customer !== '' ? '<br>' . esc_html($customer) : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')
                 . '</div>';
@@ -131,7 +131,7 @@ class MCLB_Coachday {
                 . '</span> · ' . esc_html($r->lane_name)
                 . ($customer !== '' ? ' · ' . esc_html($customer) : '')
                 . ($phone !== '' ? ' · ' . esc_html($phone) : '')
-                . ($ct['partial'] ? '<br><span class="mclb-cd-note">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), $ct['lane'])) . '</span>' : '')
+                . ($ct['partial'] ? '<br><span class="mclb-cd-note">' . esc_html(sprintf(__('lane %s', 'mobooking'), $ct['lane'])) . '</span>' : '')
                 . ($note !== '' ? '<br><span class="mclb-cd-note">' . esc_html($note) . '</span>' : '')
                 . '</li>';
         }

@@ -39,7 +39,7 @@ class MCLB_Caps {
     /** Create/refresh the role and grant caps. Idempotent. */
     public static function install() {
         remove_role(self::ROLE); // drop then re-add so the cap set is always current
-        add_role(self::ROLE, __('Booking Staff', 'mclb-lane-booking'), [
+        add_role(self::ROLE, __('Booking Staff', 'mobooking'), [
             'read'       => true,
             self::MANAGE => true,
         ]);

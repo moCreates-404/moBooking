@@ -34,8 +34,8 @@ class MCLB_Report {
     public function menu() {
         add_submenu_page(
             MCLB_Admin::PAGE,
-            __('Utilisation', 'mclb-lane-booking'),
-            __('Utilisation', 'mclb-lane-booking'),
+            __('Utilisation', 'mobooking'),
+            __('Utilisation', 'mobooking'),
             'manage_options',
             self::SLUG,
             [$this, 'render'],
@@ -65,26 +65,26 @@ class MCLB_Report {
             'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes',
         ];
 
-        echo '<div class="wrap"><h1>' . esc_html(sprintf(__('%s utilisation', 'mclb-lane-booking'), $labels['singular'])) . '</h1>';
+        echo '<div class="wrap"><h1>' . esc_html(sprintf(__('%s utilisation', 'mobooking'), $labels['singular'])) . '</h1>';
 
         $this->filters($from, $to, $type);
 
         $data = $this->compute($from, $to, $type);
         if ($data === null) {
             printf('<div class="notice notice-error"><p>%s</p></div></div>',
-                esc_html(sprintf(__('Please choose a range of %d days or fewer.', 'mclb-lane-booking'), self::MAX_DAYS)));
+                esc_html(sprintf(__('Please choose a range of %d days or fewer.', 'mobooking'), self::MAX_DAYS)));
             return;
         }
         if (empty($data['rows'])) {
-            echo '<p>' . esc_html(sprintf(__('No bookable %s for this range.', 'mclb-lane-booking'), strtolower($labels['plural']))) . '</p></div>';
+            echo '<p>' . esc_html(sprintf(__('No bookable %s for this range.', 'mobooking'), strtolower($labels['plural']))) . '</p></div>';
             return;
         }
 
         echo '<table class="widefat striped" style="max-width:760px"><thead><tr>';
         echo '<th>' . esc_html($labels['singular']) . '</th>';
-        echo '<th style="text-align:right">' . esc_html__('Available hrs', 'mclb-lane-booking') . '</th>';
-        echo '<th style="text-align:right">' . esc_html__('Booked hrs', 'mclb-lane-booking') . '</th>';
-        echo '<th style="text-align:right">' . esc_html__('Utilisation', 'mclb-lane-booking') . '</th>';
+        echo '<th style="text-align:right">' . esc_html__('Available hrs', 'mobooking') . '</th>';
+        echo '<th style="text-align:right">' . esc_html__('Booked hrs', 'mobooking') . '</th>';
+        echo '<th style="text-align:right">' . esc_html__('Utilisation', 'mobooking') . '</th>';
         echo '</tr></thead><tbody>';
 
         foreach ($data['rows'] as $r) {
@@ -99,32 +99,32 @@ class MCLB_Report {
 
         printf(
             '<tr style="font-weight:600"><td>%s</td><td style="text-align:right">%s</td><td style="text-align:right">%s</td><td style="text-align:right">%s</td></tr>',
-            esc_html__('All', 'mclb-lane-booking'),
+            esc_html__('All', 'mobooking'),
             esc_html(number_format_i18n($data['total_capacity_h'], 1)),
             esc_html(number_format_i18n($data['total_booked_h'], 1)),
             esc_html($this->pct($data['total_capacity_h'], $data['total_booked_h']))
         );
         echo '</tbody></table>';
 
-        echo '<p class="description">' . esc_html__('Available hours = opening hours minus closures. Today includes any live holds; completed days are confirmed bookings only.', 'mclb-lane-booking') . '</p>';
+        echo '<p class="description">' . esc_html__('Available hours = opening hours minus closures. Today includes any live holds; completed days are confirmed bookings only.', 'mobooking') . '</p>';
         echo '</div>';
     }
 
     private function filters($from, $to, $type) {
         echo '<form method="get" style="margin:12px 0">';
         echo '<input type="hidden" name="page" value="' . esc_attr(self::SLUG) . '">';
-        echo '<label>' . esc_html__('From', 'mclb-lane-booking') . ' <input type="date" name="date_from" value="' . esc_attr($from) . '"></label> ';
-        echo '<label>' . esc_html__('To', 'mclb-lane-booking') . ' <input type="date" name="date_to" value="' . esc_attr($to) . '"></label> ';
+        echo '<label>' . esc_html__('From', 'mobooking') . ' <input type="date" name="date_from" value="' . esc_attr($from) . '"></label> ';
+        echo '<label>' . esc_html__('To', 'mobooking') . ' <input type="date" name="date_to" value="' . esc_attr($to) . '"></label> ';
 
         $types = MCLB_Lane::types();
         if (!empty($types)) {
-            echo '<label>' . esc_html__('Type', 'mclb-lane-booking') . ' <select name="type"><option value="">' . esc_html__('All', 'mclb-lane-booking') . '</option>';
+            echo '<label>' . esc_html__('Type', 'mobooking') . ' <select name="type"><option value="">' . esc_html__('All', 'mobooking') . '</option>';
             foreach ($types as $t) {
                 printf('<option value="%s"%s>%s</option>', esc_attr($t), selected($type, $t, false), esc_html($t));
             }
             echo '</select></label> ';
         }
-        submit_button(__('Show', 'mclb-lane-booking'), 'secondary', '', false);
+        submit_button(__('Show', 'mobooking'), 'secondary', '', false);
         echo '</form>';
     }
 

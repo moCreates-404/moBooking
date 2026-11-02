@@ -33,6 +33,8 @@ class MCLB_Plugin {
         add_action('init', [$this, 'load_textdomain']);
         add_action('admin_init', ['MCLB_Settings', 'register']);
 
+        MCLB_License::init(); // admin licence notices
+
         // Data subsystems.
         MCLB_Lane::init();
         MCLB_Bookings::init();
@@ -75,7 +77,7 @@ class MCLB_Plugin {
 
     public function load_textdomain() {
         load_plugin_textdomain(
-            'mclb-lane-booking',
+            'mobooking',
             false,
             dirname(plugin_basename(MCLB_FILE)) . '/languages'
         );

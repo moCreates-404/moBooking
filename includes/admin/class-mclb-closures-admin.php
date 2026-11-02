@@ -26,8 +26,8 @@ class MCLB_Closures_Admin {
     public function menu() {
         add_submenu_page(
             MCLB_Admin::PAGE,
-            __('Closures', 'mclb-lane-booking'),
-            __('Closures', 'mclb-lane-booking'),
+            __('Closures', 'mobooking'),
+            __('Closures', 'mobooking'),
             'manage_options',
             self::SLUG,
             [$this, 'render']
@@ -47,7 +47,7 @@ class MCLB_Closures_Admin {
 
     public function handle_save() {
         if (!current_user_can('manage_options') || !isset($_POST[self::NONCE]) || !wp_verify_nonce($_POST[self::NONCE], self::NONCE)) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
 
         $id   = isset($_POST['closure_id']) ? absint($_POST['closure_id']) : 0;
@@ -113,7 +113,7 @@ class MCLB_Closures_Admin {
         $id = isset($_GET['closure_id']) ? absint($_GET['closure_id']) : 0;
         if (!current_user_can('manage_options') || !$id
             || !isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'mclb_delete_closure_' . $id)) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         MCLB_Closures::delete($id);
         wp_safe_redirect(add_query_arg(['page' => self::SLUG, 'mclb_notice' => 'deleted'], admin_url('admin.php')));
@@ -132,17 +132,17 @@ class MCLB_Closures_Admin {
             $editing = MCLB_Closures::get(absint($_GET['closure_id']));
         }
 
-        echo '<div class="wrap"><h1>' . esc_html__('Closures / blockouts', 'mclb-lane-booking') . '</h1>';
+        echo '<div class="wrap"><h1>' . esc_html__('Closures / blockouts', 'mobooking') . '</h1>';
 
         if (isset($_GET['mclb_notice'])) {
             $map = [
-                'added'       => ['success', __('Closure added.', 'mclb-lane-booking')],
-                'updated'     => ['success', __('Closure updated.', 'mclb-lane-booking')],
-                'deleted'     => ['success', __('Closure deleted.', 'mclb-lane-booking')],
-                'err_time'    => ['error', __('Please enter a start and end time, with the end after the start.', 'mclb-lane-booking')],
-                'err_date'    => ['error', __('Please choose a date for a one-off closure.', 'mclb-lane-booking')],
-                'err_weekday' => ['error', __('Please choose a weekday for a recurring closure.', 'mclb-lane-booking')],
-                'err_range'   => ['error', __('“Active until” can’t be before “active from”.', 'mclb-lane-booking')],
+                'added'       => ['success', __('Closure added.', 'mobooking')],
+                'updated'     => ['success', __('Closure updated.', 'mobooking')],
+                'deleted'     => ['success', __('Closure deleted.', 'mobooking')],
+                'err_time'    => ['error', __('Please enter a start and end time, with the end after the start.', 'mobooking')],
+                'err_date'    => ['error', __('Please choose a date for a one-off closure.', 'mobooking')],
+                'err_weekday' => ['error', __('Please choose a weekday for a recurring closure.', 'mobooking')],
+                'err_range'   => ['error', __('“Active until” can’t be before “active from”.', 'mobooking')],
             ];
             $key = sanitize_key(wp_unslash($_GET['mclb_notice']));
             if (isset($map[$key])) {
@@ -164,7 +164,7 @@ class MCLB_Closures_Admin {
             '<option value="0" %s>%s</option>',
             selected((int) $selected, 0, false),
             /* translators: %s: plural resource label. */
-            esc_html(sprintf(__('All %s (site-wide)', 'mclb-lane-booking'), strtolower($this->label_plural())))
+            esc_html(sprintf(__('All %s (site-wide)', 'mobooking'), strtolower($this->label_plural())))
         );
         foreach ($lanes as $lane) {
             printf(
@@ -192,7 +192,7 @@ class MCLB_Closures_Admin {
         $a_until    = $is_edit ? (string) $c->active_until : '';
         $event_type = $is_edit ? (string) $c->event_type : '';
 
-        echo '<h2>' . ($is_edit ? esc_html__('Edit closure', 'mclb-lane-booking') : esc_html__('Add a closure', 'mclb-lane-booking')) . '</h2>';
+        echo '<h2>' . ($is_edit ? esc_html__('Edit closure', 'mobooking') : esc_html__('Add a closure', 'mobooking')) . '</h2>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="mclb_save_closure">';
         printf('<input type="hidden" name="closure_id" value="%d">', $is_edit ? (int) $c->id : 0);
@@ -206,64 +206,64 @@ class MCLB_Closures_Admin {
         echo '</td></tr>';
 
         // Kind
-        echo '<tr><th scope="row">' . esc_html__('Type', 'mclb-lane-booking') . '</th><td>';
+        echo '<tr><th scope="row">' . esc_html__('Type', 'mobooking') . '</th><td>';
         printf(
             '<label style="margin-right:16px"><input type="radio" name="kind" value="oneoff" %s class="mclb-kind"> %s</label>',
             checked($kind, 'oneoff', false),
-            esc_html__('One-off (specific date)', 'mclb-lane-booking')
+            esc_html__('One-off (specific date)', 'mobooking')
         );
         printf(
             '<label><input type="radio" name="kind" value="recurring" %s class="mclb-kind"> %s</label>',
             checked($kind, 'recurring', false),
-            esc_html__('Recurring (weekly)', 'mclb-lane-booking')
+            esc_html__('Recurring (weekly)', 'mobooking')
         );
         echo '</td></tr>';
 
         // One-off fields
         echo '<tbody class="mclb-oneoff" style="' . ($kind === 'oneoff' ? '' : 'display:none') . '">';
-        echo '<tr><th scope="row">' . esc_html__('Date', 'mclb-lane-booking') . '</th><td>';
+        echo '<tr><th scope="row">' . esc_html__('Date', 'mobooking') . '</th><td>';
         printf('<input type="date" name="date" value="%s">', esc_attr($date));
         echo '</td></tr>';
         echo '</tbody>';
 
         // Recurring fields
         echo '<tbody class="mclb-recurring" style="' . ($kind === 'recurring' ? '' : 'display:none') . '">';
-        echo '<tr><th scope="row">' . esc_html__('Weekday', 'mclb-lane-booking') . '</th><td><select name="weekday">';
+        echo '<tr><th scope="row">' . esc_html__('Weekday', 'mobooking') . '</th><td><select name="weekday">';
         foreach (MCLB_Settings::weekdays() as $i => $wlabel) {
             printf('<option value="%d" %s>%s</option>', (int) $i, selected($weekday, $i, false), esc_html($wlabel));
         }
         echo '</select></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Active from / until', 'mclb-lane-booking') . '</th><td>';
+        echo '<tr><th scope="row">' . esc_html__('Active from / until', 'mobooking') . '</th><td>';
         printf('<input type="date" name="active_from" value="%s"> &ndash; ', esc_attr($a_from));
         printf('<input type="date" name="active_until" value="%s"> ', esc_attr($a_until));
-        printf('<p class="description">%s</p>', esc_html__('Optional — leave blank for an open-ended recurring closure.', 'mclb-lane-booking'));
+        printf('<p class="description">%s</p>', esc_html__('Optional — leave blank for an open-ended recurring closure.', 'mobooking'));
         echo '</td></tr>';
         echo '</tbody>';
 
         // Shared fields (apply to both kinds)
         echo '<tbody>';
-        echo '<tr><th scope="row">' . esc_html__('Time', 'mclb-lane-booking') . '</th><td>';
+        echo '<tr><th scope="row">' . esc_html__('Time', 'mobooking') . '</th><td>';
         printf('<input type="time" name="start_time" value="%s"> &ndash; ', esc_attr($kind === 'recurring' ? $r_start : $o_start));
         printf('<input type="time" name="end_time" value="%s">', esc_attr($kind === 'recurring' ? $r_end : $o_end));
         echo '</td></tr>';
 
-        echo '<tr><th scope="row">' . esc_html__('Event type', 'mclb-lane-booking') . '</th><td><select name="event_type">';
-        printf('<option value="">%s</option>', esc_html__('— None —', 'mclb-lane-booking'));
+        echo '<tr><th scope="row">' . esc_html__('Event type', 'mobooking') . '</th><td><select name="event_type">';
+        printf('<option value="">%s</option>', esc_html__('— None —', 'mobooking'));
         foreach (MCLB_Event_Types::options() as $slug => $tlabel) {
             printf('<option value="%s" %s>%s</option>', esc_attr($slug), selected($event_type, $slug, false), esc_html($tlabel));
         }
         echo '</select>';
-        printf('<p class="description">%s</p>', esc_html__('Colours the admin calendar. Customers see the type name only if it’s set to show publicly — otherwise “Unavailable”.', 'mclb-lane-booking'));
+        printf('<p class="description">%s</p>', esc_html__('Colours the admin calendar. Customers see the type name only if it’s set to show publicly — otherwise “Unavailable”.', 'mobooking'));
         echo '</td></tr>';
 
-        echo '<tr><th scope="row">' . esc_html__('Note', 'mclb-lane-booking') . '</th><td>';
-        printf('<input type="text" class="regular-text" name="label" value="%s" placeholder="%s">', esc_attr($label), esc_attr__('e.g. Smith Academy, court resurfacing', 'mclb-lane-booking'));
-        printf('<p class="description">%s</p>', esc_html__('Internal note for staff — never shown to customers.', 'mclb-lane-booking'));
+        echo '<tr><th scope="row">' . esc_html__('Note', 'mobooking') . '</th><td>';
+        printf('<input type="text" class="regular-text" name="label" value="%s" placeholder="%s">', esc_attr($label), esc_attr__('e.g. Smith Academy, court resurfacing', 'mobooking'));
+        printf('<p class="description">%s</p>', esc_html__('Internal note for staff — never shown to customers.', 'mobooking'));
         echo '</td></tr>';
         echo '</tbody>';
 
         echo '</tbody></table>';
-        submit_button($is_edit ? __('Update closure', 'mclb-lane-booking') : __('Add closure', 'mclb-lane-booking'));
+        submit_button($is_edit ? __('Update closure', 'mobooking') : __('Add closure', 'mobooking'));
         echo '</form>';
 
         // Toggle one-off vs recurring field groups.
@@ -272,10 +272,10 @@ class MCLB_Closures_Admin {
 
     private function render_list() {
         $rows = MCLB_Closures::all();
-        echo '<h2>' . esc_html__('Existing closures', 'mclb-lane-booking') . '</h2>';
+        echo '<h2>' . esc_html__('Existing closures', 'mobooking') . '</h2>';
 
         if (empty($rows)) {
-            echo '<p>' . esc_html__('No closures yet.', 'mclb-lane-booking') . '</p>';
+            echo '<p>' . esc_html__('No closures yet.', 'mobooking') . '</p>';
             return;
         }
 
@@ -303,17 +303,17 @@ class MCLB_Closures_Admin {
         printf(
             '<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th></th>',
             esc_html($this->label_singular()),
-            esc_html__('Type', 'mclb-lane-booking'),
-            esc_html__('When', 'mclb-lane-booking'),
-            esc_html__('Time', 'mclb-lane-booking'),
-            esc_html__('Event', 'mclb-lane-booking'),
-            esc_html__('Note', 'mclb-lane-booking')
+            esc_html__('Type', 'mobooking'),
+            esc_html__('When', 'mobooking'),
+            esc_html__('Time', 'mobooking'),
+            esc_html__('Event', 'mobooking'),
+            esc_html__('Note', 'mobooking')
         );
         echo '</tr></thead><tbody>';
 
         foreach ($rows as $r) {
             $lane_name = ((int) $r->lane_id === 0)
-                ? sprintf(__('All %s', 'mclb-lane-booking'), strtolower($this->label_plural()))
+                ? sprintf(__('All %s', 'mobooking'), strtolower($this->label_plural()))
                 : get_the_title((int) $r->lane_id);
 
             if ($r->kind === 'recurring') {
@@ -326,7 +326,7 @@ class MCLB_Closures_Admin {
                 $when = $r->starts_at ? substr($r->starts_at, 0, 10) : '—';
                 $time = substr((string) $r->starts_at, 11, 5) . ' – ' . substr((string) $r->ends_at, 11, 5);
                 if (!empty($r->_is_past)) {
-                    $when .= ' ' . __('(past)', 'mclb-lane-booking');
+                    $when .= ' ' . __('(past)', 'mobooking');
                 }
             }
 
@@ -341,7 +341,7 @@ class MCLB_Closures_Admin {
             $etype = (string) $r->event_type;
             echo '<tr' . (!empty($r->_is_past) ? ' style="opacity:.55"' : '') . '>';
             printf('<td>%s</td>', esc_html($lane_name));
-            printf('<td>%s</td>', esc_html($r->kind === 'recurring' ? __('Recurring', 'mclb-lane-booking') : __('One-off', 'mclb-lane-booking')));
+            printf('<td>%s</td>', esc_html($r->kind === 'recurring' ? __('Recurring', 'mobooking') : __('One-off', 'mobooking')));
             printf('<td>%s</td>', esc_html($when));
             printf('<td>%s</td>', esc_html($time));
             if ($etype !== '') {
@@ -357,10 +357,10 @@ class MCLB_Closures_Admin {
             printf(
                 '<td><a href="%s">%s</a> | <a href="%s" onclick="return confirm(%s)" style="color:#b32d2e">%s</a></td>',
                 esc_url($edit_url),
-                esc_html__('Edit', 'mclb-lane-booking'),
+                esc_html__('Edit', 'mobooking'),
                 esc_url($delete_url),
-                esc_js('"' . __('Delete this closure?', 'mclb-lane-booking') . '"'),
-                esc_html__('Delete', 'mclb-lane-booking')
+                esc_js('"' . __('Delete this closure?', 'mobooking') . '"'),
+                esc_html__('Delete', 'mobooking')
             );
             echo '</tr>';
         }

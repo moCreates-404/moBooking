@@ -49,7 +49,7 @@ class MCLB_Order {
         if ($sent_to_admin || !($order instanceof WC_Order)) { return; }
         $rows = self::manageable_bookings($order->get_id());
         if (empty($rows)) { return; }
-        $label = __('Need to change a booking? Manage or cancel it here:', 'mclb-lane-booking');
+        $label = __('Need to change a booking? Manage or cancel it here:', 'mobooking');
         if ($plain_text) {
             echo "\n" . $label . "\n";
             foreach ($rows as $b) { echo MCLB_Manage_Token::url($b) . "\n"; } // phpcs:ignore WordPress.Security.EscapeOutput -- plain URL
@@ -71,7 +71,7 @@ class MCLB_Order {
         if (!($order instanceof WC_Order)) { return; }
         $rows = self::manageable_bookings($order->get_id());
         if (empty($rows)) { return; }
-        echo '<section class="mclb-manage-links"><h2>' . esc_html__('Your bookings', 'mclb-lane-booking') . '</h2><ul>';
+        echo '<section class="mclb-manage-links"><h2>' . esc_html__('Your bookings', 'mobooking') . '</h2><ul>';
         foreach ($rows as $b) {
             printf(
                 '<li><a href="%s" target="_blank" rel="noopener">%s — %s</a></li>',
@@ -143,15 +143,15 @@ class MCLB_Order {
         $item = $order->get_item((int) $b->order_item_id);
         $when = MCLB_Cart::when_label($b->starts_at, $b->ends_at);
         if ($item) {
-            $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking');
+            $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking');
             $item->update_meta_data('_mclb_lane_id', (int) $b->lane_id);
             $item->update_meta_data($res_label, (string) $b->lane_name);
-            $item->update_meta_data(__('When', 'mclb-lane-booking'), $when);
+            $item->update_meta_data(__('When', 'mobooking'), $when);
             $item->save();
         }
         $order->add_order_note(sprintf(
             /* translators: 1: booking id, 2: resource name, 3: when. */
-            __('moBooking: booking #%1$d moved to %2$s — %3$s.', 'mclb-lane-booking'),
+            __('moBooking: booking #%1$d moved to %2$s — %3$s.', 'mobooking'),
             (int) $b->id,
             (string) $b->lane_name,
             $when

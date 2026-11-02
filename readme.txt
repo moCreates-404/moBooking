@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.5.1
+Stable tag: 1.6.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -21,9 +21,10 @@ Everything is configured per install: what a bookable unit is called
 and the grid's colours all live in settings, not in code. Cricketers Club WA is
 the first install; its real values are the seeded defaults.
 
-Phase 0 (this build): plugin scaffold + settings screen only. Booking data
-model, availability engine, front-end grid, WooCommerce integration and admin
-management follow in later phases.
+Licensing and automatic updates run through Freemius. Activate the licence
+under moBooking -> Account. An expired or missing licence gets a 14-day grace
+period with admin warnings; after that the grid stays visible but new bookings
+pause until the licence is renewed. Existing bookings are never affected.
 
 == Deploying an update ==
 
@@ -31,13 +32,25 @@ Build the release zip from a committed tag (never a working copy):
 
     powershell -File bin/build-release.ps1 v1.1.2
 
-This writes dist/mclb-lane-booking.zip with the plugin inside a top-level
-"mclb-lane-booking/" folder. In WP Admin -> Plugins -> Add New -> Upload Plugin,
+This writes dist/mobooking.zip with the plugin inside a top-level
+"mobooking/" folder. In WP Admin -> Plugins -> Add New -> Upload Plugin,
 upload that zip; when WordPress detects the existing plugin, choose "Replace
 current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is named
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.6.0 =
+* Renamed: the plugin now installs as "mobooking/" (main file mobooking.php,
+  text domain "mobooking"). All data, settings, admin URLs and database names
+  are unchanged (still mclb_*). Existing installs switch over by renaming the
+  folder — see SWITCHOVER.md. Do NOT delete the old plugin from WP Admin.
+* Licensing: real licence checks via Freemius (replaces the stub key field).
+  Licence status, renewal date and a "Manage licence" button on the License tab.
+* 14-day grace period for expired/missing licences, with admin warnings,
+  before new bookings pause. Upgrading installs get 14 days to activate.
+* Uninstall now KEEPS all data by default. Tick License -> "Delete data on
+  uninstall" to wipe bookings, passes, closures and settings on delete.
 
 = 1.5.1 =
 * Coach roster view (WEB-10): a Lanes / Roster toggle in the Manage view (front

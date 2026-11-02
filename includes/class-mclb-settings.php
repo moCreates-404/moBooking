@@ -35,13 +35,13 @@ class MCLB_Settings {
     /** Weekday keys 1..7 => Monday..Sunday (matches wp_date('N')). */
     public static function weekdays() {
         return [
-            1 => __('Monday', 'mclb-lane-booking'),
-            2 => __('Tuesday', 'mclb-lane-booking'),
-            3 => __('Wednesday', 'mclb-lane-booking'),
-            4 => __('Thursday', 'mclb-lane-booking'),
-            5 => __('Friday', 'mclb-lane-booking'),
-            6 => __('Saturday', 'mclb-lane-booking'),
-            7 => __('Sunday', 'mclb-lane-booking'),
+            1 => __('Monday', 'mobooking'),
+            2 => __('Tuesday', 'mobooking'),
+            3 => __('Wednesday', 'mobooking'),
+            4 => __('Thursday', 'mobooking'),
+            5 => __('Friday', 'mobooking'),
+            6 => __('Saturday', 'mobooking'),
+            7 => __('Sunday', 'mobooking'),
         ];
     }
 
@@ -51,7 +51,8 @@ class MCLB_Settings {
      */
     public static function defaults() {
         return [
-            'license_key'             => '',
+            'license_key'             => '', // legacy pre-Freemius stub key; read once by MCLB_License to seed upgrade grace
+            'delete_data_on_uninstall' => 0,
             'resource_label_singular' => 'Lane',
             'resource_label_plural'   => 'Lanes',
             'resource_types'          => "Net\nBowling Machine",
@@ -281,6 +282,9 @@ class MCLB_Settings {
                 $v = sanitize_email((string) $out['daysheet_test_recipient']); // migrate the old value across
             }
             $out['email_test_recipient'] = $v;
+        }
+        if (isset($in['delete_data_on_uninstall'])) {
+            $out['delete_data_on_uninstall'] = empty($in['delete_data_on_uninstall']) ? 0 : 1;
         }
         if (isset($in['guest_self_cancel'])) {
             $out['guest_self_cancel'] = empty($in['guest_self_cancel']) ? 0 : 1;

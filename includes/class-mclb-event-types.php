@@ -56,7 +56,7 @@ class MCLB_Event_Types {
 
     /** The generic, never-leaks label shown to customers. */
     public static function generic_label() {
-        return __('Unavailable', 'mclb-lane-booking');
+        return __('Unavailable', 'mobooking');
     }
 
     /**

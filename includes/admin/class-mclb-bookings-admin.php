@@ -28,8 +28,8 @@ class MCLB_Bookings_Admin {
     public function menu() {
         add_submenu_page(
             MCLB_Admin::PAGE,
-            __('Bookings', 'mclb-lane-booking'),
-            __('Bookings', 'mclb-lane-booking'),
+            __('Bookings', 'mobooking'),
+            __('Bookings', 'mobooking'),
             'manage_options',
             self::SLUG,
             [$this, 'render'],
@@ -37,8 +37,8 @@ class MCLB_Bookings_Admin {
         );
         add_submenu_page(
             MCLB_Admin::PAGE,
-            __('Add booking', 'mclb-lane-booking'),
-            __('Add booking', 'mclb-lane-booking'),
+            __('Add booking', 'mobooking'),
+            __('Add booking', 'mobooking'),
             'manage_options',
             self::ADD_SLUG,
             [$this, 'render_add'],
@@ -65,7 +65,7 @@ class MCLB_Bookings_Admin {
 
     public function handle_cancel() {
         if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_admin_cancel')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         $id   = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
         $mode = (isset($_POST['mode']) && $_POST['mode'] === 'refund') ? 'refund' : 'norefund';
@@ -79,7 +79,7 @@ class MCLB_Bookings_Admin {
         $actor = self::user_initials();
         if ($mode === 'refund') {
             // cancel_and_refund fires the cancel seam + WEB-12 emails (v1.4.3).
-            $res    = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mclb-lane-booking'), ['actor' => $actor, 'notify' => true]);
+            $res    = MCLB_Refunds::cancel_and_refund($id, __('Admin cancel + refund', 'mobooking'), ['actor' => $actor, 'notify' => true]);
             $notice = empty($res['ok']) ? 'nochange' : (!empty($res['refunded']) ? 'refunded' : 'cancelled_norefund');
         } else {
             if (MCLB_Bookings::claim_cancel($id)) {
@@ -109,7 +109,7 @@ class MCLB_Bookings_Admin {
 
     public function handle_assign_coach() {
         if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_assign_coach')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         $id       = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
         $coach_id = isset($_POST['coach_id']) ? absint($_POST['coach_id']) : 0;
@@ -136,7 +136,7 @@ class MCLB_Bookings_Admin {
 
     public function handle_counter_paid() {
         if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_counter_paid')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         $id  = isset($_POST['booking_id']) ? absint($_POST['booking_id']) : 0;
         $res = MCLB_Bookings::mark_counter_paid($id);
@@ -148,7 +148,7 @@ class MCLB_Bookings_Admin {
 
     public function handle_add() {
         if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_add_booking')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         $add_url = admin_url('admin.php?page=' . self::ADD_SLUG);
 
@@ -235,44 +235,44 @@ class MCLB_Bookings_Admin {
         }
         $can_book = MCLB_License::can_book();
 
-        echo '<div class="wrap"><h1>' . esc_html__('Add booking', 'mclb-lane-booking') . '</h1>';
+        echo '<div class="wrap"><h1>' . esc_html__('Add booking', 'mobooking') . '</h1>';
         $this->notice();
         if (!$can_book) {
             printf('<div class="notice notice-warning"><p>%s</p></div>', esc_html(MCLB_License::demo_message()));
         }
-        echo '<p>' . esc_html__('Writes a confirmed booking directly (no cart or payment). A real double-booking is always blocked; tick “override” to book outside normal hours or a closure.', 'mclb-lane-booking') . '</p>';
+        echo '<p>' . esc_html__('Writes a confirmed booking directly (no cart or payment). A real double-booking is always blocked; tick “override” to book outside normal hours or a closure.', 'mobooking') . '</p>';
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="mclb_add_booking">';
         wp_nonce_field('mclb_add_booking');
         echo '<table class="form-table" role="presentation"><tbody>';
 
-        echo '<tr><th scope="row">' . esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking')) . '</th><td><select name="lane_id" required>';
+        echo '<tr><th scope="row">' . esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking')) . '</th><td><select name="lane_id" required>';
         foreach (MCLB_Lane::all_bookable() as $lane) {
             printf('<option value="%d">%s</option>', (int) $lane->ID, esc_html(get_the_title($lane)));
         }
         echo '</select></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Date', 'mclb-lane-booking') . '</th><td><input type="date" name="date" required></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Time', 'mclb-lane-booking') . '</th><td><input type="time" name="start_time" required> &ndash; <input type="time" name="end_time" required></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Customer', 'mclb-lane-booking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mclb-lane-booking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mclb-lane-booking') . '"> <input type="tel" name="customer_phone" required placeholder="' . esc_attr__('Phone (required)', 'mclb-lane-booking') . '"></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Staff note', 'mclb-lane-booking') . '</th><td><textarea name="staff_note" rows="2" class="large-text"></textarea></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Override', 'mclb-lane-booking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mclb-lane-booking') . '</label></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Date', 'mobooking') . '</th><td><input type="date" name="date" required></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Time', 'mobooking') . '</th><td><input type="time" name="start_time" required> &ndash; <input type="time" name="end_time" required></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Customer', 'mobooking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mobooking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mobooking') . '"> <input type="tel" name="customer_phone" required placeholder="' . esc_attr__('Phone (required)', 'mobooking') . '"></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Staff note', 'mobooking') . '</th><td><textarea name="staff_note" rows="2" class="large-text"></textarea></td></tr>';
+        echo '<tr><th scope="row">' . esc_html__('Override', 'mobooking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mobooking') . '</label></td></tr>';
 
         $coach_opts = MCLB_Coaches::options();
         if (!empty($coach_opts)) {
-            echo '<tr><th scope="row">' . esc_html(MCLB_Coaches::label_singular()) . '</th><td><select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mclb-lane-booking') . '</option>';
+            echo '<tr><th scope="row">' . esc_html(MCLB_Coaches::label_singular()) . '</th><td><select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mobooking') . '</option>';
             foreach ($coach_opts as $cid => $clabel) {
                 $rate   = MCLB_Coaches::rate((int) $cid);
-                $rlabel = ($rate === null) ? __('no rate set', 'mclb-lane-booking') : MCLB_Coaches::money($rate) . __('/hr', 'mclb-lane-booking');
+                $rlabel = ($rate === null) ? __('no rate set', 'mobooking') : MCLB_Coaches::money($rate) . __('/hr', 'mobooking');
                 printf('<option value="%d">%s — %s</option>', (int) $cid, esc_html($clabel), esc_html($rlabel));
             }
             echo '</select>';
-            printf('<p class="description">%s</p>', esc_html__('The counter total is the lane price plus the coach fee (coach rate × booking length). A coach already booked for an overlapping time is blocked.', 'mclb-lane-booking'));
+            printf('<p class="description">%s</p>', esc_html__('The counter total is the lane price plus the coach fee (coach rate × booking length). A coach already booked for an overlapping time is blocked.', 'mobooking'));
             echo '</td></tr>';
         }
 
         echo '</tbody></table>';
-        submit_button(__('Add booking', 'mclb-lane-booking'), 'primary', 'submit', true, $can_book ? [] : ['disabled' => 'disabled']);
+        submit_button(__('Add booking', 'mobooking'), 'primary', 'submit', true, $can_book ? [] : ['disabled' => 'disabled']);
         echo '</form></div>';
     }
 
@@ -294,13 +294,13 @@ class MCLB_Bookings_Admin {
         ];
         // phpcs:enable
 
-        echo '<div class="wrap"><h1>' . esc_html__('Bookings', 'mclb-lane-booking') . '</h1>';
+        echo '<div class="wrap"><h1>' . esc_html__('Bookings', 'mobooking') . '</h1>';
         $this->notice();
         $this->filters($f);
 
         $rows = MCLB_Bookings::query($f);
         if (empty($rows)) {
-            echo '<p>' . esc_html__('No bookings match.', 'mclb-lane-booking') . '</p></div>';
+            echo '<p>' . esc_html__('No bookings match.', 'mobooking') . '</p></div>';
             return;
         }
 
@@ -310,23 +310,23 @@ class MCLB_Bookings_Admin {
         $coach_opts  = MCLB_Coaches::options();
         $has_coaches = !empty($coach_opts);
         $staff_label = MCLB_Coaches::label_singular();
-        $res_label   = MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mclb-lane-booking');
+        $res_label   = MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mobooking');
 
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th>#</th>';
         printf('<th>%s</th>', esc_html($res_label));
-        echo $this->sort_th(__('When', 'mclb-lane-booking'), 'starts_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
-        echo $this->sort_th(__('Booked', 'mclb-lane-booking'), 'created_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
-        printf('<th>%s</th>', esc_html__('Customer', 'mclb-lane-booking'));
-        printf('<th>%s</th>', esc_html__('Status', 'mclb-lane-booking'));
-        printf('<th>%s</th>', esc_html__('Order', 'mclb-lane-booking'));
+        echo $this->sort_th(__('When', 'mobooking'), 'starts_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
+        echo $this->sort_th(__('Booked', 'mobooking'), 'created_at', $f); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in sort_th.
+        printf('<th>%s</th>', esc_html__('Customer', 'mobooking'));
+        printf('<th>%s</th>', esc_html__('Status', 'mobooking'));
+        printf('<th>%s</th>', esc_html__('Order', 'mobooking'));
         if ($has_coaches) {
             printf('<th>%s</th>', esc_html($staff_label));
-            printf('<th>%s</th>', esc_html__('Fee', 'mclb-lane-booking'));
-            printf('<th>%s</th>', esc_html__('Counter due', 'mclb-lane-booking'));
-            printf('<th>%s</th>', esc_html__('Paid', 'mclb-lane-booking'));
+            printf('<th>%s</th>', esc_html__('Fee', 'mobooking'));
+            printf('<th>%s</th>', esc_html__('Counter due', 'mobooking'));
+            printf('<th>%s</th>', esc_html__('Paid', 'mobooking'));
         }
-        printf('<th>%s</th>', esc_html__('Actions', 'mclb-lane-booking'));
+        printf('<th>%s</th>', esc_html__('Actions', 'mobooking'));
         echo '</tr></thead><tbody>';
 
         foreach ($rows as $b) {
@@ -347,13 +347,13 @@ class MCLB_Bookings_Admin {
                 ? MCLB_Settings::friendly_date_short((new DateTimeImmutable($b->created_at, $tz))->getTimestamp()) . ', ' . wp_date($tf, (new DateTimeImmutable($b->created_at, $tz))->getTimestamp())
                 : '—';
             $cby = ($b->created_by !== null && $b->created_by !== '') ? $b->created_by : MCLB_Bookings::creation_initials($b->admin_note);
-            $src = ((string) $b->source === 'online') ? __('online', 'mclb-lane-booking') : (__('manual', 'mclb-lane-booking') . ($cby !== '' ? ' · ' . $cby : ''));
+            $src = ((string) $b->source === 'online') ? __('online', 'mobooking') : (__('manual', 'mobooking') . ($cby !== '' ? ' · ' . $cby : ''));
             printf('<td>%s<br><small>%s</small></td>', esc_html($booked), esc_html($src));
-            printf('<td>%s%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mclb-lane-booking')), $phone !== '' ? '<br><small>' . esc_html($phone) . '</small>' : '');
+            printf('<td>%s%s</td>', esc_html($cust !== '' ? $cust : __('Guest', 'mobooking')), $phone !== '' ? '<br><small>' . esc_html($phone) . '</small>' : '');
             // A lapsed hold reads "Expired" regardless of whether the sweep cron
             // has run yet — availability already treats it as free (lazy expiry).
             if ($b->status === MCLB_Bookings::STATUS_HELD && $b->hold_expires_at && $b->hold_expires_at < $now_sql) {
-                printf('<td><span style="color:#8a6d00">%s</span></td>', esc_html__('Expired', 'mclb-lane-booking'));
+                printf('<td><span style="color:#8a6d00">%s</span></td>', esc_html__('Expired', 'mobooking'));
             } else {
                 printf('<td>%s</td>', esc_html(ucfirst($b->status)));
             }
@@ -374,12 +374,12 @@ class MCLB_Bookings_Admin {
                     // hand the money back; the amount is otherwise only in admin_note.
                     printf(
                         '<td><strong style="color:#b32d2e">%s</strong></td>',
-                        esc_html(sprintf(__('Refund at counter: %s', 'mclb-lane-booking'), MCLB_Coaches::money((float) $b->counter_due)))
+                        esc_html(sprintf(__('Refund at counter: %s', 'mobooking'), MCLB_Coaches::money((float) $b->counter_due)))
                     );
                 } elseif ($paid) {
-                    printf('<td><span style="color:#1a7f37">%s</span></td>', esc_html__('Paid', 'mclb-lane-booking'));
+                    printf('<td><span style="color:#1a7f37">%s</span></td>', esc_html__('Paid', 'mobooking'));
                 } else {
-                    printf('<td><span style="color:#b32d2e">%s</span></td>', esc_html__('Due', 'mclb-lane-booking'));
+                    printf('<td><span style="color:#b32d2e">%s</span></td>', esc_html__('Due', 'mobooking'));
                 }
             }
 
@@ -421,67 +421,67 @@ class MCLB_Bookings_Admin {
         $lanes = MCLB_Lane::all_bookable();
         echo '<form method="get" style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:end">';
         echo '<input type="hidden" name="page" value="' . esc_attr(self::SLUG) . '">';
-        printf('<label>%s<br><input type="date" name="date_from" value="%s"></label>', esc_html__('From', 'mclb-lane-booking'), esc_attr($f['date_from']));
-        printf('<label>%s<br><input type="date" name="date_to" value="%s"></label>', esc_html__('To', 'mclb-lane-booking'), esc_attr($f['date_to']));
-        echo '<label>' . esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane') . '<br><select name="lane_id"><option value="0">' . esc_html__('All', 'mclb-lane-booking') . '</option>';
+        printf('<label>%s<br><input type="date" name="date_from" value="%s"></label>', esc_html__('From', 'mobooking'), esc_attr($f['date_from']));
+        printf('<label>%s<br><input type="date" name="date_to" value="%s"></label>', esc_html__('To', 'mobooking'), esc_attr($f['date_to']));
+        echo '<label>' . esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane') . '<br><select name="lane_id"><option value="0">' . esc_html__('All', 'mobooking') . '</option>';
         foreach ($lanes as $lane) {
             printf('<option value="%d" %s>%s</option>', (int) $lane->ID, selected($f['lane_id'], (int) $lane->ID, false), esc_html(get_the_title($lane)));
         }
         echo '</select></label>';
-        echo '<label>' . esc_html__('Status', 'mclb-lane-booking') . '<br><select name="status">';
-        echo '<option value="">' . esc_html__('All', 'mclb-lane-booking') . '</option>';
+        echo '<label>' . esc_html__('Status', 'mobooking') . '<br><select name="status">';
+        echo '<option value="">' . esc_html__('All', 'mobooking') . '</option>';
         foreach (['confirmed', 'held', 'cancelled'] as $s) {
             printf('<option value="%s" %s>%s</option>', esc_attr($s), selected($f['status'], $s, false), esc_html(ucfirst($s)));
         }
         echo '</select></label>';
-        printf('<label>%s<br><input type="search" name="search" value="%s"></label>', esc_html__('Search', 'mclb-lane-booking'), esc_attr($f['search']));
-        submit_button(__('Filter', 'mclb-lane-booking'), 'secondary', '', false);
+        printf('<label>%s<br><input type="search" name="search" value="%s"></label>', esc_html__('Search', 'mobooking'), esc_attr($f['search']));
+        submit_button(__('Filter', 'mobooking'), 'secondary', '', false);
         echo '</form>';
     }
 
     private function cancel_forms($id) {
         // Cancel + refund
-        printf('<form method="post" action="%s" style="display:inline" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking and refund the customer?', 'mclb-lane-booking')) . '"'));
+        printf('<form method="post" action="%s" style="display:inline" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking and refund the customer?', 'mobooking')) . '"'));
         echo '<input type="hidden" name="action" value="mclb_admin_cancel"><input type="hidden" name="mode" value="refund">';
         printf('<input type="hidden" name="booking_id" value="%d">', $id);
         wp_nonce_field('mclb_admin_cancel');
-        printf('<button class="button button-small">%s</button>', esc_html__('Cancel + refund', 'mclb-lane-booking'));
+        printf('<button class="button button-small">%s</button>', esc_html__('Cancel + refund', 'mobooking'));
         echo '</form> ';
         // Cancel without refund
-        printf('<form method="post" action="%s" style="display:inline" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking WITHOUT refunding?', 'mclb-lane-booking')) . '"'));
+        printf('<form method="post" action="%s" style="display:inline" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking WITHOUT refunding?', 'mobooking')) . '"'));
         echo '<input type="hidden" name="action" value="mclb_admin_cancel"><input type="hidden" name="mode" value="norefund">';
         printf('<input type="hidden" name="booking_id" value="%d">', $id);
         wp_nonce_field('mclb_admin_cancel');
-        printf('<button class="button button-small">%s</button>', esc_html__('Cancel only', 'mclb-lane-booking'));
+        printf('<button class="button button-small">%s</button>', esc_html__('Cancel only', 'mobooking'));
         echo '</form>';
     }
 
     private function coach_form($b, $coach_opts) {
-        $requested = (int) $b->coach_requested === 1 ? ' ' . esc_html__('(requested)', 'mclb-lane-booking') : '';
+        $requested = (int) $b->coach_requested === 1 ? ' ' . esc_html__('(requested)', 'mobooking') : '';
         echo '<div style="margin-top:6px">';
         printf('<form method="post" action="%s" style="display:inline">', esc_url(admin_url('admin-post.php')));
         echo '<input type="hidden" name="action" value="mclb_assign_coach">';
         printf('<input type="hidden" name="booking_id" value="%d">', (int) $b->id);
         wp_nonce_field('mclb_assign_coach');
-        echo '<select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mclb-lane-booking') . '</option>';
+        echo '<select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mobooking') . '</option>';
         foreach ($coach_opts as $cid => $label) {
             $rate   = MCLB_Coaches::rate((int) $cid);
-            $rlabel = ($rate === null) ? __('no rate set', 'mclb-lane-booking') : MCLB_Coaches::money($rate) . __('/hr', 'mclb-lane-booking');
+            $rlabel = ($rate === null) ? __('no rate set', 'mobooking') : MCLB_Coaches::money($rate) . __('/hr', 'mobooking');
             printf('<option value="%d" %s>%s — %s</option>', (int) $cid, selected((int) $b->assigned_coach_id, (int) $cid, false), esc_html($label), esc_html($rlabel));
         }
         echo '</select> ';
-        printf('<input type="text" name="coach_note" placeholder="%s" style="width:130px"> ', esc_attr__('note (if counter paid)', 'mclb-lane-booking'));
-        printf('<button class="button button-small">%s</button>', esc_html__('Assign', 'mclb-lane-booking'));
+        printf('<input type="text" name="coach_note" placeholder="%s" style="width:130px"> ', esc_attr__('note (if counter paid)', 'mobooking'));
+        printf('<button class="button button-small">%s</button>', esc_html__('Assign', 'mobooking'));
         echo $requested; // phpcs:ignore WordPress.Security.EscapeOutput -- pre-escaped above.
         echo '</form></div>';
     }
 
     private function counter_paid_form($id) {
-        printf('<form method="post" action="%s" style="display:inline-block;margin-top:6px" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Record that the counter payment was taken? (This is not a charge.)', 'mclb-lane-booking')) . '"'));
+        printf('<form method="post" action="%s" style="display:inline-block;margin-top:6px" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Record that the counter payment was taken? (This is not a charge.)', 'mobooking')) . '"'));
         echo '<input type="hidden" name="action" value="mclb_counter_paid">';
         printf('<input type="hidden" name="booking_id" value="%d">', (int) $id);
         wp_nonce_field('mclb_counter_paid');
-        printf('<button class="button button-small">%s</button>', esc_html__('Mark counter paid', 'mclb-lane-booking'));
+        printf('<button class="button button-small">%s</button>', esc_html__('Mark counter paid', 'mobooking'));
         echo '</form>';
     }
 
@@ -490,28 +490,28 @@ class MCLB_Bookings_Admin {
             return;
         }
         $map = [
-            'refunded'           => ['success', __('Booking cancelled and refunded.', 'mclb-lane-booking')],
-            'cancelled'          => ['success', __('Booking cancelled.', 'mclb-lane-booking')],
-            'cancelled_norefund' => ['warning', __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mclb-lane-booking')],
-            'coach'              => ['success', __('Coach assigned.', 'mclb-lane-booking')],
-            'coach_removed'      => ['success', __('Coach removed.', 'mclb-lane-booking')],
-            'coach_conflict'     => ['error', __('That coach is already booked for an overlapping time — not assigned.', 'mclb-lane-booking')],
-            'coach_no_rate'      => ['error', __('That coach has no hourly rate set — assign a rate before booking them.', 'mclb-lane-booking')],
-            'coach_not_bookable' => ['error', __('That coach isn’t available for bookings.', 'mclb-lane-booking')],
-            'coach_locked'       => ['error', __('Counter payment already taken — add a note to change or remove the coach.', 'mclb-lane-booking')],
-            'coach_busy'         => ['error', __('Could not update the coach — please try again.', 'mclb-lane-booking')],
-            'counter_paid'       => ['success', __('Counter payment recorded.', 'mclb-lane-booking')],
-            'counter_nochange'   => ['warning', __('No change — nothing was due, or it was already recorded.', 'mclb-lane-booking')],
-            'nochange'           => ['warning', __('No change — the booking was not in a cancellable state.', 'mclb-lane-booking')],
-            'add_ok'             => ['success', __('Booking added.', 'mclb-lane-booking')],
-            'add_conflict'       => ['error', __('That lane is already booked for part of that time — not added.', 'mclb-lane-booking')],
-            'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mclb-lane-booking')],
-            'add_busy'           => ['error', __('The system was busy — please try again.', 'mclb-lane-booking')],
-            'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mclb-lane-booking')],
-            'add_phone'          => ['error', __('A valid phone number is required for a manual booking.', 'mclb-lane-booking')],
-            'add_coach_conflict' => ['error', __('That coach is already booked for an overlapping time — booking not added.', 'mclb-lane-booking')],
-            'add_coach_no_rate'  => ['error', __('That coach has no hourly rate set — booking not added.', 'mclb-lane-booking')],
-            'add_coach_invalid'  => ['error', __('That coach isn’t available for bookings — booking not added.', 'mclb-lane-booking')],
+            'refunded'           => ['success', __('Booking cancelled and refunded.', 'mobooking')],
+            'cancelled'          => ['success', __('Booking cancelled.', 'mobooking')],
+            'cancelled_norefund' => ['warning', __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mobooking')],
+            'coach'              => ['success', __('Coach assigned.', 'mobooking')],
+            'coach_removed'      => ['success', __('Coach removed.', 'mobooking')],
+            'coach_conflict'     => ['error', __('That coach is already booked for an overlapping time — not assigned.', 'mobooking')],
+            'coach_no_rate'      => ['error', __('That coach has no hourly rate set — assign a rate before booking them.', 'mobooking')],
+            'coach_not_bookable' => ['error', __('That coach isn’t available for bookings.', 'mobooking')],
+            'coach_locked'       => ['error', __('Counter payment already taken — add a note to change or remove the coach.', 'mobooking')],
+            'coach_busy'         => ['error', __('Could not update the coach — please try again.', 'mobooking')],
+            'counter_paid'       => ['success', __('Counter payment recorded.', 'mobooking')],
+            'counter_nochange'   => ['warning', __('No change — nothing was due, or it was already recorded.', 'mobooking')],
+            'nochange'           => ['warning', __('No change — the booking was not in a cancellable state.', 'mobooking')],
+            'add_ok'             => ['success', __('Booking added.', 'mobooking')],
+            'add_conflict'       => ['error', __('That lane is already booked for part of that time — not added.', 'mobooking')],
+            'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mobooking')],
+            'add_busy'           => ['error', __('The system was busy — please try again.', 'mobooking')],
+            'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mobooking')],
+            'add_phone'          => ['error', __('A valid phone number is required for a manual booking.', 'mobooking')],
+            'add_coach_conflict' => ['error', __('That coach is already booked for an overlapping time — booking not added.', 'mobooking')],
+            'add_coach_no_rate'  => ['error', __('That coach has no hourly rate set — booking not added.', 'mobooking')],
+            'add_coach_invalid'  => ['error', __('That coach isn’t available for bookings — booking not added.', 'mobooking')],
             'demo'               => ['error', MCLB_License::demo_message()],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -523,7 +523,7 @@ class MCLB_Bookings_Admin {
             $amt = isset($_GET['mclb_counter_amt']) ? (float) $_GET['mclb_counter_amt'] : 0.0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             if ($amt > 0 && in_array($key, ['refunded', 'cancelled', 'cancelled_norefund'], true)) {
                 /* translators: %s: money amount. */
-                $msg .= ' ' . sprintf(__('Counter payment of %s was taken. Refund at the counter.', 'mclb-lane-booking'), MCLB_Coaches::money($amt));
+                $msg .= ' ' . sprintf(__('Counter payment of %s was taken. Refund at the counter.', 'mobooking'), MCLB_Coaches::money($amt));
                 $type = 'warning';
             }
             printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), esc_html($msg));

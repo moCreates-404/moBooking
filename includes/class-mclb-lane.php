@@ -49,13 +49,13 @@ class MCLB_Lane {
                 'name'               => $plural,
                 'singular_name'      => $singular,
                 /* translators: %s: resource label, e.g. "Lane". */
-                'add_new_item'       => sprintf(__('Add New %s', 'mclb-lane-booking'), $singular),
-                'edit_item'          => sprintf(__('Edit %s', 'mclb-lane-booking'), $singular),
-                'new_item'           => sprintf(__('New %s', 'mclb-lane-booking'), $singular),
-                'view_item'          => sprintf(__('View %s', 'mclb-lane-booking'), $singular),
-                'search_items'       => sprintf(__('Search %s', 'mclb-lane-booking'), $plural),
-                'not_found'          => sprintf(__('No %s found.', 'mclb-lane-booking'), strtolower($plural)),
-                'not_found_in_trash' => sprintf(__('No %s found in trash.', 'mclb-lane-booking'), strtolower($plural)),
+                'add_new_item'       => sprintf(__('Add New %s', 'mobooking'), $singular),
+                'edit_item'          => sprintf(__('Edit %s', 'mobooking'), $singular),
+                'new_item'           => sprintf(__('New %s', 'mobooking'), $singular),
+                'view_item'          => sprintf(__('View %s', 'mobooking'), $singular),
+                'search_items'       => sprintf(__('Search %s', 'mobooking'), $plural),
+                'not_found'          => sprintf(__('No %s found.', 'mobooking'), strtolower($plural)),
+                'not_found_in_trash' => sprintf(__('No %s found in trash.', 'mobooking'), strtolower($plural)),
                 'all_items'          => $plural,
                 'menu_name'          => $plural,
             ],
@@ -75,7 +75,7 @@ class MCLB_Lane {
     public static function add_meta_box() {
         add_meta_box(
             'mclb_lane_settings',
-            __('Booking settings', 'mclb-lane-booking'),
+            __('Booking settings', 'mobooking'),
             [__CLASS__, 'render_meta_box'],
             self::CPT,
             'normal',
@@ -102,22 +102,22 @@ class MCLB_Lane {
         echo '<table class="form-table" role="presentation"><tbody>';
 
         // Type
-        echo '<tr><th scope="row"><label for="mclb_type">' . esc_html__('Type', 'mclb-lane-booking') . '</label></th><td>';
+        echo '<tr><th scope="row"><label for="mclb_type">' . esc_html__('Type', 'mobooking') . '</label></th><td>';
         if (!empty($types)) {
             echo '<select id="mclb_type" name="mclb_type">';
-            printf('<option value="">%s</option>', esc_html__('— Select —', 'mclb-lane-booking'));
+            printf('<option value="">%s</option>', esc_html__('— Select —', 'mobooking'));
             foreach ($types as $t) {
                 printf('<option value="%s" %s>%s</option>', esc_attr($t), selected($type, $t, false), esc_html($t));
             }
             echo '</select>';
-            printf('<p class="description">%s</p>', esc_html__('Defined under moBooking → Settings → Resource types.', 'mclb-lane-booking'));
+            printf('<p class="description">%s</p>', esc_html__('Defined under moBooking → Settings → Resource types.', 'mobooking'));
         } else {
-            printf('<em>%s</em>', esc_html__('No resource types defined yet — add some under moBooking → Settings.', 'mclb-lane-booking'));
+            printf('<em>%s</em>', esc_html__('No resource types defined yet — add some under moBooking → Settings.', 'mobooking'));
         }
         echo '</td></tr>';
 
         // Price override
-        echo '<tr><th scope="row"><label for="mclb_price">' . esc_html__('Price per hour', 'mclb-lane-booking') . '</label></th><td>';
+        echo '<tr><th scope="row"><label for="mclb_price">' . esc_html__('Price per hour', 'mobooking') . '</label></th><td>';
         printf(
             '<input type="number" step="0.01" min="0" id="mclb_price" name="mclb_price_override" value="%s"> ',
             esc_attr($price_override)
@@ -126,25 +126,25 @@ class MCLB_Lane {
             '<span class="description">%s</span>',
             sprintf(
                 /* translators: %s: the site default price. */
-                esc_html__('Leave blank to use the site default (%s/hr).', 'mclb-lane-booking'),
+                esc_html__('Leave blank to use the site default (%s/hr).', 'mobooking'),
                 esc_html($site_price)
             )
         );
         echo '</td></tr>';
 
         // Hours override toggle
-        echo '<tr><th scope="row">' . esc_html__('Opening hours', 'mclb-lane-booking') . '</th><td>';
+        echo '<tr><th scope="row">' . esc_html__('Opening hours', 'mobooking') . '</th><td>';
         printf(
             '<label><input type="checkbox" id="mclb_hours_override" name="mclb_hours_override" value="1" %s> %s</label>',
             checked($hours_enabled, 1, false),
-            esc_html__('Override the site-default hours for this resource', 'mclb-lane-booking')
+            esc_html__('Override the site-default hours for this resource', 'mobooking')
         );
         echo '<div id="mclb_hours_table" style="margin-top:12px;' . ($hours_enabled ? '' : 'display:none;') . '">';
         self::render_hours_table($hours);
         echo '</div>';
         printf(
             '<p class="description">%s</p>',
-            esc_html__('When off, this resource uses the site-wide default hours from settings.', 'mclb-lane-booking')
+            esc_html__('When off, this resource uses the site-wide default hours from settings.', 'mobooking')
         );
         echo '</td></tr>';
 
@@ -158,10 +158,10 @@ class MCLB_Lane {
         echo '<table class="widefat striped" style="max-width:520px"><thead><tr>';
         printf(
             '<th>%s</th><th>%s</th><th>%s</th><th>%s</th>',
-            esc_html__('Day', 'mclb-lane-booking'),
-            esc_html__('Open', 'mclb-lane-booking'),
-            esc_html__('Close', 'mclb-lane-booking'),
-            esc_html__('Closed', 'mclb-lane-booking')
+            esc_html__('Day', 'mobooking'),
+            esc_html__('Open', 'mobooking'),
+            esc_html__('Close', 'mobooking'),
+            esc_html__('Closed', 'mobooking')
         );
         echo '</tr></thead><tbody>';
         foreach (MCLB_Settings::weekdays() as $i => $label) {

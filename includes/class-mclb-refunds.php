@@ -107,7 +107,7 @@ class MCLB_Refunds {
 
         $refund = wc_create_refund([
             'amount'         => $amount,
-            'reason'         => $reason !== '' ? $reason : __('Lane booking moved to a lower-priced slot', 'mclb-lane-booking'),
+            'reason'         => $reason !== '' ? $reason : __('Lane booking moved to a lower-priced slot', 'mobooking'),
             'order_id'       => (int) $b->order_id,
             'line_items'     => [(int) $b->order_item_id => ['qty' => 0, 'refund_total' => $amount]],
             'refund_payment' => true,
@@ -118,7 +118,7 @@ class MCLB_Refunds {
         if (is_wp_error($refund)) {
             $order->add_order_note(sprintf(
                 /* translators: 1: booking id, 2: amount, 3: error. */
-                __('moBooking: refund of %2$s for moved booking #%1$d FAILED (%3$s) — please refund manually.', 'mclb-lane-booking'),
+                __('moBooking: refund of %2$s for moved booking #%1$d FAILED (%3$s) — please refund manually.', 'mobooking'),
                 (int) $b->id,
                 $money,
                 $refund->get_error_message()
@@ -127,7 +127,7 @@ class MCLB_Refunds {
         }
         $order->add_order_note(sprintf(
             /* translators: 1: booking id, 2: amount. */
-            __('moBooking: booking #%1$d moved to a lower-priced slot; %2$s refunded.', 'mclb-lane-booking'),
+            __('moBooking: booking #%1$d moved to a lower-priced slot; %2$s refunded.', 'mobooking'),
             (int) $b->id,
             $money
         ));
@@ -157,7 +157,7 @@ class MCLB_Refunds {
 
         $refund = wc_create_refund([
             'amount'         => $amount,
-            'reason'         => $reason !== '' ? $reason : __('Lane booking cancelled', 'mclb-lane-booking'),
+            'reason'         => $reason !== '' ? $reason : __('Lane booking cancelled', 'mobooking'),
             'order_id'       => (int) $b->order_id,
             'line_items'     => $line_items,
             'refund_payment' => true,  // trigger the gateway (Square) refund
@@ -168,7 +168,7 @@ class MCLB_Refunds {
         if (is_wp_error($refund)) {
             $order->add_order_note(sprintf(
                 /* translators: 1: booking id, 2: error. */
-                __('moBooking: automatic refund for cancelled booking #%1$d FAILED (%2$s) — please refund manually.', 'mclb-lane-booking'),
+                __('moBooking: automatic refund for cancelled booking #%1$d FAILED (%2$s) — please refund manually.', 'mobooking'),
                 (int) $b->id,
                 $refund->get_error_message()
             ));
@@ -176,7 +176,7 @@ class MCLB_Refunds {
         }
         $order->add_order_note(sprintf(
             /* translators: 1: booking id, 2: amount. */
-            __('moBooking: booking #%1$d cancelled and %2$s refunded.', 'mclb-lane-booking'),
+            __('moBooking: booking #%1$d cancelled and %2$s refunded.', 'mobooking'),
             (int) $b->id,
             $money
         ));

@@ -57,18 +57,18 @@ class MCLB_Grid {
                 'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes',
             ],
             'i18n'         => [
-                'addToCart'  => __('Add to cart', 'mclb-lane-booking'),
-                'adding'     => __('Adding…', 'mclb-lane-booking'),
-                'remove'     => __('Remove', 'mclb-lane-booking'),
-                'total'      => __('Total', 'mclb-lane-booking'),
-                'slot'       => __('slot', 'mclb-lane-booking'),
-                'slots'      => __('slots', 'mclb-lane-booking'),
-                'coach'      => __('Request a coach', 'mclb-lane-booking'),
-                'coachNote'  => __('Anything the coach should know? (optional)', 'mclb-lane-booking'),
-                'cartSoon'   => __('Could not add to cart — please try again.', 'mclb-lane-booking'),
+                'addToCart'  => __('Add to cart', 'mobooking'),
+                'adding'     => __('Adding…', 'mobooking'),
+                'remove'     => __('Remove', 'mobooking'),
+                'total'      => __('Total', 'mobooking'),
+                'slot'       => __('slot', 'mobooking'),
+                'slots'      => __('slots', 'mobooking'),
+                'coach'      => __('Request a coach', 'mobooking'),
+                'coachNote'  => __('Anything the coach should know? (optional)', 'mobooking'),
+                'cartSoon'   => __('Could not add to cart — please try again.', 'mobooking'),
                 'demo'       => MCLB_License::demo_message(),
-                'instrTouch' => __('Tap a time, then tap it again to select it. Choose as many as you need, then Add to cart.', 'mclb-lane-booking'),
-                'instrMouse' => __('Click a time to select it, or drag to select several.', 'mclb-lane-booking'),
+                'instrTouch' => __('Tap a time, then tap it again to select it. Choose as many as you need, then Add to cart.', 'mobooking'),
+                'instrMouse' => __('Click a time to select it, or drag to select several.', 'mobooking'),
             ],
         ]);
     }
@@ -99,44 +99,44 @@ class MCLB_Grid {
             <p class="mclb-demo-notice" role="status"><?php echo esc_html(MCLB_License::demo_message()); ?></p>
           <?php endif; ?>
           <div class="mclb-grid__toolbar">
-            <button type="button" class="mclb-nav mclb-nav--prev" aria-label="<?php esc_attr_e('Previous day', 'mclb-lane-booking'); ?>">&#8249;</button>
+            <button type="button" class="mclb-nav mclb-nav--prev" aria-label="<?php esc_attr_e('Previous day', 'mobooking'); ?>">&#8249;</button>
             <input type="date" class="mclb-grid__date" value="<?php echo esc_attr($today); ?>" min="<?php echo esc_attr($today); ?>">
-            <button type="button" class="mclb-nav mclb-nav--next" aria-label="<?php esc_attr_e('Next day', 'mclb-lane-booking'); ?>">&#8250;</button>
+            <button type="button" class="mclb-nav mclb-nav--next" aria-label="<?php esc_attr_e('Next day', 'mobooking'); ?>">&#8250;</button>
           </div>
           <p class="mclb-grid__datelabel" aria-live="polite"><?php echo esc_html(self::date_label($today)); ?></p>
-          <p class="mclb-grid__instr"><?php esc_html_e('Click a time to select it, or drag to select several.', 'mclb-lane-booking'); ?></p>
+          <p class="mclb-grid__instr"><?php esc_html_e('Click a time to select it, or drag to select several.', 'mobooking'); ?></p>
 
-          <p class="mclb-grid__hint" aria-hidden="true" hidden><?php esc_html_e('Swipe for more lanes', 'mclb-lane-booking'); ?> &#8594;</p>
+          <p class="mclb-grid__hint" aria-hidden="true" hidden><?php esc_html_e('Swipe for more lanes', 'mobooking'); ?> &#8594;</p>
           <div class="mclb-grid__scroll">
             <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
             <div class="mclb-grid__fade" aria-hidden="true"></div>
-            <div class="mclb-grid__loading" aria-hidden="true"><span><?php esc_html_e('Checking availability…', 'mclb-lane-booking'); ?></span></div>
+            <div class="mclb-grid__loading" aria-hidden="true"><span><?php esc_html_e('Checking availability…', 'mobooking'); ?></span></div>
           </div>
 
           <div class="mclb-legend" aria-hidden="true">
-            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--available"></i><?php esc_html_e('Available', 'mclb-lane-booking'); ?></span>
-            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--booked"></i><?php esc_html_e('Booked', 'mclb-lane-booking'); ?></span>
-            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--closed"></i><?php esc_html_e('Closed', 'mclb-lane-booking'); ?></span>
+            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--available"></i><?php esc_html_e('Available', 'mobooking'); ?></span>
+            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--booked"></i><?php esc_html_e('Booked', 'mobooking'); ?></span>
+            <span class="mclb-legend__item"><i class="mclb-swatch mclb-swatch--closed"></i><?php esc_html_e('Closed', 'mobooking'); ?></span>
           </div>
 
           <p class="mclb-grid__notice" role="alert" hidden></p>
 
           <aside class="mclb-selection" hidden>
-            <h3 class="mclb-selection__title"><?php echo esc_html($labels['singular']); ?> <?php esc_html_e('selection', 'mclb-lane-booking'); ?></h3>
+            <h3 class="mclb-selection__title"><?php echo esc_html($labels['singular']); ?> <?php esc_html_e('selection', 'mobooking'); ?></h3>
             <ul class="mclb-selection__list"></ul>
             <p class="mclb-selection__total"></p>
             <?php if ((int) MCLB_Settings::get('enable_coach_requests') === 1) : ?>
-              <label class="mclb-coach"><input type="checkbox" class="mclb-coach__toggle"> <?php esc_html_e('Request a coach', 'mclb-lane-booking'); ?></label>
-              <textarea class="mclb-coach__note" rows="2" hidden placeholder="<?php esc_attr_e('Anything the coach should know? (optional)', 'mclb-lane-booking'); ?>"></textarea>
+              <label class="mclb-coach"><input type="checkbox" class="mclb-coach__toggle"> <?php esc_html_e('Request a coach', 'mobooking'); ?></label>
+              <textarea class="mclb-coach__note" rows="2" hidden placeholder="<?php esc_attr_e('Anything the coach should know? (optional)', 'mobooking'); ?>"></textarea>
             <?php endif; ?>
-            <button type="button" class="mclb-add-to-cart" disabled><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
+            <button type="button" class="mclb-add-to-cart" disabled><?php esc_html_e('Add to cart', 'mobooking'); ?></button>
             <?php $mclb_terms = MCLB_Settings::terms_page_url(); ?>
             <?php if ($mclb_terms !== '') : ?>
               <p class="mclb-terms"><?php
                 printf(
                     wp_kses(
                         /* translators: %s: URL of the Terms & Conditions page. */
-                        __('By booking you agree to our <a href="%s" target="_blank" rel="noopener">Terms &amp; Conditions</a>.', 'mclb-lane-booking'),
+                        __('By booking you agree to our <a href="%s" target="_blank" rel="noopener">Terms &amp; Conditions</a>.', 'mobooking'),
                         ['a' => ['href' => [], 'target' => [], 'rel' => []]]
                     ),
                     esc_url($mclb_terms)
@@ -149,15 +149,15 @@ class MCLB_Grid {
           <div class="mclb-grid__minibar" hidden aria-live="polite">
             <div class="mclb-grid__minibar-row">
               <span class="mclb-grid__minibar-info"></span>
-              <button type="button" class="mclb-grid__minibar-add"><?php esc_html_e('Add to cart', 'mclb-lane-booking'); ?></button>
-              <button type="button" class="mclb-grid__minibar-clear" aria-label="<?php esc_attr_e('Clear all', 'mclb-lane-booking'); ?>">&#10005;</button>
+              <button type="button" class="mclb-grid__minibar-add"><?php esc_html_e('Add to cart', 'mobooking'); ?></button>
+              <button type="button" class="mclb-grid__minibar-clear" aria-label="<?php esc_attr_e('Clear all', 'mobooking'); ?>">&#10005;</button>
             </div>
             <?php if ($mclb_terms !== '') : ?>
-              <a class="mclb-grid__minibar-terms" href="<?php echo esc_url($mclb_terms); ?>" target="_blank" rel="noopener"><?php esc_html_e('Terms & Conditions apply', 'mclb-lane-booking'); ?></a>
+              <a class="mclb-grid__minibar-terms" href="<?php echo esc_url($mclb_terms); ?>" target="_blank" rel="noopener"><?php esc_html_e('Terms & Conditions apply', 'mobooking'); ?></a>
             <?php endif; ?>
           </div>
 
-          <noscript><p><?php esc_html_e('This booking grid needs JavaScript enabled.', 'mclb-lane-booking'); ?></p></noscript>
+          <noscript><p><?php esc_html_e('This booking grid needs JavaScript enabled.', 'mobooking'); ?></p></noscript>
         </div>
         <?php
         return ob_get_clean();
@@ -212,7 +212,7 @@ class MCLB_Grid {
         $days = (int) MCLB_Settings::get('booking_window_days');
         $note = trim((string) MCLB_Settings::get('booking_window_note'));
         /* translators: %d: number of days. */
-        $msg  = sprintf(_n('Online bookings open %d day in advance.', 'Online bookings open %d days in advance.', $days, 'mclb-lane-booking'), $days);
+        $msg  = sprintf(_n('Online bookings open %d day in advance.', 'Online bookings open %d days in advance.', $days, 'mobooking'), $days);
         if ($note !== '') {
             $msg .= ' ' . $note;
         }
@@ -224,7 +224,7 @@ class MCLB_Grid {
         $date = self::sanitize_date((string) $request->get_param('date'));
         $type = sanitize_text_field((string) $request->get_param('type'));
         if ($date === '') {
-            return new WP_Error('mclb_bad_date', __('Invalid date.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_date', __('Invalid date.', 'mobooking'), ['status' => 400]);
         }
         $win    = self::booking_window();
         $beyond = self::is_beyond_window($date, $win['max_date']);
@@ -255,7 +255,7 @@ class MCLB_Grid {
         $max   = $data['grid']['max_close'];
 
         if (empty($lanes) || $min === null || $max === null) {
-            return '<p class="mclb-grid__empty">' . esc_html__('No availability for this day.', 'mclb-lane-booking') . '</p>';
+            return '<p class="mclb-grid__empty">' . esc_html__('No availability for this day.', 'mobooking') . '</p>';
         }
 
         $inc   = (int) $data['increment'];

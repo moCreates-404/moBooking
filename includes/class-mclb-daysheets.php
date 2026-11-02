@@ -179,7 +179,7 @@ class MCLB_Daysheets {
         }
 
         $date_label = MCLB_Settings::friendly_date((new DateTimeImmutable($date . ' 00:00:00', wp_timezone()))->getTimestamp());
-        $base_sub   = sprintf(__('Your sessions — %s', 'mclb-lane-booking'), $date_label);
+        $base_sub   = sprintf(__('Your sessions — %s', 'mobooking'), $date_label);
         $subject    = $test !== '' ? '[TEST → ' . $name . '] ' . $base_sub : $base_sub;
         $url        = MCLB_Daysheet_Token::url($coach_id, $date, self::expiry());
 
@@ -268,7 +268,7 @@ class MCLB_Daysheets {
             if ($partial) {
                 $ls    = new DateTimeImmutable((string) $r->starts_at, $tz);
                 $le    = new DateTimeImmutable((string) $r->ends_at, $tz);
-                $time .= '<br><span style="color:#888;font-size:12px;font-weight:400;">' . esc_html(sprintf(__('lane %s', 'mclb-lane-booking'), wp_date($tf, $ls->getTimestamp()) . ' – ' . wp_date($tf, $le->getTimestamp()))) . '</span>';
+                $time .= '<br><span style="color:#888;font-size:12px;font-weight:400;">' . esc_html(sprintf(__('lane %s', 'mobooking'), wp_date($tf, $ls->getTimestamp()) . ' – ' . wp_date($tf, $le->getTimestamp()))) . '</span>';
             }
             $customer = esc_html(self::format_name($r->customer_name));
             // Phone follows the name-visibility setting (shown only when a name is).
@@ -285,22 +285,22 @@ class MCLB_Daysheets {
         }
 
         $btn = '<a href="' . esc_url($url) . '" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:600;font-size:15px;">'
-            . esc_html__('View my day', 'mclb-lane-booking') . '</a>';
+            . esc_html__('View my day', 'mobooking') . '</a>';
 
         ob_start();
         ?>
 <div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#222;">
   <p style="font-size:18px;font-weight:700;margin:0 0 2px;"><?php echo $club; // phpcs:ignore WordPress.Security.EscapeOutput -- escaped above. ?></p>
   <p style="font-size:15px;margin:0 0 16px;color:#444;">
-    <?php printf(esc_html__('Hi %1$s — your sessions for %2$s:', 'mclb-lane-booking'), esc_html($first_name), esc_html($date_label)); ?>
+    <?php printf(esc_html__('Hi %1$s — your sessions for %2$s:', 'mobooking'), esc_html($first_name), esc_html($date_label)); ?>
   </p>
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;width:100%;margin-bottom:18px;">
     <tr>
-      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Time', 'mclb-lane-booking'); ?></th>
+      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Time', 'mobooking'); ?></th>
       <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php echo esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane'); ?></th>
-      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Customer', 'mclb-lane-booking'); ?></th>
-      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Duration', 'mclb-lane-booking'); ?></th>
-      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Note', 'mclb-lane-booking'); ?></th>
+      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Customer', 'mobooking'); ?></th>
+      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Duration', 'mobooking'); ?></th>
+      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Note', 'mobooking'); ?></th>
     </tr>
     <?php echo $tr; // phpcs:ignore WordPress.Security.EscapeOutput -- cells escaped above. ?>
   </table>
@@ -317,13 +317,13 @@ class MCLB_Daysheets {
         $tz   = wp_timezone();
         $tf   = get_option('time_format') ?: 'g:i a';
         $club = get_bloginfo('name') ?: 'Cricketers Club';
-        $out  = $club . "\n" . sprintf(__('Hi %1$s — your sessions for %2$s:', 'mclb-lane-booking'), $first_name, $date_label) . "\n\n";
+        $out  = $club . "\n" . sprintf(__('Hi %1$s — your sessions for %2$s:', 'mobooking'), $first_name, $date_label) . "\n\n";
         foreach ($rows as $r) {
             $partial  = ($r->coach_starts_at !== null && $r->coach_ends_at !== null);
             list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
             $s        = new DateTimeImmutable((string) $cs, $tz);
             $e        = new DateTimeImmutable((string) $ce, $tz);
-            $lane_t   = $partial ? ('  (' . sprintf(__('lane %s', 'mclb-lane-booking'), wp_date($tf, (new DateTimeImmutable((string) $r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $r->ends_at, $tz))->getTimestamp())) . ')') : '';
+            $lane_t   = $partial ? ('  (' . sprintf(__('lane %s', 'mobooking'), wp_date($tf, (new DateTimeImmutable((string) $r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $r->ends_at, $tz))->getTimestamp())) . ')') : '';
             $customer = self::format_name($r->customer_name);
             $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
             $out     .= wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp()) . $lane_t
@@ -333,7 +333,7 @@ class MCLB_Daysheets {
                 . ((string) $r->staff_note !== '' ? '  (' . $r->staff_note . ')' : '')
                 . "\n";
         }
-        $out .= "\n" . __('View my day:', 'mclb-lane-booking') . ' ' . $url . "\n";
+        $out .= "\n" . __('View my day:', 'mobooking') . ' ' . $url . "\n";
         return $out;
     }
 

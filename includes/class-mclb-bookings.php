@@ -901,7 +901,7 @@ class MCLB_Bookings {
         }
 
         /* translators: %s: money amount. */
-        $msg        = sprintf(__('Cancelled after a counter payment of %s was taken — handle manually.', 'mclb-lane-booking'), MCLB_Coaches::money((float) $b->counter_due));
+        $msg        = sprintf(__('Cancelled after a counter payment of %s was taken — handle manually.', 'mobooking'), MCLB_Coaches::money((float) $b->counter_due));
         $line       = "[{$now}] {$msg}";
         $admin_note = trim((string) $b->admin_note);
         $admin_note = $admin_note === '' ? $line : $admin_note . "\n" . $line;
@@ -1663,7 +1663,7 @@ class MCLB_Bookings {
                     MCLB_Cancel::finish($r, [
                         'type'        => $refunded_order ? 'order_refunded' : 'order_cancelled',
                         'amount'      => (float) $r->price,
-                        'actor'       => __('WooCommerce order', 'mclb-lane-booking'),
+                        'actor'       => __('WooCommerce order', 'mobooking'),
                         'manual_flag' => false,
                     ], ['notify' => true]);
                 }
@@ -1678,7 +1678,7 @@ class MCLB_Bookings {
         if (!isset($schedules[self::CRON_SCHEDULE])) {
             $schedules[self::CRON_SCHEDULE] = [
                 'interval' => 15 * MINUTE_IN_SECONDS,
-                'display'  => __('Every 15 Minutes (moBooking)', 'mclb-lane-booking'),
+                'display'  => __('Every 15 Minutes (moBooking)', 'mobooking'),
             ];
         }
         return $schedules;

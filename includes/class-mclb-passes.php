@@ -214,14 +214,14 @@ class MCLB_Passes {
     public static function issue(array $data) {
         global $wpdb;
         $hours = round((float) ($data['hours'] ?? 0), 2);
-        if ($hours <= 0) { return new WP_Error('mclb_pass_hours', __('Enter the number of hours.', 'mclb-lane-booking')); }
+        if ($hours <= 0) { return new WP_Error('mclb_pass_hours', __('Enter the number of hours.', 'mobooking')); }
         // Unique code (retry on the astronomically-unlikely collision).
         $code = '';
         for ($i = 0; $i < 6; $i++) {
             $try = MCLB_Pass_Code::generate();
             if (!$wpdb->get_var($wpdb->prepare('SELECT id FROM ' . self::table() . ' WHERE code = %s', $try))) { $code = $try; break; }
         }
-        if ($code === '') { return new WP_Error('mclb_pass_code', __('Could not generate a unique code — try again.', 'mclb-lane-booking')); }
+        if ($code === '') { return new WP_Error('mclb_pass_code', __('Could not generate a unique code — try again.', 'mobooking')); }
 
         $now = current_time('mysql');
         $wpdb->insert(self::table(), [
@@ -247,12 +247,12 @@ class MCLB_Passes {
     /** Admin-only ± adjustment with a reason. */
     public static function adjust($pass_id, $delta, $reason, $actor) {
         $pass = self::get($pass_id);
-        if (!$pass) { return new WP_Error('mclb_pass_nf', __('Pass not found.', 'mclb-lane-booking')); }
+        if (!$pass) { return new WP_Error('mclb_pass_nf', __('Pass not found.', 'mobooking')); }
         $delta = round((float) $delta, 2);
-        if ($delta === 0.0) { return new WP_Error('mclb_pass_zero', __('Enter a non-zero adjustment.', 'mclb-lane-booking')); }
-        if (trim((string) $reason) === '') { return new WP_Error('mclb_pass_reason', __('A reason is required.', 'mclb-lane-booking')); }
+        if ($delta === 0.0) { return new WP_Error('mclb_pass_zero', __('Enter a non-zero adjustment.', 'mobooking')); }
+        if (trim((string) $reason) === '') { return new WP_Error('mclb_pass_reason', __('A reason is required.', 'mobooking')); }
         if ($delta < 0 && self::balance((int) $pass_id) + $delta < 0) {
-            return new WP_Error('mclb_pass_over', __('That would take the balance below zero.', 'mclb-lane-booking'));
+            return new WP_Error('mclb_pass_over', __('That would take the balance below zero.', 'mobooking'));
         }
         self::add_row((int) $pass_id, 'adjust', $delta, ['actor' => $actor, 'reason' => $reason]);
         return true;
@@ -261,7 +261,7 @@ class MCLB_Passes {
     /** Void a pass: zero its balance + mark void. */
     public static function void($pass_id, $actor, $reason = '') {
         $pass = self::get($pass_id);
-        if (!$pass || (string) $pass->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mclb-lane-booking')); }
+        if (!$pass || (string) $pass->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mobooking')); }
         $bal = self::balance((int) $pass_id);
         if ($bal > 0) { self::add_row((int) $pass_id, 'void', -1 * $bal, ['actor' => $actor, 'reason' => $reason]); }
         self::set_status((int) $pass_id, 'void');
@@ -271,7 +271,7 @@ class MCLB_Passes {
     /** Void + reissue: new pass carries the voided balance. Returns the new pass. */
     public static function reissue($pass_id, $actor) {
         $old = self::get($pass_id);
-        if (!$old || (string) $old->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mclb-lane-booking')); }
+        if (!$old || (string) $old->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mobooking')); }
         $bal = self::balance((int) $pass_id);
         $new = self::issue([
             'holder_name' => $old->holder_name, 'holder_email' => $old->holder_email, 'holder_phone' => $old->holder_phone,
@@ -280,7 +280,7 @@ class MCLB_Passes {
         ]);
         if (is_wp_error($new)) { return $new; }
         // Zero + void the old one (no carry left).
-        self::void((int) $pass_id, $actor, sprintf(__('reissued as %s', 'mclb-lane-booking'), $new->code));
+        self::void((int) $pass_id, $actor, sprintf(__('reissued as %s', 'mobooking'), $new->code));
         self::set_superseded((int) $pass_id, (int) $new->id);
         return $new;
     }
@@ -434,7 +434,7 @@ class MCLB_Passes {
     /** Fired on mclb_booking_cancelled: return any redeemed hours. */
     public static function on_booking_cancelled($booking, $outcome) {
         if (empty($booking->id)) { return; }
-        $r = self::return_booking((int) $booking->id, __('booking cancelled', 'mclb-lane-booking'));
+        $r = self::return_booking((int) $booking->id, __('booking cancelled', 'mobooking'));
         if ($r) {
             // Stash for the cancellation-email extra line (same request).
             $GLOBALS['mclb_pass_return'][(int) $booking->id] = $r;
@@ -567,29 +567,29 @@ class MCLB_Passes {
         $hh   = rtrim(rtrim(number_format((float) $hours, 2), '0'), '.');
         $bb   = rtrim(rtrim(number_format((float) $bal, 2), '0'), '.');
         $n    = max(1, (int) $count);
-        $heading = __('Your prepaid pass', 'mclb-lane-booking');
+        $heading = __('Your prepaid pass', 'mobooking');
         if ($kind === 'returned') {
             $body = ($n > 1)
                 /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
-                ? '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                ? '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
                 /* translators: 1: hours, 2: pass code, 3: balance. */
-                : '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+                : '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s. Balance: %3$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
         } else {
             $body = ($n > 1)
                 /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
-                ? '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                ? '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
                 /* translators: 1: hours, 2: pass code, 3: balance. */
-                : '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s. Balance: %3$sh.', 'mclb-lane-booking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+                : '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s. Balance: %3$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
         }
         if ($n > 1) {
             $dates = self::booking_dates($booking_ids);
             if ($dates !== '') {
                 /* translators: %s: comma-separated session dates. */
-                $body .= '<p style="color:#666;">' . esc_html(sprintf(__('Sessions: %s', 'mclb-lane-booking'), $dates)) . '</p>';
+                $body .= '<p style="color:#666;">' . esc_html(sprintf(__('Sessions: %s', 'mobooking'), $dates)) . '</p>';
             }
         }
         if ($pass->expires_at) {
-            $body .= '<p style="color:#666;">' . sprintf(esc_html__('Pass expires %s (use it to BOOK before then; your session can be later).', 'mclb-lane-booking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
+            $body .= '<p style="color:#666;">' . sprintf(esc_html__('Pass expires %s (use it to BOOK before then; your session can be later).', 'mobooking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
         }
         MCLB_Mail::send($pass->holder_email, $heading . ' — ' . (wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES) ?: 'Cricketers Club'), $body, [
             'heading' => $heading, 'branded' => true, 'tag' => 'pass-balance',

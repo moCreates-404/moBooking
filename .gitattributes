@@ -1,8 +1,9 @@
 # Keep dev-only paths out of `git archive` release zips (bin/build-release.ps1),
-# so dist/mclb-lane-booking.zip contains only the shippable plugin.
+# so dist/mobooking-<ref>.zip contains only the shippable plugin.
 /dist            export-ignore
 /bin             export-ignore
 /tests           export-ignore
 /.github         export-ignore
 /.gitattributes  export-ignore
 /.gitignore      export-ignore
+/SWITCHOVER.md   export-ignore

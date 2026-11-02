@@ -66,15 +66,15 @@ class MCLB_Cart {
         }
         wp_enqueue_script('mclb-passbox');
         $i18n = wp_json_encode([
-            'working' => __('Working…', 'mclb-lane-booking'),
-            'invalid' => __('That code is invalid or expired.', 'mclb-lane-booking'),
-            'err'     => __('Could not reach the server — try again.', 'mclb-lane-booking'),
-            'applied' => __('Prepaid pass %s applied', 'mclb-lane-booking'),
-            'covered' => __('%hh covered', 'mclb-lane-booking'),
-            'left'    => __('%hh left on this pass', 'mclb-lane-booking'),
-            'remove'  => __('Remove pass', 'mclb-lane-booking'),
-            'prompt'  => __('Have a prepaid pass? Enter the code:', 'mclb-lane-booking'),
-            'apply'   => __('Apply', 'mclb-lane-booking'),
+            'working' => __('Working…', 'mobooking'),
+            'invalid' => __('That code is invalid or expired.', 'mobooking'),
+            'err'     => __('Could not reach the server — try again.', 'mobooking'),
+            'applied' => __('Prepaid pass %s applied', 'mobooking'),
+            'covered' => __('%hh covered', 'mobooking'),
+            'left'    => __('%hh left on this pass', 'mobooking'),
+            'remove'  => __('Remove pass', 'mobooking'),
+            'prompt'  => __('Have a prepaid pass? Enter the code:', 'mobooking'),
+            'apply'   => __('Apply', 'mobooking'),
         ]);
         printf(
             '<div class="mclb-passbox" style="margin:12px 0;padding:12px;border:1px solid #e5e5e5;border-radius:8px;" data-url="%s" data-nonce="%s" data-code="%s" data-covered="%s" data-balance="%s" data-i18n="%s"></div>',
@@ -127,12 +127,12 @@ class MCLB_Cart {
         foreach ($remove as $key => $label) {
             WC()->cart->remove_cart_item($key); // on_item_removed cancels the (already dead) hold harmlessly
             /* translators: %s: lane + date/time of the expired hold. */
-            wc_add_notice(sprintf(__('Your hold on %s expired — please re-select.', 'mclb-lane-booking'), $label), 'error');
+            wc_add_notice(sprintf(__('Your hold on %s expired — please re-select.', 'mobooking'), $label), 'error');
         }
         foreach ($beyond as $key => $label) {
             WC()->cart->remove_cart_item($key);
             /* translators: 1: lane + date/time, 2: number of days. */
-            wc_add_notice(sprintf(_n('%1$s is beyond the %2$d-day booking window and was removed.', '%1$s is beyond the %2$d-day booking window and was removed.', $win['days'], 'mclb-lane-booking'), $label, $win['days']), 'error');
+            wc_add_notice(sprintf(_n('%1$s is beyond the %2$d-day booking window and was removed.', '%1$s is beyond the %2$d-day booking window and was removed.', $win['days'], 'mobooking'), $label, $win['days']), 'error');
         }
     }
 
@@ -164,29 +164,29 @@ class MCLB_Cart {
     public static function permission($request) {
         $nonce = $request->get_header('X-WP-Nonce');
         if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
-            return new WP_Error('mclb_bad_nonce', __('Your session expired — please refresh the page and try again.', 'mclb-lane-booking'), ['status' => 403]);
+            return new WP_Error('mclb_bad_nonce', __('Your session expired — please refresh the page and try again.', 'mobooking'), ['status' => 403]);
         }
         return true;
     }
 
     public static function handle($request) {
         if (!class_exists('WooCommerce') || !function_exists('WC')) {
-            return new WP_Error('mclb_no_wc', __('Bookings are temporarily unavailable.', 'mclb-lane-booking'), ['status' => 503]);
+            return new WP_Error('mclb_no_wc', __('Bookings are temporarily unavailable.', 'mobooking'), ['status' => 503]);
         }
         if (!MCLB_License::can_book()) {
             return new WP_Error('mclb_demo', MCLB_License::demo_message(), ['status' => 403]);
         }
         if (self::rate_limited()) {
-            return new WP_Error('mclb_rate', __('Too many requests — please wait a moment and try again.', 'mclb-lane-booking'), ['status' => 429]);
+            return new WP_Error('mclb_rate', __('Too many requests — please wait a moment and try again.', 'mobooking'), ['status' => 429]);
         }
 
         $params        = (array) $request->get_json_params();
         $selections_in = (isset($params['selections']) && is_array($params['selections'])) ? $params['selections'] : [];
         if (empty($selections_in)) {
-            return new WP_Error('mclb_empty', __('No booking selected.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_empty', __('No booking selected.', 'mobooking'), ['status' => 400]);
         }
         if (count($selections_in) > 50) {
-            return new WP_Error('mclb_too_many', __('Too many bookings in one request.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_too_many', __('Too many bookings in one request.', 'mobooking'), ['status' => 400]);
         }
 
         $coach_on        = (int) MCLB_Settings::get('enable_coach_requests') === 1;
@@ -206,13 +206,13 @@ class MCLB_Cart {
         // One date per order (Phase 3 resolution #2).
         $dates = array_unique(array_map(function ($v) { return substr($v['starts_at'], 0, 10); }, $validated));
         if (count($dates) > 1) {
-            return new WP_Error('mclb_multidate', __('All bookings in one order must be on the same day.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_multidate', __('All bookings in one order must be on the same day.', 'mobooking'), ['status' => 400]);
         }
 
         // Bring the cart/session up in the REST context.
         wc_load_cart();
         if (!WC()->cart) {
-            return new WP_Error('mclb_no_cart', __('Cart is unavailable — please try again.', 'mclb-lane-booking'), ['status' => 500]);
+            return new WP_Error('mclb_no_cart', __('Cart is unavailable — please try again.', 'mobooking'), ['status' => 500]);
         }
 
         $token      = WC()->session ? (string) WC()->session->get_customer_id() : '';
@@ -243,12 +243,12 @@ class MCLB_Cart {
         if (empty($res['ok'])) {
             if (!empty($res['lock_error'])) {
                 // Transient DB contention that survived the retries — ask to retry.
-                return new WP_Error('mclb_busy', __('The booking system is busy right now — please try again in a moment.', 'mclb-lane-booking'), ['status' => 503]);
+                return new WP_Error('mclb_busy', __('The booking system is busy right now — please try again in a moment.', 'mobooking'), ['status' => 503]);
             }
             $ci   = isset($res['conflict']) ? (int) $res['conflict'] : 0;
             $lane = $validated[$ci]['lane_name'] ?? '';
             /* translators: %s: resource name. */
-            return new WP_Error('mclb_conflict', sprintf(__('Sorry — %s was just taken for that time. Please pick another slot.', 'mclb-lane-booking'), $lane), ['status' => 409]);
+            return new WP_Error('mclb_conflict', sprintf(__('Sorry — %s was just taken for that time. Please pick another slot.', 'mobooking'), $lane), ['status' => 409]);
         }
         $hold_ids = $res['ids'];
 
@@ -278,7 +278,7 @@ class MCLB_Cart {
                 foreach ($hold_ids as $hid) {
                     MCLB_Bookings::cancel((int) $hid);
                 }
-                return new WP_Error('mclb_cart_fail', __('Could not add the booking to your cart — please try again.', 'mclb-lane-booking'), ['status' => 500]);
+                return new WP_Error('mclb_cart_fail', __('Could not add the booking to your cart — please try again.', 'mobooking'), ['status' => 500]);
             }
             $added[] = $key;
         }
@@ -298,24 +298,24 @@ class MCLB_Cart {
         $ends    = isset($sel['ends_at']) ? (string) $sel['ends_at'] : '';
 
         if (!preg_match($re, $starts) || !preg_match($re, $ends)) {
-            return new WP_Error('mclb_bad_time', __('Invalid booking time.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_time', __('Invalid booking time.', 'mobooking'), ['status' => 400]);
         }
         $lane = get_post($lane_id);
         if (!$lane || $lane->post_type !== 'mclb_lane' || $lane->post_status !== 'publish') {
-            return new WP_Error('mclb_bad_lane', __('That resource is not available.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_bad_lane', __('That resource is not available.', 'mobooking'), ['status' => 400]);
         }
         if (substr($starts, 0, 10) !== substr($ends, 0, 10)) {
-            return new WP_Error('mclb_span', __('A booking cannot span multiple days.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_span', __('A booking cannot span multiple days.', 'mobooking'), ['status' => 400]);
         }
 
         $tz = wp_timezone();
         $s  = new DateTimeImmutable($starts, $tz);
         $e  = new DateTimeImmutable($ends, $tz);
         if ($e <= $s) {
-            return new WP_Error('mclb_order', __('Invalid booking time.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_order', __('Invalid booking time.', 'mobooking'), ['status' => 400]);
         }
         if ($s < new DateTimeImmutable('now', $tz)) {
-            return new WP_Error('mclb_past', __('That time is in the past.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_past', __('That time is in the past.', 'mobooking'), ['status' => 400]);
         }
 
         $date = substr($starts, 0, 10);
@@ -324,7 +324,7 @@ class MCLB_Cart {
         $win = MCLB_Grid::booking_window();
         if (MCLB_Grid::is_beyond_window($date, $win['max_date'])) {
             /* translators: %d: number of days ahead customers can book. */
-            return new WP_Error('mclb_window', sprintf(_n('Online bookings open %d day in advance — please pick an earlier date.', 'Online bookings open %d days in advance — please pick an earlier date.', $win['days'], 'mclb-lane-booking'), $win['days']), ['status' => 400]);
+            return new WP_Error('mclb_window', sprintf(_n('Online bookings open %d day in advance — please pick an earlier date.', 'Online bookings open %d days in advance — please pick an earlier date.', $win['days'], 'mobooking'), $win['days']), ['status' => 400]);
         }
 
         $avail = MCLB_Availability::for_lane($lane_id, $date);
@@ -332,7 +332,7 @@ class MCLB_Cart {
             $tf    = get_option('time_format') ?: 'g:i a';
             $label = get_the_title($lane_id) . ' · ' . wp_date($tf, $s->getTimestamp()) . '–' . wp_date($tf, $e->getTimestamp());
             /* translators: %s: lane + time of the slot that is no longer free. */
-            return new WP_Error('mclb_unavailable', sprintf(__('%s is no longer available — please re-pick that slot.', 'mclb-lane-booking'), $label), ['status' => 409]);
+            return new WP_Error('mclb_unavailable', sprintf(__('%s is no longer available — please re-pick that slot.', 'mobooking'), $label), ['status' => 409]);
         }
 
         $duration = ($e->getTimestamp() - $s->getTimestamp()) / 3600.0;
@@ -383,7 +383,7 @@ class MCLB_Cart {
         }
         $label = MCLB_Settings::get('resource_label_singular') ?: 'Lane';
         $p = new WC_Product_Simple();
-        $p->set_name(sprintf(_x('%s Booking', 'auto-provisioned anchor product name', 'mclb-lane-booking'), $label));
+        $p->set_name(sprintf(_x('%s Booking', 'auto-provisioned anchor product name', 'mobooking'), $label));
         $p->set_status('publish');
         $p->set_catalog_visibility('hidden');
         $p->set_virtual(true);
@@ -429,9 +429,9 @@ class MCLB_Cart {
             return $data;
         }
         $m      = $item[self::ITEM_KEY];
-        $data[] = ['key' => __('When', 'mclb-lane-booking'), 'value' => self::format_when($m)];
+        $data[] = ['key' => __('When', 'mobooking'), 'value' => self::format_when($m)];
         if (!empty($m['coach_requested'])) {
-            $data[] = ['key' => __('Coach', 'mclb-lane-booking'), 'value' => __('Requested', 'mclb-lane-booking')];
+            $data[] = ['key' => __('Coach', 'mobooking'), 'value' => __('Requested', 'mobooking')];
         }
         return $data;
     }
@@ -473,11 +473,11 @@ class MCLB_Cart {
             $item->add_meta_data('_mclb_coach_note', $m['coach_note'], true);
         }
         // Visible meta (shows on the order + emails):
-        $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mclb-lane-booking');
+        $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking');
         $item->add_meta_data($res_label, $m['lane_name'], true);
-        $item->add_meta_data(__('When', 'mclb-lane-booking'), self::format_when($m), true);
+        $item->add_meta_data(__('When', 'mobooking'), self::format_when($m), true);
         if (!empty($m['coach_requested'])) {
-            $item->add_meta_data(__('Coach requested', 'mclb-lane-booking'), __('Yes', 'mclb-lane-booking'), true);
+            $item->add_meta_data(__('Coach requested', 'mobooking'), __('Yes', 'mobooking'), true);
         }
         // Prepaid-pass cover (v1.5.0): a VISIBLE line showing the code + hours +
         // the amount it took off this line. Not underscore-prefixed, so the
@@ -492,7 +492,7 @@ class MCLB_Cart {
                 $amt  = class_exists('MCLB_Coaches') ? MCLB_Coaches::money($covered * $rate) : number_format($covered * $rate, 2);
                 $hh   = rtrim(rtrim(number_format((float) $covered, 2), '0'), '.');
                 $item->add_meta_data(
-                    __('Prepaid pass', 'mclb-lane-booking'),
+                    __('Prepaid pass', 'mobooking'),
                     sprintf('%1$s: %2$sh (−%3$s)', $pass ? $pass->code : '', $hh, $amt),
                     true
                 );
@@ -582,10 +582,10 @@ class MCLB_Cart {
     /** POST /cart/pass — op = apply | remove | balance. */
     public static function handle_pass($request) {
         if (!class_exists('WooCommerce') || !function_exists('WC')) {
-            return new WP_Error('mclb_no_wc', __('Bookings are temporarily unavailable.', 'mclb-lane-booking'), ['status' => 503]);
+            return new WP_Error('mclb_no_wc', __('Bookings are temporarily unavailable.', 'mobooking'), ['status' => 503]);
         }
         if (self::rate_limited() || self::pass_session_limited()) {
-            return new WP_Error('mclb_rate', __('Too many attempts — please wait a moment and try again.', 'mclb-lane-booking'), ['status' => 429]);
+            return new WP_Error('mclb_rate', __('Too many attempts — please wait a moment and try again.', 'mobooking'), ['status' => 429]);
         }
         wc_load_cart();
         $op   = sanitize_key((string) $request->get_param('op'));
@@ -600,7 +600,7 @@ class MCLB_Cart {
         // apply / balance both need a valid, usable code. Never hint which failed.
         $pass = (class_exists('MCLB_Passes') && MCLB_Pass_Code::looks_valid($code)) ? MCLB_Passes::get_by_code($code) : null;
         if (!$pass || !MCLB_Passes::is_usable($pass)) {
-            return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mclb-lane-booking'), ['status' => 400]);
+            return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mobooking'), ['status' => 400]);
         }
         $balance = MCLB_Passes::balance((int) $pass->id);
 

@@ -32,11 +32,11 @@ class MCLB_Admin {
      */
     private function tabs() {
         return [
-            'general'    => __('General', 'mclb-lane-booking'),
-            'appearance' => __('Appearance', 'mclb-lane-booking'),
-            'events'     => __('Events', 'mclb-lane-booking'),
-            'daysheets'  => __('Day sheets', 'mclb-lane-booking'),
-            'license'    => __('License', 'mclb-lane-booking'),
+            'general'    => __('General', 'mobooking'),
+            'appearance' => __('Appearance', 'mobooking'),
+            'events'     => __('Events', 'mobooking'),
+            'daysheets'  => __('Day sheets', 'mobooking'),
+            'license'    => __('License', 'mobooking'),
         ];
     }
 
@@ -64,7 +64,7 @@ class MCLB_Admin {
         add_submenu_page(
             self::PAGE,
             'moBooking Settings',
-            __('Settings', 'mclb-lane-booking'),
+            __('Settings', 'mobooking'),
             'manage_options',
             self::PAGE,
             [$this, 'render_page'],
@@ -106,142 +106,170 @@ class MCLB_Admin {
         $l  = $this->tab_page('license');
 
         // General → wording
-        add_settings_section('mclb_labels', __('Resource wording', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('What one bookable unit is called on this site — shown to customers and in admin copy. The database keeps the technical term “lane” regardless.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_labels', __('Resource wording', 'mobooking'), function () {
+            echo '<p>' . esc_html__('What one bookable unit is called on this site — shown to customers and in admin copy. The database keeps the technical term “lane” regardless.', 'mobooking') . '</p>';
         }, $g);
-        $this->text_field($g, 'mclb_labels', 'resource_label_singular', __('Unit label (singular)', 'mclb-lane-booking'), __('e.g. Lane, Bay, Hoist', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_labels', 'resource_label_plural', __('Unit label (plural)', 'mclb-lane-booking'), __('e.g. Lanes, Bays, Hoists', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_labels', 'resource_label_singular', __('Unit label (singular)', 'mobooking'), __('e.g. Lane, Bay, Hoist', 'mobooking'));
+        $this->text_field($g, 'mclb_labels', 'resource_label_plural', __('Unit label (plural)', 'mobooking'), __('e.g. Lanes, Bays, Hoists', 'mobooking'));
 
         // General → booking rules
-        add_settings_section('mclb_booking', __('Booking rules', 'mclb-lane-booking'), '__return_false', $g);
-        $this->textarea_field($g, 'mclb_booking', 'resource_types', __('Resource types', 'mclb-lane-booking'), __('One per line (e.g. Net, Bowling Machine). Admin-defined — not a fixed list.', 'mclb-lane-booking'));
-        $this->price_field($g, 'mclb_booking', 'price_per_hour', __('Price per hour', 'mclb-lane-booking'));
-        $this->increment_field($g, 'mclb_booking', 'booking_increment', __('Booking increment', 'mclb-lane-booking'));
-        $this->number_field($g, 'mclb_booking', 'hold_minutes', __('Hold window', 'mclb-lane-booking'), __('minutes', 'mclb-lane-booking'), 1, 240);
-        $this->number_field($g, 'mclb_booking', 'booking_window_days', __('Customer booking window', 'mclb-lane-booking'), __('days ahead customers can book (0 = no limit). Staff are never limited.', 'mclb-lane-booking'), 0, 3650);
-        $this->text_field($g, 'mclb_booking', 'booking_window_note', __('Later-dates message', 'mclb-lane-booking'), __('Shown after “Online bookings open N days in advance.” — e.g. Call 08 9393 1000 for later dates.', 'mclb-lane-booking'));
+        add_settings_section('mclb_booking', __('Booking rules', 'mobooking'), '__return_false', $g);
+        $this->textarea_field($g, 'mclb_booking', 'resource_types', __('Resource types', 'mobooking'), __('One per line (e.g. Net, Bowling Machine). Admin-defined — not a fixed list.', 'mobooking'));
+        $this->price_field($g, 'mclb_booking', 'price_per_hour', __('Price per hour', 'mobooking'));
+        $this->increment_field($g, 'mclb_booking', 'booking_increment', __('Booking increment', 'mobooking'));
+        $this->number_field($g, 'mclb_booking', 'hold_minutes', __('Hold window', 'mobooking'), __('minutes', 'mobooking'), 1, 240);
+        $this->number_field($g, 'mclb_booking', 'booking_window_days', __('Customer booking window', 'mobooking'), __('days ahead customers can book (0 = no limit). Staff are never limited.', 'mobooking'), 0, 3650);
+        $this->text_field($g, 'mclb_booking', 'booking_window_note', __('Later-dates message', 'mobooking'), __('Shown after “Online bookings open N days in advance.” — e.g. Call 08 9393 1000 for later dates.', 'mobooking'));
 
         // General → coach requests
-        add_settings_section('mclb_coach', __('Coach requests', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('Cricketers-Club-specific add-on. When on, the booking flow offers a “Request a coach” option (admin assigns the coach later). Leave off for installs that don’t do coaching.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_coach', __('Coach requests', 'mobooking'), function () {
+            echo '<p>' . esc_html__('Cricketers-Club-specific add-on. When on, the booking flow offers a “Request a coach” option (admin assigns the coach later). Leave off for installs that don’t do coaching.', 'mobooking') . '</p>';
         }, $g);
-        $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mclb-lane-booking'), __('Show the “Request a coach” option on lane bookings', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_coach', 'staff_label_singular', __('Staff label (singular)', 'mclb-lane-booking'), __('e.g. Coach, Pro, Instructor', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_coach', 'staff_label_plural', __('Staff label (plural)', 'mclb-lane-booking'), __('e.g. Coaches, Pros, Instructors', 'mclb-lane-booking'));
+        $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mobooking'), __('Show the “Request a coach” option on lane bookings', 'mobooking'));
+        $this->text_field($g, 'mclb_coach', 'staff_label_singular', __('Staff label (singular)', 'mobooking'), __('e.g. Coach, Pro, Instructor', 'mobooking'));
+        $this->text_field($g, 'mclb_coach', 'staff_label_plural', __('Staff label (plural)', 'mobooking'), __('e.g. Coaches, Pros, Instructors', 'mobooking'));
 
         // General → staff access (Manage view)
-        add_settings_section('mclb_staff_access', __('Staff access', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('The page holding the [mclb_manage] shortcode — the staff calendar. Booking Staff are sent here at login; the page is login-gated, never cached, and noindexed.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_staff_access', __('Staff access', 'mobooking'), function () {
+            echo '<p>' . esc_html__('The page holding the [mclb_manage] shortcode — the staff calendar. Booking Staff are sent here at login; the page is login-gated, never cached, and noindexed.', 'mobooking') . '</p>';
         }, $g);
-        add_settings_field('manage_page_id', __('Manage page', 'mclb-lane-booking'), [$this, 'render_manage_page'], $g, 'mclb_staff_access');
+        add_settings_field('manage_page_id', __('Manage page', 'mobooking'), [$this, 'render_manage_page'], $g, 'mclb_staff_access');
 
         // General → WooCommerce
-        add_settings_section('mclb_wc', __('WooCommerce', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('Cart items hang on a hidden virtual “anchor” product. Leave the ID blank to auto-create one on first checkout.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_wc', __('WooCommerce', 'mobooking'), function () {
+            echo '<p>' . esc_html__('Cart items hang on a hidden virtual “anchor” product. Leave the ID blank to auto-create one on first checkout.', 'mobooking') . '</p>';
         }, $g);
-        $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mclb-lane-booking'), __('WooCommerce product ID', 'mclb-lane-booking'), 0);
-        $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mclb-lane-booking'), __('hours before start (logged-in customers)', 'mclb-lane-booking'), 0, 720);
-        $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mclb-lane-booking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mclb-lane-booking'), 0, 720);
-        $this->number_field($g, 'mclb_wc', 'credit_expiry_days', __('Store-credit expiry', 'mclb-lane-booking'), __('days a cancellation credit coupon lasts (0 = never); set when the coupon is issued', 'mclb-lane-booking'), 0, 3650);
-        $this->checkbox_field($g, 'mclb_wc', 'guest_self_cancel', __('Guest self-cancel', 'mclb-lane-booking'), __('Let customers cancel from a secure link in their confirmation email (no login)', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_wc', 'club_phone', __('Club phone', 'mclb-lane-booking'), __('shown when a booking is too close to its start time to cancel online (the theme can supply this via the mclb_club_phone filter)', 'mclb-lane-booking'));
-        $this->number_field($g, 'mclb_wc', 'pass_expiry_months', __('Prepaid pass expiry', 'mclb-lane-booking'), __('months a new pass lasts (0 = never); per-pass override at issue. A pass is valid if unexpired when the booking is made.', 'mclb-lane-booking'), 0, 120);
-        add_settings_field('terms_page_id', __('Terms & Conditions page', 'mclb-lane-booking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
+        $this->number_field($g, 'mclb_wc', 'wc_product_id', __('Anchor product ID', 'mobooking'), __('WooCommerce product ID', 'mobooking'), 0);
+        $this->number_field($g, 'mclb_wc', 'self_cancel_hours', __('Self-cancel cutoff', 'mobooking'), __('hours before start (logged-in customers)', 'mobooking'), 0, 720);
+        $this->number_field($g, 'mclb_wc', 'refund_window_hours', __('Auto-refund window', 'mobooking'), __('hours after placing (cancel within this, and before the cutoff, = real refund; otherwise store credit)', 'mobooking'), 0, 720);
+        $this->number_field($g, 'mclb_wc', 'credit_expiry_days', __('Store-credit expiry', 'mobooking'), __('days a cancellation credit coupon lasts (0 = never); set when the coupon is issued', 'mobooking'), 0, 3650);
+        $this->checkbox_field($g, 'mclb_wc', 'guest_self_cancel', __('Guest self-cancel', 'mobooking'), __('Let customers cancel from a secure link in their confirmation email (no login)', 'mobooking'));
+        $this->text_field($g, 'mclb_wc', 'club_phone', __('Club phone', 'mobooking'), __('shown when a booking is too close to its start time to cancel online (the theme can supply this via the mclb_club_phone filter)', 'mobooking'));
+        $this->number_field($g, 'mclb_wc', 'pass_expiry_months', __('Prepaid pass expiry', 'mobooking'), __('months a new pass lasts (0 = never); per-pass override at issue. A pass is valid if unexpired when the booking is made.', 'mobooking'), 0, 120);
+        add_settings_field('terms_page_id', __('Terms & Conditions page', 'mobooking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
 
         // General → Emails
-        add_settings_section('mclb_emails', __('Emails', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: lane bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_emails', __('Emails', 'mobooking'), function () {
+            echo '<p>' . esc_html__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: lane bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mobooking') . '</p>';
             // Warn when the Bookings address is blank: staff alerts fall back to
             // WooCommerce's New Order recipient / the admin email (v1.4.3).
             if (sanitize_email((string) MCLB_Settings::get('email_bookings')) === '') {
                 $fallback = get_option('woocommerce_new_order_settings');
                 $fallback = (is_array($fallback) && !empty($fallback['recipient'])) ? $fallback['recipient'] : get_option('admin_email');
                 echo '<div class="notice notice-warning inline" style="margin:6px 0;"><p>'
-                    . esc_html(sprintf(__('No Bookings email is set — staff alerts (incl. cancellations) currently go to %s. Set one below so booking alerts reach the right inbox.', 'mclb-lane-booking'), $fallback))
+                    . esc_html(sprintf(__('No Bookings email is set — staff alerts (incl. cancellations) currently go to %s. Set one below so booking alerts reach the right inbox.', 'mobooking'), $fallback))
                     . '</p></div>';
             }
         }, $g);
-        $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mclb-lane-booking'), __('e.g. bookings@yourclub.com — lane-booking admin emails + staff alerts', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_emails', 'email_reception', __('Reception / shop email', 'mclb-lane-booking'), __('e.g. reception@yourclub.com — shop-order admin emails', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'email_manual_confirmation', __('Manual booking confirmation', 'mclb-lane-booking'), __('Email the customer a confirmation when staff create a manual booking (if an address is on file)', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'email_customer_on_cancel', __('Customer cancellation email', 'mclb-lane-booking'), __('Email the customer whenever a booking is cancelled, with the refund/credit outcome (if an address is on file)', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_cancel', __('Alert: cancellation', 'mclb-lane-booking'), __('Email the Bookings address whenever a booking is cancelled (staff, customer or order)', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mclb-lane-booking'), __('Email the Bookings address when an online booking asks for a coach', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mclb-lane-booking'), __('Email the Bookings address when staff create a manual booking', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mclb-lane-booking'), __('Email the Bookings address when staff move a booking', 'mclb-lane-booking'));
-        $this->checkbox_field($g, 'mclb_emails', 'pass_holder_email', __('Prepaid pass balance emails', 'mclb-lane-booking'), __('Email the pass holder when hours are used or returned (if an email is on the pass)', 'mclb-lane-booking'));
-        $this->text_field($g, 'mclb_emails', 'email_test_recipient', __('Email test recipient', 'mclb-lane-booking'), __('Dev safety: when set, EVERY plugin email (incl. day sheets) is rerouted here. On a non-production site nothing is sent unless this is set.', 'mclb-lane-booking'));
+        $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mobooking'), __('e.g. bookings@yourclub.com — lane-booking admin emails + staff alerts', 'mobooking'));
+        $this->text_field($g, 'mclb_emails', 'email_reception', __('Reception / shop email', 'mobooking'), __('e.g. reception@yourclub.com — shop-order admin emails', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'email_manual_confirmation', __('Manual booking confirmation', 'mobooking'), __('Email the customer a confirmation when staff create a manual booking (if an address is on file)', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'email_customer_on_cancel', __('Customer cancellation email', 'mobooking'), __('Email the customer whenever a booking is cancelled, with the refund/credit outcome (if an address is on file)', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_cancel', __('Alert: cancellation', 'mobooking'), __('Email the Bookings address whenever a booking is cancelled (staff, customer or order)', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mobooking'), __('Email the Bookings address when an online booking asks for a coach', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mobooking'), __('Email the Bookings address when staff create a manual booking', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mobooking'), __('Email the Bookings address when staff move a booking', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'pass_holder_email', __('Prepaid pass balance emails', 'mobooking'), __('Email the pass holder when hours are used or returned (if an email is on the pass)', 'mobooking'));
+        $this->text_field($g, 'mclb_emails', 'email_test_recipient', __('Email test recipient', 'mobooking'), __('Dev safety: when set, EVERY plugin email (incl. day sheets) is rerouted here. On a non-production site nothing is sent unless this is set.', 'mobooking'));
 
         // General → hours
-        add_settings_section('mclb_hours', __('Default opening hours', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('Seeded onto new resources as their default weekly hours. Per-resource overrides come in a later phase.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_hours', __('Default opening hours', 'mobooking'), function () {
+            echo '<p>' . esc_html__('Seeded onto new resources as their default weekly hours. Per-resource overrides come in a later phase.', 'mobooking') . '</p>';
         }, $g);
-        add_settings_field('mclb_hours_grid', __('Weekly hours', 'mclb-lane-booking'), [$this, 'render_hours'], $g, 'mclb_hours');
+        add_settings_field('mclb_hours_grid', __('Weekly hours', 'mobooking'), [$this, 'render_hours'], $g, 'mclb_hours');
 
         // Appearance → colours
-        add_settings_section('mclb_colors', __('Colours', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('These drive the booking grid’s CSS custom properties. Defaults match Cricketers Club; change them to suit your brand.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_colors', __('Colours', 'mobooking'), function () {
+            echo '<p>' . esc_html__('These drive the booking grid’s CSS custom properties. Defaults match Cricketers Club; change them to suit your brand.', 'mobooking') . '</p>';
         }, $a);
-        $this->color_field($a, 'mclb_colors', 'accent_color', __('Accent colour', 'mclb-lane-booking'));
-        $this->color_field($a, 'mclb_colors', 'state_available', __('State: Available', 'mclb-lane-booking'));
-        $this->color_field($a, 'mclb_colors', 'state_booked', __('State: Booked', 'mclb-lane-booking'));
-        $this->color_field($a, 'mclb_colors', 'state_unfinished', __('State: Unfinished', 'mclb-lane-booking'));
-        $this->color_field($a, 'mclb_colors', 'state_closed', __('State: Closed', 'mclb-lane-booking'));
+        $this->color_field($a, 'mclb_colors', 'accent_color', __('Accent colour', 'mobooking'));
+        $this->color_field($a, 'mclb_colors', 'state_available', __('State: Available', 'mobooking'));
+        $this->color_field($a, 'mclb_colors', 'state_booked', __('State: Booked', 'mobooking'));
+        $this->color_field($a, 'mclb_colors', 'state_unfinished', __('State: Unfinished', 'mobooking'));
+        $this->color_field($a, 'mclb_colors', 'state_closed', __('State: Closed', 'mobooking'));
 
         // Appearance → fonts
-        add_settings_section('mclb_fonts', __('Fonts', 'mclb-lane-booking'), '__return_false', $a);
-        add_settings_field('font_mode', __('Fonts', 'mclb-lane-booking'), [$this, 'render_font_mode'], $a, 'mclb_fonts');
+        add_settings_section('mclb_fonts', __('Fonts', 'mobooking'), '__return_false', $a);
+        add_settings_field('font_mode', __('Fonts', 'mobooking'), [$this, 'render_font_mode'], $a, 'mclb_fonts');
 
         // Events → blockout types
-        add_settings_section('mclb_event_types', __('Event types', 'mclb-lane-booking'), function () {
-            echo '<p>' . esc_html__('Categories for blockouts (e.g. Academy, Maintenance). Each has a colour for the admin calendar and a toggle for whether its name is shown to customers — otherwise a blockout simply reads “Unavailable”.', 'mclb-lane-booking') . '</p>';
+        add_settings_section('mclb_event_types', __('Event types', 'mobooking'), function () {
+            echo '<p>' . esc_html__('Categories for blockouts (e.g. Academy, Maintenance). Each has a colour for the admin calendar and a toggle for whether its name is shown to customers — otherwise a blockout simply reads “Unavailable”.', 'mobooking') . '</p>';
         }, $e);
-        add_settings_field('mclb_event_types_rows', __('Types', 'mclb-lane-booking'), [$this, 'render_event_types'], $e, 'mclb_event_types');
+        add_settings_field('mclb_event_types_rows', __('Types', 'mobooking'), [$this, 'render_event_types'], $e, 'mclb_event_types');
 
         // Day sheets
-        add_settings_section('mclb_ds', __('Coach day sheets', 'mclb-lane-booking'), [$this, 'ds_intro'], $ds);
-        add_settings_field('daysheet_enabled', __('Automatic send', 'mclb-lane-booking'), function () {
+        add_settings_section('mclb_ds', __('Coach day sheets', 'mobooking'), [$this, 'ds_intro'], $ds);
+        add_settings_field('daysheet_enabled', __('Automatic send', 'mobooking'), function () {
             printf('<input type="hidden" name="%s" value="1">', esc_attr($this->name('daysheet_submitted')));
             printf('<input type="hidden" name="%s" value="0">', esc_attr($this->name('daysheet_enabled')));
-            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions automatically on a schedule', 'mclb-lane-booking'));
-            printf('<p class="description">%s</p>', esc_html__('Turn this off to send only by hand — the “Send” / “Send to all” buttons on the Roster keep working either way.', 'mclb-lane-booking'));
+            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions automatically on a schedule', 'mobooking'));
+            printf('<p class="description">%s</p>', esc_html__('Turn this off to send only by hand — the “Send” / “Send to all” buttons on the Roster keep working either way.', 'mobooking'));
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_send_time', __('Send time', 'mclb-lane-booking'), function () {
+        add_settings_field('daysheet_send_time', __('Send time', 'mobooking'), function () {
             printf('<input type="time" name="%s" value="%s">', esc_attr($this->name('daysheet_send_time')), esc_attr($this->val('daysheet_send_time')));
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_target', __('Which day', 'mclb-lane-booking'), function () {
+        add_settings_field('daysheet_target', __('Which day', 'mobooking'), function () {
             $v = $this->val('daysheet_target');
             echo '<select name="' . esc_attr($this->name('daysheet_target')) . '">';
-            foreach (['tomorrow' => __('Tomorrow', 'mclb-lane-booking'), 'today' => __('Today', 'mclb-lane-booking')] as $k => $lbl) {
+            foreach (['tomorrow' => __('Tomorrow', 'mobooking'), 'today' => __('Today', 'mobooking')] as $k => $lbl) {
                 printf('<option value="%s" %s>%s</option>', esc_attr($k), selected($v, $k, false), esc_html($lbl));
             }
             echo '</select>';
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_names', __('Customer names', 'mclb-lane-booking'), function () {
+        add_settings_field('daysheet_names', __('Customer names', 'mobooking'), function () {
             $v = $this->val('daysheet_names');
             echo '<select name="' . esc_attr($this->name('daysheet_names')) . '">';
-            foreach (['full' => __('Full name', 'mclb-lane-booking'), 'first_initial' => __('First name + initial', 'mclb-lane-booking'), 'none' => __('Hide names', 'mclb-lane-booking')] as $k => $lbl) {
+            foreach (['full' => __('Full name', 'mobooking'), 'first_initial' => __('First name + initial', 'mobooking'), 'none' => __('Hide names', 'mobooking')] as $k => $lbl) {
                 printf('<option value="%s" %s>%s</option>', esc_attr($k), selected($v, $k, false), esc_html($lbl));
             }
             echo '</select>';
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_cc', __('CC address', 'mclb-lane-booking'), function () {
-            printf('<input type="email" class="regular-text" name="%s" value="%s" placeholder="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_cc')), esc_attr($this->val('daysheet_cc')), esc_attr__('e.g. front desk', 'mclb-lane-booking'), esc_html__('optional; skipped when a test recipient is set', 'mclb-lane-booking'));
+        add_settings_field('daysheet_cc', __('CC address', 'mobooking'), function () {
+            printf('<input type="email" class="regular-text" name="%s" value="%s" placeholder="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_cc')), esc_attr($this->val('daysheet_cc')), esc_attr__('e.g. front desk', 'mobooking'), esc_html__('optional; skipped when a test recipient is set', 'mobooking'));
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_test_recipient', __('Test recipient', 'mclb-lane-booking'), function () {
-            printf('<span class="description">%s</span>', esc_html__('Moved to General → Emails → “Email test recipient”, which now reroutes every plugin email (day sheets included).', 'mclb-lane-booking'));
+        add_settings_field('daysheet_test_recipient', __('Test recipient', 'mobooking'), function () {
+            printf('<span class="description">%s</span>', esc_html__('Moved to General → Emails → “Email test recipient”, which now reroutes every plugin email (day sheets included).', 'mobooking'));
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_expiry_hours', __('Link expiry', 'mclb-lane-booking'), function () {
-            printf('<input type="number" min="1" max="720" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_expiry_hours')), esc_attr($this->val('daysheet_expiry_hours')), esc_html__('hours the “View my day” link stays valid', 'mclb-lane-booking'));
+        add_settings_field('daysheet_expiry_hours', __('Link expiry', 'mobooking'), function () {
+            printf('<input type="number" min="1" max="720" name="%s" value="%s"> <span class="description">%s</span>', esc_attr($this->name('daysheet_expiry_hours')), esc_attr($this->val('daysheet_expiry_hours')), esc_html__('hours the “View my day” link stays valid', 'mobooking'));
         }, $ds, 'mclb_ds');
-        add_settings_field('daysheet_tools', __('Tools & log', 'mclb-lane-booking'), [$this, 'render_daysheet_tools'], $ds, 'mclb_ds');
+        add_settings_field('daysheet_tools', __('Tools & log', 'mobooking'), [$this, 'render_daysheet_tools'], $ds, 'mclb_ds');
 
-        // License
-        add_settings_section('mclb_license', __('License', 'mclb-lane-booking'), function () {
-            $st = MCLB_License::status();
-            printf('<p><strong>%s</strong> %s</p>', esc_html__('Status:', 'mclb-lane-booking'), esc_html($st['message']));
+        // License (Freemius handles activation; this tab shows status + links).
+        add_settings_section('mclb_license', __('License', 'mobooking'), function () {
+            $st     = MCLB_License::status();
+            $labels = [
+                'active'       => __('Active', 'mobooking'),
+                'trial'        => __('Trial', 'mobooking'),
+                'grace'        => __('Grace period', 'mobooking'),
+                'expired'      => __('Expired', 'mobooking'),
+                'inactive'     => __('Not activated', 'mobooking'),
+                'unconfigured' => __('Not configured', 'mobooking'),
+            ];
+            printf(
+                '<p><strong>%s</strong> %s — %s</p>',
+                esc_html__('Status:', 'mobooking'),
+                esc_html($labels[$st['status']] ?? $st['status']),
+                esc_html($st['message'])
+            );
+            if (defined('MCLB_LICENSE_UNLOCK') && MCLB_LICENSE_UNLOCK) {
+                printf('<p><em>%s</em></p>', esc_html__('MCLB_LICENSE_UNLOCK is defined in wp-config.php, so bookings are allowed regardless of licence status.', 'mobooking'));
+            }
+            if ($st['status'] !== 'unconfigured') {
+                printf(
+                    '<p><a class="button button-primary" href="%s">%s</a></p>',
+                    esc_url(MCLB_License::account_url()),
+                    esc_html__('Manage licence', 'mobooking')
+                );
+            }
         }, $l);
-        $this->text_field($l, 'mclb_license', 'license_key', __('License key', 'mclb-lane-booking'), __('Provided by moCreates. Validation is stubbed in this build.', 'mclb-lane-booking'));
+
+        // Data retention (lives on the License tab — rarely touched).
+        add_settings_section('mclb_data', __('Data', 'mobooking'), function () {
+            echo '<p>' . esc_html__('By default, deleting the plugin keeps all bookings, passes and settings so a reinstall picks up where it left off.', 'mobooking') . '</p>';
+        }, $l);
+        $this->checkbox_field($l, 'mclb_data', 'delete_data_on_uninstall', __('Delete data on uninstall', 'mobooking'), __('Permanently remove ALL moBooking bookings, passes, closures and settings when the plugin is deleted', 'mobooking'));
     }
 
     // ── Field renderers ──────────────────────────────────────────────────────
@@ -280,7 +308,7 @@ class MCLB_Admin {
                 '<input type="number" step="0.01" min="0" name="%s" value="%s"> <span class="description">%s</span>',
                 esc_attr($this->name($key)),
                 esc_attr($this->val($key)),
-                esc_html__('per hour', 'mclb-lane-booking')
+                esc_html__('per hour', 'mobooking')
             );
         }, $page, $section);
     }
@@ -319,7 +347,7 @@ class MCLB_Admin {
     private function increment_field($page, $section, $key, $label) {
         add_settings_field($key, $label, function () use ($key) {
             $val  = (int) $this->val($key);
-            $opts = [15 => __('15 minutes', 'mclb-lane-booking'), 30 => __('30 minutes', 'mclb-lane-booking'), 60 => __('1 hour', 'mclb-lane-booking'), 120 => __('2 hours', 'mclb-lane-booking')];
+            $opts = [15 => __('15 minutes', 'mobooking'), 30 => __('30 minutes', 'mobooking'), 60 => __('1 hour', 'mobooking'), 120 => __('2 hours', 'mobooking')];
             echo '<select name="' . esc_attr($this->name($key)) . '">';
             foreach ($opts as $v => $lbl) {
                 printf('<option value="%d" %s>%s</option>', (int) $v, selected($val, $v, false), esc_html($lbl));
@@ -345,35 +373,35 @@ class MCLB_Admin {
             '<label><input type="radio" name="%s" value="inherit" %s> %s</label><br>',
             esc_attr($name),
             checked($val, 'inherit', false),
-            esc_html__('Inherit the active theme’s fonts (recommended)', 'mclb-lane-booking')
+            esc_html__('Inherit the active theme’s fonts (recommended)', 'mobooking')
         );
         printf(
             '<label><input type="radio" name="%s" value="override" %s> %s</label>',
             esc_attr($name),
             checked($val, 'override', false),
-            esc_html__('Override with the plugin’s own font stack', 'mclb-lane-booking')
+            esc_html__('Override with the plugin’s own font stack', 'mobooking')
         );
     }
 
     public function ds_intro() {
         if (!empty($_GET['mclb_rotated'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag after a nonced action.
-            printf('<div class="notice notice-success inline" style="margin:8px 0"><p>%s</p></div>', esc_html__('Link secret regenerated — previous “View my day” links no longer work.', 'mclb-lane-booking'));
+            printf('<div class="notice notice-success inline" style="margin:8px 0"><p>%s</p></div>', esc_html__('Link secret regenerated — previous “View my day” links no longer work.', 'mobooking'));
         }
-        echo '<p>' . esc_html__('A daily email to each coach with the sessions assigned to them, plus a signed “View my day” link.', 'mclb-lane-booking') . '</p>';
+        echo '<p>' . esc_html__('A daily email to each coach with the sessions assigned to them, plus a signed “View my day” link.', 'mobooking') . '</p>';
         $test = sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient'));
         if ($test !== '') {
             printf('<div class="notice notice-warning inline" style="margin:8px 0"><p><strong>%s</strong> %s</p></div>',
-                esc_html__('Test mode:', 'mclb-lane-booking'),
-                sprintf(esc_html__('every day sheet is being sent to %s (not to coaches).', 'mclb-lane-booking'), '<code>' . esc_html($test) . '</code>'));
+                esc_html__('Test mode:', 'mobooking'),
+                sprintf(esc_html__('every day sheet is being sent to %s (not to coaches).', 'mobooking'), '<code>' . esc_html($test) . '</code>'));
         }
         $env = function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production';
         if ($env !== 'production' && $test === '') {
             printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
-                sprintf(esc_html__('This site’s environment is “%s”, so real coach emails are blocked. Set a test recipient to send, or set WP_ENVIRONMENT_TYPE to production on live.', 'mclb-lane-booking'), esc_html($env)));
+                sprintf(esc_html__('This site’s environment is “%s”, so real coach emails are blocked. Set a test recipient to send, or set WP_ENVIRONMENT_TYPE to production on live.', 'mobooking'), esc_html($env)));
         }
         if (!MCLB_Daysheets::as_available()) {
             printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
-                esc_html__('Action Scheduler (via WooCommerce) isn’t available, so scheduled sends won’t run. Manual “Send day sheet” still works.', 'mclb-lane-booking'));
+                esc_html__('Action Scheduler (via WooCommerce) isn’t available, so scheduled sends won’t run. Manual “Send day sheet” still works.', 'mobooking'));
         }
     }
 
@@ -384,15 +412,15 @@ class MCLB_Admin {
 
         // Send log (most recent first).
         $log = array_reverse(MCLB_Daysheets::get_log());
-        echo '<h3 style="margin-top:20px">' . esc_html__('Recent sends', 'mclb-lane-booking') . '</h3>';
+        echo '<h3 style="margin-top:20px">' . esc_html__('Recent sends', 'mobooking') . '</h3>';
         if (empty($log)) {
-            echo '<p>' . esc_html__('No sends logged yet.', 'mclb-lane-booking') . '</p>';
+            echo '<p>' . esc_html__('No sends logged yet.', 'mobooking') . '</p>';
             return;
         }
         echo '<table class="widefat striped" style="max-width:820px"><thead><tr>';
         printf('<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th>',
-            esc_html__('When', 'mclb-lane-booking'), esc_html__('Coach', 'mclb-lane-booking'), esc_html__('For date', 'mclb-lane-booking'),
-            esc_html__('Recipient', 'mclb-lane-booking'), esc_html__('Trigger', 'mclb-lane-booking'), esc_html__('Result', 'mclb-lane-booking'));
+            esc_html__('When', 'mobooking'), esc_html__('Coach', 'mobooking'), esc_html__('For date', 'mobooking'),
+            esc_html__('Recipient', 'mobooking'), esc_html__('Trigger', 'mobooking'), esc_html__('Result', 'mobooking'));
         echo '</tr></thead><tbody>';
         foreach (array_slice($log, 0, 60) as $e) {
             $colour = $e['result'] === 'sent' ? '#1a7f37' : ($e['result'] === 'failed' ? '#b32d2e' : '#8a6d00');
@@ -406,7 +434,7 @@ class MCLB_Admin {
     public function handle_daysheet_preview() {
         // GET request (link in a new tab), so read from $_REQUEST.
         if (!current_user_can('manage_options') || !isset($_REQUEST['_wpnonce']) || !wp_verify_nonce($_REQUEST['_wpnonce'], 'mclb_daysheet_preview')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         $date  = isset($_REQUEST['date']) ? sanitize_text_field(wp_unslash($_REQUEST['date'])) : MCLB_Daysheets::target_date();
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -416,9 +444,9 @@ class MCLB_Admin {
         header('Content-Type: text/html; charset=utf-8');
         echo '<!doctype html><html><head><meta charset="utf-8"><title>Day sheet preview</title><style>body{background:#eef0f2;font-family:sans-serif;margin:0;padding:24px}.pw{max-width:640px;margin:0 auto 28px}.pw .hd{font:13px monospace;color:#444;background:#fff;border:1px solid #ccd;padding:8px 12px;border-radius:6px 6px 0 0}.pw .bd{background:#fff;border:1px solid #ccd;border-top:none;border-radius:0 0 6px 6px;padding:16px}</style></head><body>';
         printf('<p style="max-width:640px;margin:0 auto 16px;color:#333">%s <strong>%s</strong> — %s</p>',
-            esc_html__('Preview for', 'mclb-lane-booking'), esc_html($date), esc_html__('nothing is sent.', 'mclb-lane-booking'));
+            esc_html__('Preview for', 'mobooking'), esc_html($date), esc_html__('nothing is sent.', 'mobooking'));
         if (empty($built)) {
-            echo '<p style="max-width:640px;margin:0 auto">' . esc_html__('No coaches have sessions that day.', 'mclb-lane-booking') . '</p>';
+            echo '<p style="max-width:640px;margin:0 auto">' . esc_html__('No coaches have sessions that day.', 'mobooking') . '</p>';
         }
         foreach ($built as $b) {
             $meta = $b['name'] . ' → ' . ($b['recipient'] ?: '(no recipient)') . ($b['skip'] ? '  [WOULD SKIP: ' . $b['skip'] . ']' : '') . '  |  ' . $b['subject'];
@@ -430,7 +458,7 @@ class MCLB_Admin {
 
     public function handle_daysheet_rotate() {
         if (!current_user_can('manage_options') || !isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'mclb_daysheet_rotate')) {
-            wp_die(esc_html__('Permission denied.', 'mclb-lane-booking'));
+            wp_die(esc_html__('Permission denied.', 'mobooking'));
         }
         MCLB_Daysheet_Token::rotate();
         wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => 'daysheets', 'mclb_rotated' => '1'], admin_url('admin.php')));
@@ -441,37 +469,37 @@ class MCLB_Admin {
         wp_dropdown_pages([
             'name'              => esc_attr($this->name('manage_page_id')),
             'selected'          => (int) $this->val('manage_page_id'),
-            'show_option_none'  => __('— Select a page —', 'mclb-lane-booking'),
+            'show_option_none'  => __('— Select a page —', 'mobooking'),
             'option_none_value' => '0',
         ]);
         $id = (int) $this->val('manage_page_id');
         if ($id) {
-            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url(get_permalink($id)), esc_html__('View', 'mclb-lane-booking'));
+            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url(get_permalink($id)), esc_html__('View', 'mobooking'));
         }
-        printf('<p class="description">%s</p>', esc_html__('Create a page containing just the [mclb_manage] shortcode, then choose it here.', 'mclb-lane-booking'));
+        printf('<p class="description">%s</p>', esc_html__('Create a page containing just the [mclb_manage] shortcode, then choose it here.', 'mobooking'));
     }
 
     public function render_terms_page() {
         wp_dropdown_pages([
             'name'              => esc_attr($this->name('terms_page_id')),
             'selected'          => (int) $this->val('terms_page_id'),
-            'show_option_none'  => __('— Use the WooCommerce terms page —', 'mclb-lane-booking'),
+            'show_option_none'  => __('— Use the WooCommerce terms page —', 'mobooking'),
             'option_none_value' => '0',
         ]);
         $url = MCLB_Settings::terms_page_url();
         if ($url) {
-            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url($url), esc_html__('View', 'mclb-lane-booking'));
+            printf(' <a href="%s" target="_blank" rel="noopener">%s</a>', esc_url($url), esc_html__('View', 'mobooking'));
         }
         printf(
             '<p class="description">%s</p>',
-            esc_html__('A “By booking you agree to our Terms & Conditions” link shows beside the customer grid’s Add to cart. Defaults to the WooCommerce terms page; the line is hidden if no page is set.', 'mclb-lane-booking')
+            esc_html__('A “By booking you agree to our Terms & Conditions” link shows beside the customer grid’s Add to cart. Defaults to the WooCommerce terms page; the line is hidden if no page is set.', 'mobooking')
         );
     }
 
     public function render_hours() {
         $hours = (array) $this->val('hours');
         echo '<table class="widefat striped" style="max-width:560px"><thead><tr>';
-        printf('<th>%s</th><th>%s</th><th>%s</th><th>%s</th>', esc_html__('Day', 'mclb-lane-booking'), esc_html__('Open', 'mclb-lane-booking'), esc_html__('Close', 'mclb-lane-booking'), esc_html__('Closed', 'mclb-lane-booking'));
+        printf('<th>%s</th><th>%s</th><th>%s</th><th>%s</th>', esc_html__('Day', 'mobooking'), esc_html__('Open', 'mobooking'), esc_html__('Close', 'mobooking'), esc_html__('Closed', 'mobooking'));
         echo '</tr></thead><tbody>';
         foreach (MCLB_Settings::weekdays() as $i => $label) {
             $row  = isset($hours[$i]) && is_array($hours[$i]) ? $hours[$i] : ['open' => '', 'close' => '', 'closed' => 0];
@@ -505,9 +533,9 @@ class MCLB_Admin {
         echo '<table class="widefat striped mclb-event-types" style="max-width:640px"><thead><tr>';
         printf(
             '<th>%s</th><th>%s</th><th style="text-align:center">%s</th><th></th>',
-            esc_html__('Label', 'mclb-lane-booking'),
-            esc_html__('Colour', 'mclb-lane-booking'),
-            esc_html__('Show name publicly', 'mclb-lane-booking')
+            esc_html__('Label', 'mobooking'),
+            esc_html__('Colour', 'mobooking'),
+            esc_html__('Show name publicly', 'mobooking')
         );
         echo '</tr></thead><tbody class="mclb-et-rows">';
         $i = 0;
@@ -516,8 +544,8 @@ class MCLB_Admin {
             $i++;
         }
         echo '</tbody></table>';
-        echo '<p><button type="button" class="button mclb-et-add">' . esc_html__('Add type', 'mclb-lane-booking') . '</button></p>';
-        echo '<p class="description">' . esc_html__('Removing a type leaves existing blockouts of that type reading “Unavailable”.', 'mclb-lane-booking') . '</p>';
+        echo '<p><button type="button" class="button mclb-et-add">' . esc_html__('Add type', 'mobooking') . '</button></p>';
+        echo '<p class="description">' . esc_html__('Removing a type leaves existing blockouts of that type reading “Unavailable”.', 'mobooking') . '</p>';
 
         echo '<script type="text/html" id="tmpl-mclb-et-row">';
         $this->event_type_row('__i__', ['slug' => '', 'label' => '', 'color' => MCLB_Event_Types::FALLBACK_COLOR, 'public' => 0]);
@@ -549,7 +577,7 @@ class MCLB_Admin {
             esc_attr($base),
             checked($public, true, false)
         );
-        printf('<td><button type="button" class="button-link mclb-et-remove" style="color:#b32d2e">%s</button></td>', esc_html__('Remove', 'mclb-lane-booking'));
+        printf('<td><button type="button" class="button-link mclb-et-remove" style="color:#b32d2e">%s</button></td>', esc_html__('Remove', 'mobooking'));
         echo '</tr>';
     }
 
@@ -587,19 +615,19 @@ class MCLB_Admin {
     }
 
     private function daysheet_actions() {
-        echo '<h2 style="margin-top:8px">' . esc_html__('Preview &amp; links', 'mclb-lane-booking') . '</h2>';
+        echo '<h2 style="margin-top:8px">' . esc_html__('Preview &amp; links', 'mobooking') . '</h2>';
         // Preview — a GET form (opens the built email(s) in a new tab, never sends).
         printf('<form method="get" action="%s" target="_blank" style="display:inline-block;margin-right:14px">', esc_url(admin_url('admin-post.php')));
         echo '<input type="hidden" name="action" value="mclb_daysheet_preview">';
         wp_nonce_field('mclb_daysheet_preview');
         printf('<input type="date" name="date" value="%s"> ', esc_attr(MCLB_Daysheets::target_date()));
-        printf('<button class="button">%s</button>', esc_html__('Preview (no send)', 'mclb-lane-booking'));
+        printf('<button class="button">%s</button>', esc_html__('Preview (no send)', 'mobooking'));
         echo '</form>';
         // Regenerate link secret — its own POST form with a confirm.
-        printf('<form method="post" action="%s" style="display:inline-block" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Regenerate the link secret? All existing “View my day” links will stop working.', 'mclb-lane-booking')) . '"'));
+        printf('<form method="post" action="%s" style="display:inline-block" onsubmit="return confirm(%s)">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Regenerate the link secret? All existing “View my day” links will stop working.', 'mobooking')) . '"'));
         echo '<input type="hidden" name="action" value="mclb_daysheet_rotate">';
         wp_nonce_field('mclb_daysheet_rotate');
-        printf('<button class="button">%s</button>', esc_html__('Regenerate link secret', 'mclb-lane-booking'));
+        printf('<button class="button">%s</button>', esc_html__('Regenerate link secret', 'mobooking'));
         echo '</form>';
     }
 }

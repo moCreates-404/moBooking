@@ -208,7 +208,7 @@ class MCLB_Closures {
                 'lane_id'    => (int) $ex->lane_id,
                 'from'       => $ex->release_from ? substr((string) $ex->release_from, 0, 5) : '',
                 'actor'      => (string) $ex->actor,
-                'type_label' => $c ? MCLB_Event_Types::admin_label($c->event_type) : __('Blockout', 'mclb-lane-booking'),
+                'type_label' => $c ? MCLB_Event_Types::admin_label($c->event_type) : __('Blockout', 'mobooking'),
             ];
         }
         return $out;

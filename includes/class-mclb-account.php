@@ -45,12 +45,12 @@ class MCLB_Account {
         $new = [];
         foreach ($items as $key => $label) {
             if ($key === 'customer-logout') {
-                $new[self::ENDPOINT] = __('My bookings', 'mclb-lane-booking');
+                $new[self::ENDPOINT] = __('My bookings', 'mobooking');
             }
             $new[$key] = $label;
         }
         if (!isset($new[self::ENDPOINT])) {
-            $new[self::ENDPOINT] = __('My bookings', 'mclb-lane-booking');
+            $new[self::ENDPOINT] = __('My bookings', 'mobooking');
         }
         return $new;
     }
@@ -67,7 +67,7 @@ class MCLB_Account {
 
         $bookings = MCLB_Bookings::for_user($user_id);
         if (empty($bookings)) {
-            echo '<p>' . esc_html__('You have no bookings yet.', 'mclb-lane-booking') . '</p>';
+            echo '<p>' . esc_html__('You have no bookings yet.', 'mobooking') . '</p>';
             return;
         }
 
@@ -79,9 +79,9 @@ class MCLB_Account {
         echo '<table class="woocommerce-orders-table shop_table"><thead><tr>';
         printf(
             '<th>%s</th><th>%s</th><th>%s</th><th></th>',
-            esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mclb-lane-booking')),
-            esc_html__('When', 'mclb-lane-booking'),
-            esc_html__('Status', 'mclb-lane-booking')
+            esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mobooking')),
+            esc_html__('When', 'mobooking'),
+            esc_html__('Status', 'mobooking')
         );
         echo '</tr></thead><tbody>';
 
@@ -101,7 +101,7 @@ class MCLB_Account {
                 self::cancel_button($b->id);
             } elseif ($b->status === MCLB_Bookings::STATUS_CONFIRMED && $hours_out > 0) {
                 /* translators: %d: hours. */
-                printf('<small>%s</small>', esc_html(sprintf(__('Contact us to cancel (within %dh of start)', 'mclb-lane-booking'), $cutoff)));
+                printf('<small>%s</small>', esc_html(sprintf(__('Contact us to cancel (within %dh of start)', 'mobooking'), $cutoff)));
             }
             echo '</td></tr>';
         }
@@ -109,11 +109,11 @@ class MCLB_Account {
     }
 
     private static function cancel_button($booking_id) {
-        printf('<form method="post" action="%s" onsubmit="return confirm(%s);">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking for account credit?', 'mclb-lane-booking')) . '"'));
+        printf('<form method="post" action="%s" onsubmit="return confirm(%s);">', esc_url(admin_url('admin-post.php')), esc_attr('"' . esc_js(__('Cancel this booking for account credit?', 'mobooking')) . '"'));
         echo '<input type="hidden" name="action" value="mclb_self_cancel">';
         printf('<input type="hidden" name="booking_id" value="%d">', (int) $booking_id);
         wp_nonce_field('mclb_self_cancel');
-        printf('<button type="submit" class="button">%s</button>', esc_html__('Cancel for credit', 'mclb-lane-booking'));
+        printf('<button type="submit" class="button">%s</button>', esc_html__('Cancel for credit', 'mobooking'));
         echo '</form>';
     }
 
@@ -122,11 +122,11 @@ class MCLB_Account {
             return;
         }
         $map = [
-            'cancelled'      => ['success', __('Booking cancelled. Your store credit has been emailed to you and can be applied at checkout.', 'mclb-lane-booking')],
-            'refunded'       => ['success', __('Booking cancelled and refunded to your original payment method.', 'mclb-lane-booking')],
-            'refund_pending' => ['success', __('Booking cancelled. Your refund is being processed — please allow a little time for it to appear.', 'mclb-lane-booking')],
-            'toolate'        => ['error', __('Sorry, this booking is too close to its start time to self-cancel. Please contact us.', 'mclb-lane-booking')],
-            'invalid'        => ['error', __('That booking could not be cancelled.', 'mclb-lane-booking')],
+            'cancelled'      => ['success', __('Booking cancelled. Your store credit has been emailed to you and can be applied at checkout.', 'mobooking')],
+            'refunded'       => ['success', __('Booking cancelled and refunded to your original payment method.', 'mobooking')],
+            'refund_pending' => ['success', __('Booking cancelled. Your refund is being processed — please allow a little time for it to appear.', 'mobooking')],
+            'toolate'        => ['error', __('Sorry, this booking is too close to its start time to self-cancel. Please contact us.', 'mobooking')],
+            'invalid'        => ['error', __('That booking could not be cancelled.', 'mobooking')],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg']));
         if (isset($map[$key])) {
@@ -155,7 +155,7 @@ class MCLB_Account {
         //   < cutoff before start → blocked; within refund window & > cutoff → card
         //   refund; otherwise → store-credit coupon. The single seam + the WEB-12
         //   emails fire inside self_cancel() → finish().
-        $label = trim((string) $b->customer_name) ?: __('customer', 'mclb-lane-booking');
+        $label = trim((string) $b->customer_name) ?: __('customer', 'mobooking');
         $res   = MCLB_Cancel::self_cancel($b, $label, ['notify' => true]);
 
         if (!empty($res['blocked'])) {
@@ -201,7 +201,7 @@ class MCLB_Account {
             $coupon->set_email_restrictions([$email]);
         }
         /* translators: 1: resource name, 2: date/time. */
-        $coupon->set_description(sprintf(__('Booking credit — cancelled %1$s (%2$s)', 'mclb-lane-booking'), $b->lane_name, substr($b->starts_at, 0, 16)));
+        $coupon->set_description(sprintf(__('Booking credit — cancelled %1$s (%2$s)', 'mobooking'), $b->lane_name, substr($b->starts_at, 0, 16)));
         $coupon->add_meta_data('_mclb_booking_id', (int) $b->id, true);
         $coupon->add_meta_data('_mclb_credit', 1, true); // explicit credit flag (v1.4.2) for coupon-snapshot detection
         $coupon->save();
@@ -223,11 +223,11 @@ class MCLB_Account {
     public static function email_credit($email, $b, $code, $amount) {
         if (!class_exists('MCLB_Mail')) { return; }
         $money   = class_exists('MCLB_Coaches') ? MCLB_Coaches::money((float) $amount) : number_format((float) $amount, 2);
-        $heading = __('Your booking credit', 'mclb-lane-booking');
-        $body  = '<p>' . esc_html__('Your booking has been cancelled and store credit issued.', 'mclb-lane-booking') . '</p>';
+        $heading = __('Your booking credit', 'mobooking');
+        $body  = '<p>' . esc_html__('Your booking has been cancelled and store credit issued.', 'mobooking') . '</p>';
         $body .= '<p>' . sprintf(
             /* translators: 1: amount, 2: coupon code. */
-            esc_html__('Credit: %1$s — apply the code %2$s at checkout on your next booking.', 'mclb-lane-booking'),
+            esc_html__('Credit: %1$s — apply the code %2$s at checkout on your next booking.', 'mobooking'),
             esc_html($money),
             '<strong>' . esc_html($code) . '</strong>'
         ) . '</p>';
