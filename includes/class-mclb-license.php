@@ -206,6 +206,7 @@ class MCLB_License {
         $legacy_key = trim((string) MCLB_Settings::get('license_key'));
         if ($legacy_key !== '' && empty($s['last_valid'])) {
             $s['last_valid'] = time();
+            $s['legacy_pro'] = true; // pre-tier installs had every feature
         }
         update_option(self::STATE_OPTION, $s, false);
     }

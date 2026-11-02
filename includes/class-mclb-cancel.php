@@ -130,7 +130,7 @@ class MCLB_Cancel {
             $order = wc_get_order((int) $b->order_id);
             if ($order) {
                 /* translators: 1: booking id, 2: coupon code. */
-                $order->add_order_note(sprintf(__('Lane booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mobooking'), (int) $b->id, $credit['code']));
+                $order->add_order_note(sprintf(MCLB_Terms::fill(__('{Resource} booking #%1$d self-cancelled by customer; store-credit coupon %2$s issued.', 'mobooking')), (int) $b->id, $credit['code']));
             }
         }
         $outcome = [

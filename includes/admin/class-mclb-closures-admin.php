@@ -36,11 +36,11 @@ class MCLB_Closures_Admin {
 
     /** Resource label for copy — "Lanes"/"Bays"/… from settings. */
     private function label_plural() {
-        return MCLB_Settings::get('resource_label_plural') ?: 'Lanes';
+        return MCLB_Terms::resource(true);
     }
 
     private function label_singular() {
-        return MCLB_Settings::get('resource_label_singular') ?: 'Lane';
+        return MCLB_Terms::resource();
     }
 
     // ── Write handlers (admin-post, so they redirect cleanly after save) ────────

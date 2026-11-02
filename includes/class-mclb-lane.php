@@ -41,8 +41,8 @@ class MCLB_Lane {
      * Nested under the moBooking menu so lanes, closures and settings sit together.
      */
     public static function register() {
-        $singular = MCLB_Settings::get('resource_label_singular') ?: 'Lane';
-        $plural   = MCLB_Settings::get('resource_label_plural') ?: 'Lanes';
+        $singular = MCLB_Terms::resource();
+        $plural   = MCLB_Terms::resource(true);
 
         register_post_type(self::CPT, [
             'labels' => [

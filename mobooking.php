@@ -41,9 +41,11 @@ require_once MCLB_DIR . 'includes/freemius-init.php';
 // A plain require map, not Composer/PSR-4, so the plugin stays drop-in
 // installable with zero build step. Phases 1+ add their classes to this list.
 require_once MCLB_DIR . 'includes/class-mclb-settings.php';
+require_once MCLB_DIR . 'includes/class-mclb-terms.php';
 require_once MCLB_DIR . 'includes/class-mclb-phone.php';
 require_once MCLB_DIR . 'includes/class-mclb-event-types.php';
 require_once MCLB_DIR . 'includes/class-mclb-license.php';
+require_once MCLB_DIR . 'includes/class-mclb-plan.php';
 require_once MCLB_DIR . 'includes/class-mclb-lane.php';
 require_once MCLB_DIR . 'includes/class-mclb-closures.php';
 require_once MCLB_DIR . 'includes/class-mclb-bookings.php';
@@ -73,6 +75,7 @@ require_once MCLB_DIR . 'includes/admin/class-mclb-closures-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-bookings-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-passes-admin.php';
 require_once MCLB_DIR . 'includes/admin/class-mclb-report.php';
+require_once MCLB_DIR . 'includes/admin/class-mclb-setup.php';
 require_once MCLB_DIR . 'includes/class-mclb-activator.php';
 require_once MCLB_DIR . 'includes/class-mclb-deactivator.php';
 require_once MCLB_DIR . 'includes/class-mclb-plugin.php';

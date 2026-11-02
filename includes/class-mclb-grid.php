@@ -49,12 +49,12 @@ class MCLB_Grid {
             'restUrl'      => esc_url_raw(rest_url(self::REST_NS . '/availability')),
             'cartUrl'      => esc_url_raw(rest_url(self::REST_NS . '/cart')), // Phase 4 implements the handler
             'nonce'        => wp_create_nonce('wp_rest'),
-            'coachEnabled' => (int) MCLB_Settings::get('enable_coach_requests') === 1,
+            'coachEnabled' => (MCLB_Plan::is_pro() && (int) MCLB_Settings::get('enable_coach_requests') === 1),
             'canBook'      => MCLB_License::can_book(),
             'currency'     => $symbol,
             'labels'       => [
-                'singular' => MCLB_Settings::get('resource_label_singular') ?: 'Lane',
-                'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes',
+                'singular' => MCLB_Terms::resource(),
+                'plural'   => MCLB_Terms::resource(true),
             ],
             'i18n'         => [
                 'addToCart'  => __('Add to cart', 'mobooking'),
@@ -63,8 +63,8 @@ class MCLB_Grid {
                 'total'      => __('Total', 'mobooking'),
                 'slot'       => __('slot', 'mobooking'),
                 'slots'      => __('slots', 'mobooking'),
-                'coach'      => __('Request a coach', 'mobooking'),
-                'coachNote'  => __('Anything the coach should know? (optional)', 'mobooking'),
+                'coach'      => MCLB_Terms::fill(__('Request a {staff}', 'mobooking')),
+                'coachNote'  => MCLB_Terms::fill(__('Anything the {staff} should know? (optional)', 'mobooking')),
                 'cartSoon'   => __('Could not add to cart — please try again.', 'mobooking'),
                 'demo'       => MCLB_License::demo_message(),
                 'instrTouch' => __('Tap a time, then tap it again to select it. Choose as many as you need, then Add to cart.', 'mobooking'),
@@ -83,8 +83,8 @@ class MCLB_Grid {
         wp_enqueue_script(self::HANDLE);
 
         $today  = wp_date('Y-m-d');
-        $labels = ['singular' => MCLB_Settings::get('resource_label_singular') ?: 'Lane',
-                   'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes'];
+        $labels = ['singular' => MCLB_Terms::resource(),
+                   'plural'   => MCLB_Terms::resource(true)];
 
         ob_start();
         ?>
@@ -106,7 +106,7 @@ class MCLB_Grid {
           <p class="mclb-grid__datelabel" aria-live="polite"><?php echo esc_html(self::date_label($today)); ?></p>
           <p class="mclb-grid__instr"><?php esc_html_e('Click a time to select it, or drag to select several.', 'mobooking'); ?></p>
 
-          <p class="mclb-grid__hint" aria-hidden="true" hidden><?php esc_html_e('Swipe for more lanes', 'mobooking'); ?> &#8594;</p>
+          <p class="mclb-grid__hint" aria-hidden="true" hidden><?php echo esc_html(MCLB_Terms::fill(__('Swipe for more {resources}', 'mobooking'))); ?> &#8594;</p>
           <div class="mclb-grid__scroll">
             <div class="mclb-grid" role="grid"><?php echo self::render_grid_html($type, $today); // phpcs:ignore WordPress.Security.EscapeOutput -- built with escaping below. ?></div>
             <div class="mclb-grid__fade" aria-hidden="true"></div>
@@ -125,9 +125,9 @@ class MCLB_Grid {
             <h3 class="mclb-selection__title"><?php echo esc_html($labels['singular']); ?> <?php esc_html_e('selection', 'mobooking'); ?></h3>
             <ul class="mclb-selection__list"></ul>
             <p class="mclb-selection__total"></p>
-            <?php if ((int) MCLB_Settings::get('enable_coach_requests') === 1) : ?>
-              <label class="mclb-coach"><input type="checkbox" class="mclb-coach__toggle"> <?php esc_html_e('Request a coach', 'mobooking'); ?></label>
-              <textarea class="mclb-coach__note" rows="2" hidden placeholder="<?php esc_attr_e('Anything the coach should know? (optional)', 'mobooking'); ?>"></textarea>
+            <?php if ((MCLB_Plan::is_pro() && (int) MCLB_Settings::get('enable_coach_requests') === 1)) : ?>
+              <label class="mclb-coach"><input type="checkbox" class="mclb-coach__toggle"> <?php echo esc_html(MCLB_Terms::fill(__('Request a {staff}', 'mobooking'))); ?></label>
+              <textarea class="mclb-coach__note" rows="2" hidden placeholder="<?php echo esc_attr(MCLB_Terms::fill(__('Anything the {staff} should know? (optional)', 'mobooking'))); ?>"></textarea>
             <?php endif; ?>
             <button type="button" class="mclb-add-to-cart" disabled><?php esc_html_e('Add to cart', 'mobooking'); ?></button>
             <?php $mclb_terms = MCLB_Settings::terms_page_url(); ?>

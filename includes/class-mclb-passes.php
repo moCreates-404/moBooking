@@ -247,7 +247,7 @@ class MCLB_Passes {
     /** Admin-only ± adjustment with a reason. */
     public static function adjust($pass_id, $delta, $reason, $actor) {
         $pass = self::get($pass_id);
-        if (!$pass) { return new WP_Error('mclb_pass_nf', __('Pass not found.', 'mobooking')); }
+        if (!$pass) { return new WP_Error('mclb_pass_nf', MCLB_Terms::fill(__('{Pass} not found.', 'mobooking'))); }
         $delta = round((float) $delta, 2);
         if ($delta === 0.0) { return new WP_Error('mclb_pass_zero', __('Enter a non-zero adjustment.', 'mobooking')); }
         if (trim((string) $reason) === '') { return new WP_Error('mclb_pass_reason', __('A reason is required.', 'mobooking')); }
@@ -261,7 +261,7 @@ class MCLB_Passes {
     /** Void a pass: zero its balance + mark void. */
     public static function void($pass_id, $actor, $reason = '') {
         $pass = self::get($pass_id);
-        if (!$pass || (string) $pass->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mobooking')); }
+        if (!$pass || (string) $pass->status !== 'active') { return new WP_Error('mclb_pass_nf', MCLB_Terms::fill(__('{Pass} not found or not active.', 'mobooking'))); }
         $bal = self::balance((int) $pass_id);
         if ($bal > 0) { self::add_row((int) $pass_id, 'void', -1 * $bal, ['actor' => $actor, 'reason' => $reason]); }
         self::set_status((int) $pass_id, 'void');
@@ -271,7 +271,7 @@ class MCLB_Passes {
     /** Void + reissue: new pass carries the voided balance. Returns the new pass. */
     public static function reissue($pass_id, $actor) {
         $old = self::get($pass_id);
-        if (!$old || (string) $old->status !== 'active') { return new WP_Error('mclb_pass_nf', __('Pass not found or not active.', 'mobooking')); }
+        if (!$old || (string) $old->status !== 'active') { return new WP_Error('mclb_pass_nf', MCLB_Terms::fill(__('{Pass} not found or not active.', 'mobooking'))); }
         $bal = self::balance((int) $pass_id);
         $new = self::issue([
             'holder_name' => $old->holder_name, 'holder_email' => $old->holder_email, 'holder_phone' => $old->holder_phone,
@@ -567,19 +567,19 @@ class MCLB_Passes {
         $hh   = rtrim(rtrim(number_format((float) $hours, 2), '0'), '.');
         $bb   = rtrim(rtrim(number_format((float) $bal, 2), '0'), '.');
         $n    = max(1, (int) $count);
-        $heading = __('Your prepaid pass', 'mobooking');
+        $heading = MCLB_Terms::fill(__('Your prepaid {pass}', 'mobooking'));
         if ($kind === 'returned') {
             $body = ($n > 1)
                 /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
-                ? '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                ? '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('%1$sh have been returned to your {pass} %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'))), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
                 /* translators: 1: hours, 2: pass code, 3: balance. */
-                : '<p>' . sprintf(esc_html__('%1$sh have been returned to your pass %2$s. Balance: %3$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+                : '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('%1$sh have been returned to your {pass} %2$s. Balance: %3$sh.', 'mobooking'))), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
         } else {
             $body = ($n > 1)
                 /* translators: 1: hours, 2: pass code, 3: number of sessions, 4: balance. */
-                ? '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
+                ? '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('%1$sh used from your {pass} %2$s across %3$d sessions. Balance: %4$sh.', 'mobooking'))), esc_html($hh), esc_html($pass->code), $n, esc_html($bb)) . '</p>'
                 /* translators: 1: hours, 2: pass code, 3: balance. */
-                : '<p>' . sprintf(esc_html__('%1$sh used from your pass %2$s. Balance: %3$sh.', 'mobooking'), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
+                : '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('%1$sh used from your {pass} %2$s. Balance: %3$sh.', 'mobooking'))), esc_html($hh), esc_html($pass->code), esc_html($bb)) . '</p>';
         }
         if ($n > 1) {
             $dates = self::booking_dates($booking_ids);
@@ -589,7 +589,7 @@ class MCLB_Passes {
             }
         }
         if ($pass->expires_at) {
-            $body .= '<p style="color:#666;">' . sprintf(esc_html__('Pass expires %s (use it to BOOK before then; your session can be later).', 'mobooking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
+            $body .= '<p style="color:#666;">' . sprintf(esc_html(MCLB_Terms::fill(__('{Pass} expires %s (use it to BOOK before then; your session can be later).', 'mobooking'))), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
         }
         MCLB_Mail::send($pass->holder_email, $heading . ' — ' . (wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES) ?: 'Cricketers Club'), $body, [
             'heading' => $heading, 'branded' => true, 'tag' => 'pass-balance',

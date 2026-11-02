@@ -34,6 +34,7 @@ class MCLB_Plugin {
         add_action('admin_init', ['MCLB_Settings', 'register']);
 
         MCLB_License::init(); // admin licence notices
+        MCLB_Plan::init();    // Essentials / Pro gating
 
         // Data subsystems.
         MCLB_Lane::init();
@@ -70,6 +71,7 @@ class MCLB_Plugin {
             new MCLB_Bookings_Admin();
             new MCLB_Passes_Admin();
             new MCLB_Report();
+            new MCLB_Setup();
         }
 
         add_action('wp_head', [$this, 'output_css_tokens'], 20);

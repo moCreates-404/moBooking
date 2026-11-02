@@ -32,7 +32,7 @@ class MCLB_Daysheets {
     }
 
     // ── Settings accessors ────────────────────────────────────────────────────
-    private static function on()        { return (int) MCLB_Settings::get('daysheet_enabled') === 1; }
+    private static function on()        { return MCLB_Plan::is_pro() && (int) MCLB_Settings::get('daysheet_enabled') === 1; }
     private static function send_time() { $t = MCLB_Settings::get('daysheet_send_time'); return preg_match('/^\d{2}:\d{2}$/', (string) $t) ? $t : '19:00'; }
     private static function target()    { return MCLB_Settings::get('daysheet_target') === 'today' ? 'today' : 'tomorrow'; }
     private static function names()     { $n = MCLB_Settings::get('daysheet_names'); return in_array($n, ['full', 'first_initial', 'none'], true) ? $n : 'full'; }
@@ -268,7 +268,7 @@ class MCLB_Daysheets {
             if ($partial) {
                 $ls    = new DateTimeImmutable((string) $r->starts_at, $tz);
                 $le    = new DateTimeImmutable((string) $r->ends_at, $tz);
-                $time .= '<br><span style="color:#888;font-size:12px;font-weight:400;">' . esc_html(sprintf(__('lane %s', 'mobooking'), wp_date($tf, $ls->getTimestamp()) . ' – ' . wp_date($tf, $le->getTimestamp()))) . '</span>';
+                $time .= '<br><span style="color:#888;font-size:12px;font-weight:400;">' . esc_html(sprintf(MCLB_Terms::fill(__('{resource} %s', 'mobooking')), wp_date($tf, $ls->getTimestamp()) . ' – ' . wp_date($tf, $le->getTimestamp()))) . '</span>';
             }
             $customer = esc_html(self::format_name($r->customer_name));
             // Phone follows the name-visibility setting (shown only when a name is).
@@ -297,7 +297,7 @@ class MCLB_Daysheets {
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;width:100%;margin-bottom:18px;">
     <tr>
       <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Time', 'mobooking'); ?></th>
-      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php echo esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane'); ?></th>
+      <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php echo esc_html(MCLB_Terms::resource()); ?></th>
       <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Customer', 'mobooking'); ?></th>
       <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Duration', 'mobooking'); ?></th>
       <th <?php echo $th; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e('Note', 'mobooking'); ?></th>
@@ -323,7 +323,7 @@ class MCLB_Daysheets {
             list($cs, $ce) = MCLB_Bookings::coach_window($r->starts_at, $r->ends_at, $r->coach_starts_at, $r->coach_ends_at);
             $s        = new DateTimeImmutable((string) $cs, $tz);
             $e        = new DateTimeImmutable((string) $ce, $tz);
-            $lane_t   = $partial ? ('  (' . sprintf(__('lane %s', 'mobooking'), wp_date($tf, (new DateTimeImmutable((string) $r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $r->ends_at, $tz))->getTimestamp())) . ')') : '';
+            $lane_t   = $partial ? ('  (' . sprintf(MCLB_Terms::fill(__('{resource} %s', 'mobooking')), wp_date($tf, (new DateTimeImmutable((string) $r->starts_at, $tz))->getTimestamp()) . ' – ' . wp_date($tf, (new DateTimeImmutable((string) $r->ends_at, $tz))->getTimestamp())) . ')') : '';
             $customer = self::format_name($r->customer_name);
             $phone    = ($customer !== '' && $r->customer_phone) ? MCLB_Phone::format_au($r->customer_phone) : '';
             $out     .= wp_date($tf, $s->getTimestamp()) . ' – ' . wp_date($tf, $e->getTimestamp()) . $lane_t

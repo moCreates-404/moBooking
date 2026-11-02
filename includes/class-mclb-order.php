@@ -143,7 +143,7 @@ class MCLB_Order {
         $item = $order->get_item((int) $b->order_item_id);
         $when = MCLB_Cart::when_label($b->starts_at, $b->ends_at);
         if ($item) {
-            $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking');
+            $res_label = MCLB_Terms::resource();
             $item->update_meta_data('_mclb_lane_id', (int) $b->lane_id);
             $item->update_meta_data($res_label, (string) $b->lane_name);
             $item->update_meta_data(__('When', 'mobooking'), $when);

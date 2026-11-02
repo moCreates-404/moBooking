@@ -27,7 +27,7 @@ class MCLB_Passes_Admin {
     }
 
     public function menu() {
-        add_submenu_page(MCLB_Admin::PAGE, __('Passes', 'mobooking'), __('Passes', 'mobooking'), 'manage_options', self::SLUG, [$this, 'render'], 3);
+        add_submenu_page(MCLB_Admin::PAGE, MCLB_Terms::fill(__('{Passes}', 'mobooking')), MCLB_Terms::fill(__('{Passes}', 'mobooking')), 'manage_options', self::SLUG, [$this, 'render'], 3);
     }
 
     private function base_url() { return admin_url('admin.php?page=' . self::SLUG); }
@@ -101,8 +101,8 @@ class MCLB_Passes_Admin {
     }
 
     private function email_code($pass) {
-        $heading = __('Your prepaid pass', 'mobooking');
-        $body  = '<p>' . sprintf(esc_html__('Your prepaid pass code is %s.', 'mobooking'), '<strong>' . esc_html($pass->code) . '</strong>') . '</p>';
+        $heading = MCLB_Terms::fill(__('Your prepaid {pass}', 'mobooking'));
+        $body  = '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('Your prepaid {pass} code is %s.', 'mobooking'))), '<strong>' . esc_html($pass->code) . '</strong>') . '</p>';
         $body .= '<p>' . sprintf(esc_html__('Balance: %sh.', 'mobooking'), esc_html(rtrim(rtrim(number_format((float) MCLB_Passes::balance((int) $pass->id), 2), '0'), '.'))) . '</p>';
         if ($pass->expires_at) {
             $body .= '<p style="color:#666;">' . sprintf(esc_html__('Use it to BOOK before %s — your sessions can be later.', 'mobooking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
@@ -117,7 +117,7 @@ class MCLB_Passes_Admin {
     public function render() {
         if (!current_user_can('manage_options')) { return; }
         $view = isset($_GET['pass']) ? absint($_GET['pass']) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-        echo '<div class="wrap"><h1>' . esc_html__('Passes', 'mobooking') . '</h1>';
+        echo '<div class="wrap"><h1>' . esc_html(MCLB_Terms::fill(__('{Passes}', 'mobooking'))) . '</h1>';
         $this->notice();
         if ($view) { $this->render_one($view); echo '</div>'; return; }
         $this->issue_form();
@@ -126,20 +126,20 @@ class MCLB_Passes_Admin {
     }
 
     private function issue_form() {
-        echo '<h2>' . esc_html__('Issue a pass', 'mobooking') . '</h2>';
-        echo '<p class="description">' . esc_html__('Take payment on the Square POS first, then issue the pass and record the POS reference. The code shows once below — copy it or email it to the holder.', 'mobooking') . '</p>';
+        echo '<h2>' . esc_html(MCLB_Terms::fill(__('Issue a {pass}', 'mobooking'))) . '</h2>';
+        echo '<p class="description">' . esc_html(MCLB_Terms::fill(__('Take payment at your counter or POS first, then issue the {pass} and record the receipt or POS reference. The code shows once below — copy it or email it to the holder.', 'mobooking'))) . '</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="mclb_pass_issue">';
         wp_nonce_field('mclb_pass_issue');
         echo '<table class="form-table"><tbody>';
         printf('<tr><th>%s</th><td><input type="text" name="holder_name" class="regular-text"></td></tr>', esc_html__('Holder name', 'mobooking'));
         printf('<tr><th>%s</th><td><input type="email" name="holder_email" class="regular-text"> <input type="tel" name="holder_phone" placeholder="%s"></td></tr>', esc_html__('Email / phone', 'mobooking'), esc_attr__('Phone', 'mobooking'));
-        printf('<tr><th>%s</th><td><input type="number" name="hours" min="1" step="1" required style="width:90px"> %s</td></tr>', esc_html__('Hours', 'mobooking'), esc_html__('whole lane hours', 'mobooking'));
+        printf('<tr><th>%s</th><td><input type="number" name="hours" min="1" step="1" required style="width:90px"> %s</td></tr>', esc_html__('Hours', 'mobooking'), esc_html(MCLB_Terms::fill(__('whole {resource} hours', 'mobooking'))));
         printf('<tr><th>%s</th><td><input type="number" name="expiry_months" min="0" step="1" value="%d" style="width:90px"> %s</td></tr>', esc_html__('Expiry', 'mobooking'), (int) MCLB_Passes::default_expiry_months(), esc_html__('months (0 = never)', 'mobooking'));
-        printf('<tr><th>%s</th><td><input type="text" name="pos_ref" class="regular-text" required placeholder="%s"></td></tr>', esc_html__('POS receipt / reference', 'mobooking'), esc_attr__('Square sale ID / receipt #', 'mobooking'));
+        printf('<tr><th>%s</th><td><input type="text" name="pos_ref" class="regular-text" required placeholder="%s"></td></tr>', esc_html__('POS receipt / reference', 'mobooking'), esc_attr__('POS sale ID / receipt #', 'mobooking'));
         printf('<tr><th>%s</th><td><input type="text" name="note" class="large-text"></td></tr>', esc_html__('Note', 'mobooking'));
         printf('<tr><th>%s</th><td><label><input type="checkbox" name="email_code" value="1" checked> %s</label></td></tr>', esc_html__('Email the code', 'mobooking'), esc_html__('to the holder (if an email is set)', 'mobooking'));
         echo '</tbody></table>';
-        submit_button(__('Issue pass', 'mobooking'));
+        submit_button(MCLB_Terms::fill(__('Issue {pass}', 'mobooking')));
         echo '</form><hr>';
     }
 
@@ -159,7 +159,7 @@ class MCLB_Passes_Admin {
         echo '<table class="widefat striped"><thead><tr>';
         foreach (['Code', 'Holder', 'Balance', 'Issued', 'Status', 'Expires', 'POS ref', ''] as $h) { printf('<th>%s</th>', esc_html($h)); }
         echo '</tr></thead><tbody>';
-        if (!$rows) { echo '<tr><td colspan="8">' . esc_html__('No passes.', 'mobooking') . '</td></tr>'; }
+        if (!$rows) { echo '<tr><td colspan="8">' . esc_html(MCLB_Terms::fill(__('No {passes}.', 'mobooking'))) . '</td></tr>'; }
         foreach ((array) $rows as $r) {
             $bal = MCLB_Passes::balance((int) $r->id);
             printf(
@@ -181,9 +181,9 @@ class MCLB_Passes_Admin {
 
     private function render_one($id) {
         $p = MCLB_Passes::get($id);
-        if (!$p) { echo '<p>' . esc_html__('Pass not found.', 'mobooking') . '</p>'; return; }
+        if (!$p) { echo '<p>' . esc_html(MCLB_Terms::fill(__('{Pass} not found.', 'mobooking'))) . '</p>'; return; }
         $bal = MCLB_Passes::balance((int) $p->id);
-        printf('<p><a href="%s">&larr; %s</a></p>', esc_url($this->base_url()), esc_html__('All passes', 'mobooking'));
+        printf('<p><a href="%s">&larr; %s</a></p>', esc_url($this->base_url()), esc_html(MCLB_Terms::fill(__('All {passes}', 'mobooking'))));
         echo '<h2><code>' . esc_html($p->code) . '</code> — ' . esc_html($this->hrs($bal)) . ' ' . esc_html__('available', 'mobooking') . '</h2>';
         echo '<p>' . esc_html(sprintf('%s · %s · %s', $p->holder_name ?: '—', $p->holder_email ?: '—', $p->holder_phone ?: '—')) . '</p>';
         echo '<p>' . esc_html(sprintf(__('Issued %1$s · status %2$s · expires %3$s · POS %4$s · by %5$s', 'mobooking'),
@@ -197,7 +197,7 @@ class MCLB_Passes_Admin {
             submit_button(__('Apply adjustment', 'mobooking'), 'secondary', '', false);
             echo '</form>';
             // Void + reissue
-            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline" onsubmit="return confirm(\'' . esc_js(__('Void this pass? The code stops working immediately.', 'mobooking')) . '\')"><input type="hidden" name="action" value="mclb_pass_void"><input type="hidden" name="pass_id" value="' . (int) $p->id . '">';
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline" onsubmit="return confirm(\'' . esc_js(MCLB_Terms::fill(__('Void this {pass}? The code stops working immediately.', 'mobooking'))) . '\')"><input type="hidden" name="action" value="mclb_pass_void"><input type="hidden" name="pass_id" value="' . (int) $p->id . '">';
             wp_nonce_field('mclb_pass_void'); submit_button(__('Void', 'mobooking'), 'delete', '', false); echo '</form> ';
             echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline" onsubmit="return confirm(\'' . esc_js(__('Void this code and issue a new one with the same balance?', 'mobooking')) . '\')"><input type="hidden" name="action" value="mclb_pass_reissue"><input type="hidden" name="pass_id" value="' . (int) $p->id . '">';
             wp_nonce_field('mclb_pass_reissue'); submit_button(__('Void + reissue', 'mobooking'), 'secondary', '', false); echo '</form>';
@@ -228,10 +228,10 @@ class MCLB_Passes_Admin {
         $err  = isset($_GET['mclb_err']) ? sanitize_text_field(wp_unslash($_GET['mclb_err'])) : '';
         // phpcs:enable
         $map = [
-            'issued'   => ['success', sprintf(__('Pass issued: %s — copy it or share it with the holder.', 'mobooking'), $code)],
+            'issued'   => ['success', sprintf(MCLB_Terms::fill(__('{Pass} issued: %s — copy it or share it with the holder.', 'mobooking')), $code)],
             'reissued' => ['success', sprintf(__('Reissued. New code: %s (old code voided).', 'mobooking'), $code)],
             'adjusted' => ['success', __('Balance adjusted.', 'mobooking')],
-            'voided'   => ['success', __('Pass voided.', 'mobooking')],
+            'voided'   => ['success', MCLB_Terms::fill(__('{Pass} voided.', 'mobooking'))],
             'err'      => ['error', $err !== '' ? $err : __('Something went wrong.', 'mobooking')],
         ];
         if (isset($map[$key])) { printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($map[$key][0]), esc_html($map[$key][1])); }

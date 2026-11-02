@@ -155,7 +155,7 @@ class MCLB_Emails {
         $rows = MCLB_Bookings::for_order((int) $order_id);
         $wanted = array_filter($rows, static function ($r) { return (int) $r->coach_requested === 1; });
         if (empty($wanted)) { return; }
-        $html = '<p>' . esc_html__('An online booking requested a coach:', 'mobooking') . '</p>';
+        $html = '<p>' . esc_html(MCLB_Terms::fill(__('An online booking requested a {staff}:', 'mobooking'))) . '</p>';
         foreach ($wanted as $b) {
             $html .= self::booking_table($b);
             if (trim((string) $b->coach_request_note) !== '') {
@@ -163,7 +163,7 @@ class MCLB_Emails {
             }
         }
         $first = reset($wanted);
-        self::staff_alert(__('Coach requested on an online booking', 'mobooking'), $html, $first, 'alert-coach-request');
+        self::staff_alert(MCLB_Terms::fill(__('{Staff} requested on an online booking', 'mobooking')), $html, $first, 'alert-coach-request');
     }
 
     /** Optional alert for a staff-created manual booking (default off). */
@@ -262,7 +262,7 @@ class MCLB_Emails {
             $hh = rtrim(rtrim(number_format((float) $r['hours'], 2), '0'), '.');
             $bb = rtrim(rtrim(number_format((float) $r['balance'], 2), '0'), '.');
             $exp = !empty($r['expires_at']) ? ' ' . sprintf(__('(expires %s)', 'mobooking'), wp_date('j M Y', strtotime((string) $r['expires_at']))) : '';
-            $html .= '<p style="font-weight:bold;">' . esc_html(sprintf(__('%1$s hours returned to pass %2$s (balance %3$sh%4$s).', 'mobooking'), $hh, $r['code'], $bb, $exp)) . '</p>';
+            $html .= '<p style="font-weight:bold;">' . esc_html(sprintf(MCLB_Terms::fill(__('%1$s hours returned to {pass} %2$s (balance %3$sh%4$s).', 'mobooking')), $hh, $r['code'], $bb, $exp)) . '</p>';
         }
         // Guest email-link cancels: a safety line in case a link was used by someone
         // other than the booker (v1.4.3).
@@ -480,7 +480,7 @@ class MCLB_Emails {
         $cell = 'style="padding:6px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#222;"';
         $lbl  = 'style="padding:6px 10px;border-bottom:1px solid #e5e5e5;font-size:14px;color:#666;white-space:nowrap;"';
         $rows = '';
-        $rows .= '<tr><td ' . $lbl . '>' . esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane') . '</td><td ' . $cell . '>' . esc_html($b->lane_name) . '</td></tr>';
+        $rows .= '<tr><td ' . $lbl . '>' . esc_html(MCLB_Terms::resource()) . '</td><td ' . $cell . '>' . esc_html($b->lane_name) . '</td></tr>';
         $rows .= '<tr><td ' . $lbl . '>' . esc_html__('When', 'mobooking') . '</td><td ' . $cell . '>' . esc_html(self::when_label($b->starts_at, $b->ends_at)) . '</td></tr>';
         if ((int) $b->assigned_coach_id > 0 && class_exists('MCLB_Coaches')) {
             $rows .= '<tr><td ' . $lbl . '>' . esc_html(MCLB_Coaches::label_singular()) . '</td><td ' . $cell . '>' . esc_html(MCLB_Coaches::label((int) $b->assigned_coach_id)) . '</td></tr>';

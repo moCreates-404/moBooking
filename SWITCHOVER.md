@@ -26,8 +26,9 @@ Do it at a quiet time — not during a busy booking window.
 2. `includes/freemius-init.php` filled in with the real Product ID and Public
    Key, release zip built from a tag, and the same zip uploaded to Freemius
    as a release.
-3. A complimentary **lifetime** licence for Cricketers Club issued in Freemius
-   (keep the key handy).
+3. A complimentary **Pro lifetime** licence for Cricketers Club issued in
+   Freemius (keep the key handy). It must be **Pro** — an Essentials key would
+   hide their coaches, roster, day sheets and passes.
 4. Tested on staging first (same steps below).
 5. Fresh backup of the live site (files + database). phpMyAdmin is blocked on
    the GoDaddy delegate login, so use a backup plugin or GoDaddy's backup tool.
@@ -65,6 +66,8 @@ Do it at a quiet time — not during a busy booking window.
      selected through to the cart. No need to pay.
    - moBooking → Add booking works for staff.
    - The coach roster / day sheets page loads.
+   - Settings → General → Wording still says Lane / Coach, and the License tab
+     shows **Plan: Pro**. No "Welcome to moBooking" setup notice appears.
 
 8. **Remove the unlock line** from `wp-config.php`. Reload the License tab — it
    should still say Active.

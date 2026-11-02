@@ -61,8 +61,8 @@ class MCLB_Report {
         if ($to < $from) { $to = $from; }
 
         $labels = [
-            'singular' => MCLB_Settings::get('resource_label_singular') ?: 'Lane',
-            'plural'   => MCLB_Settings::get('resource_label_plural') ?: 'Lanes',
+            'singular' => MCLB_Terms::resource(),
+            'plural'   => MCLB_Terms::resource(true),
         ];
 
         echo '<div class="wrap"><h1>' . esc_html(sprintf(__('%s utilisation', 'mobooking'), $labels['singular'])) . '</h1>';

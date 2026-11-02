@@ -49,6 +49,17 @@ after the repo/ref and installs as a second, duplicate copy of the plugin.
   Licence status, renewal date and a "Manage licence" button on the License tab.
 * 14-day grace period for expired/missing licences, with admin warnings,
   before new bookings pause. Upgrading installs get 14 days to activate.
+* Terminology: everything customers and staff read uses this site's own words
+  (Court/Lane/Bay/Room…, Coach/Instructor/Trainer…, Pass/Pack…). New installs
+  start neutral; existing installs keep "Lane" / "Coach" automatically.
+* Setup wizard on first activation: what's booked (with presets), types, staff
+  requests, price, booking steps, opening hours, and the first units. Re-run it
+  any time from Settings.
+* Plans: Essentials and Pro. Pro adds staff requests/assignment/roster, day
+  sheets, prepaid passes, recurring bookings and the report. Installs from
+  before plans existed keep every feature.
+* New installs auto-create their WooCommerce anchor product (no hard-coded ID).
+* Removed Cricketers Club / Square-specific wording from admin screens.
 * Uninstall now KEEPS all data by default. Tick License -> "Delete data on
   uninstall" to wipe bookings, passes, closures and settings on delete.
 

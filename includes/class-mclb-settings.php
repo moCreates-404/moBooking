@@ -46,24 +46,30 @@ class MCLB_Settings {
     }
 
     /**
-     * Editable defaults = Cricketers Club's real setup (the first install).
+     * Editable defaults. Terminology is neutral; most operational values still
+     * mirror the first install and are overwritten by the setup wizard.
      * Nothing here is a hard constant — every value is overridable in settings.
      */
     public static function defaults() {
         return [
             'license_key'             => '', // legacy pre-Freemius stub key; read once by MCLB_License to seed upgrade grace
             'delete_data_on_uninstall' => 0,
-            'resource_label_singular' => 'Lane',
-            'resource_label_plural'   => 'Lanes',
-            'resource_types'          => "Net\nBowling Machine",
+            // Terminology: neutral for new installs (the setup wizard picks real
+            // ones). Existing installs keep theirs — see maybe_migrate().
+            'resource_label_singular' => MCLB_Terms::DEFAULTS['resource_label_singular'],
+            'resource_label_plural'   => MCLB_Terms::DEFAULTS['resource_label_plural'],
+            'resource_types'          => "Standard",
             'price_per_hour'          => '35',
             'booking_increment'       => 60, // minutes
             'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
             'booking_window_days'     => 14, // how many days ahead CUSTOMERS can book (0 = no limit); staff never limited
             'booking_window_note'     => '', // appended to the "open N days ahead" message (e.g. a phone number for later dates)
             'enable_coach_requests'   => 0,  // gates the Phase 3 "Request a coach" UI; off by default
-            'staff_label_singular'    => 'Coach',  // what an assignable staff member is called (Coach, Pro, Instructor…)
-            'staff_label_plural'      => 'Coaches',
+            'staff_label_singular'    => MCLB_Terms::DEFAULTS['staff_label_singular'], // what an assignable staff member is called (Coach, Pro, Instructor…)
+            'staff_label_plural'      => MCLB_Terms::DEFAULTS['staff_label_plural'],
+            'pass_label_singular'     => MCLB_Terms::DEFAULTS['pass_label_singular'],  // prepaid credit (Pass, Pack, Bundle…)
+            'pass_label_plural'       => MCLB_Terms::DEFAULTS['pass_label_plural'],
+            'setup_complete'          => 0,  // first-run wizard finished (existing installs are marked done on upgrade)
             'manage_page_id'          => 0,  // page holding [mclb_manage] (the staff calendar); 0 = none set
             'terms_page_id'           => 0,  // T&Cs page shown by the customer grid; 0 = fall back to the WooCommerce terms page (hidden if neither resolves)
             // Coach day sheets (Phase 7d)
@@ -74,7 +80,7 @@ class MCLB_Settings {
             'daysheet_cc'             => '',
             'daysheet_test_recipient' => '',          // when set, ALL sheets go here (dev safety)
             'daysheet_expiry_hours'   => 48,
-            'wc_product_id'           => 4707, // hidden virtual "anchor" product WC cart items hang on (CCWA's; auto-provisioned elsewhere)
+            'wc_product_id'           => 0, // hidden virtual "anchor" product WC cart items hang on; 0 = auto-provision on first booking
             'self_cancel_hours'       => 24, // logged-in self-cancel cutoff before booking start
             'refund_window_hours'     => 24, // cancel within this long after placing (and >cutoff before start) = real refund, else credit
             'credit_expiry_days'      => 30, // store-credit coupon lifetime in days (0 = never); set on issue (v1.4.3)
@@ -172,6 +178,8 @@ class MCLB_Settings {
      * keeps it off. Runs once, guarded by an option. No DB-version bump needed.
      */
     public static function maybe_migrate() {
+        self::maybe_pin_legacy_terms();
+
         if (get_option('mclb_alert_cancel_migrated')) {
             return;
         }
@@ -182,6 +190,39 @@ class MCLB_Settings {
             update_option(MCLB_OPTION, $o);
         }
         update_option('mclb_alert_cancel_migrated', 1);
+    }
+
+    /**
+     * One-time (v1.6.0): defaults changed from Cricketers Club's wording
+     * (Lane/Coach) to neutral terms. An install that already existed but never
+     * saved a label would silently switch wording, so pin the old values for
+     * any label it doesn't have, and mark its setup as complete so the wizard
+     * never appears on a live site. Fresh installs have no option yet and get
+     * the neutral defaults plus the wizard.
+     */
+    private static function maybe_pin_legacy_terms() {
+        if (get_option('mclb_terms_migrated')) {
+            return;
+        }
+        $o = get_option(MCLB_OPTION, null);
+        if (is_array($o)) {
+            foreach (MCLB_Terms::LEGACY as $k => $v) {
+                if (!isset($o[$k]) || trim((string) $o[$k]) === '') {
+                    $o[$k] = $v;
+                }
+            }
+            if (!array_key_exists('resource_types', $o)) {
+                $o['resource_types'] = "Net\nBowling Machine";
+            }
+            // Pre-1.6 default anchor product (Cricketers Club). Only pinned when
+            // never saved, so that site keeps using the product it always has.
+            if (!array_key_exists('wc_product_id', $o)) {
+                $o['wc_product_id'] = 4707;
+            }
+            $o['setup_complete'] = 1;
+            update_option(MCLB_OPTION, $o);
+        }
+        update_option('mclb_terms_migrated', 1);
     }
 
     /** Register the single option + its sanitiser (fields live in MCLB_Admin). */
@@ -259,6 +300,15 @@ class MCLB_Settings {
         }
         if (isset($in['staff_label_plural'])) {
             $out['staff_label_plural'] = sanitize_text_field($in['staff_label_plural']) ?: $d['staff_label_plural'];
+        }
+        if (isset($in['pass_label_singular'])) {
+            $out['pass_label_singular'] = sanitize_text_field($in['pass_label_singular']) ?: $d['pass_label_singular'];
+        }
+        if (isset($in['pass_label_plural'])) {
+            $out['pass_label_plural'] = sanitize_text_field($in['pass_label_plural']) ?: $d['pass_label_plural'];
+        }
+        if (isset($in['setup_complete'])) {
+            $out['setup_complete'] = empty($in['setup_complete']) ? 0 : 1;
         }
         if (isset($in['manage_page_id'])) {
             $out['manage_page_id'] = absint($in['manage_page_id']);

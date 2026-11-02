@@ -52,7 +52,7 @@ class MCLB_Cart {
      * <input>/<script>); assets/js/mclb-passbox.js builds the UI inside it.
      */
     public static function render_pass_field() {
-        if (!WC()->cart || !class_exists('MCLB_Passes')) { return; }
+        if (!WC()->cart || !class_exists('MCLB_Passes') || !MCLB_Plan::is_pro()) { return; }
         $has = false;
         foreach (WC()->cart->get_cart() as $item) { if (!empty($item[self::ITEM_KEY]['hold_id'])) { $has = true; break; } }
         if (!$has) { return; }
@@ -69,11 +69,11 @@ class MCLB_Cart {
             'working' => __('Working…', 'mobooking'),
             'invalid' => __('That code is invalid or expired.', 'mobooking'),
             'err'     => __('Could not reach the server — try again.', 'mobooking'),
-            'applied' => __('Prepaid pass %s applied', 'mobooking'),
+            'applied' => MCLB_Terms::fill(__('Prepaid {pass} %s applied', 'mobooking')),
             'covered' => __('%hh covered', 'mobooking'),
-            'left'    => __('%hh left on this pass', 'mobooking'),
-            'remove'  => __('Remove pass', 'mobooking'),
-            'prompt'  => __('Have a prepaid pass? Enter the code:', 'mobooking'),
+            'left'    => MCLB_Terms::fill(__('%hh left on this {pass}', 'mobooking')),
+            'remove'  => MCLB_Terms::fill(__('Remove {pass}', 'mobooking')),
+            'prompt'  => MCLB_Terms::fill(__('Have a prepaid {pass}? Enter the code:', 'mobooking')),
             'apply'   => __('Apply', 'mobooking'),
         ]);
         printf(
@@ -189,7 +189,7 @@ class MCLB_Cart {
             return new WP_Error('mclb_too_many', __('Too many bookings in one request.', 'mobooking'), ['status' => 400]);
         }
 
-        $coach_on        = (int) MCLB_Settings::get('enable_coach_requests') === 1;
+        $coach_on        = (MCLB_Plan::is_pro() && (int) MCLB_Settings::get('enable_coach_requests') === 1);
         $coach_requested = $coach_on && !empty($params['coach_requested']);
         $coach_note      = $coach_requested ? sanitize_textarea_field((string) ($params['coach_note'] ?? '')) : '';
 
@@ -381,7 +381,7 @@ class MCLB_Cart {
                 return $id;
             }
         }
-        $label = MCLB_Settings::get('resource_label_singular') ?: 'Lane';
+        $label = MCLB_Terms::resource();
         $p = new WC_Product_Simple();
         $p->set_name(sprintf(_x('%s Booking', 'auto-provisioned anchor product name', 'mobooking'), $label));
         $p->set_status('publish');
@@ -431,7 +431,7 @@ class MCLB_Cart {
         $m      = $item[self::ITEM_KEY];
         $data[] = ['key' => __('When', 'mobooking'), 'value' => self::format_when($m)];
         if (!empty($m['coach_requested'])) {
-            $data[] = ['key' => __('Coach', 'mobooking'), 'value' => __('Requested', 'mobooking')];
+            $data[] = ['key' => MCLB_Terms::fill(__('{Staff}', 'mobooking')), 'value' => __('Requested', 'mobooking')];
         }
         return $data;
     }
@@ -473,11 +473,11 @@ class MCLB_Cart {
             $item->add_meta_data('_mclb_coach_note', $m['coach_note'], true);
         }
         // Visible meta (shows on the order + emails):
-        $res_label = MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking');
+        $res_label = MCLB_Terms::resource();
         $item->add_meta_data($res_label, $m['lane_name'], true);
         $item->add_meta_data(__('When', 'mobooking'), self::format_when($m), true);
         if (!empty($m['coach_requested'])) {
-            $item->add_meta_data(__('Coach requested', 'mobooking'), __('Yes', 'mobooking'), true);
+            $item->add_meta_data(MCLB_Terms::fill(__('{Staff} requested', 'mobooking')), __('Yes', 'mobooking'), true);
         }
         // Prepaid-pass cover (v1.5.0): a VISIBLE line showing the code + hours +
         // the amount it took off this line. Not underscore-prefixed, so the
@@ -492,7 +492,7 @@ class MCLB_Cart {
                 $amt  = class_exists('MCLB_Coaches') ? MCLB_Coaches::money($covered * $rate) : number_format($covered * $rate, 2);
                 $hh   = rtrim(rtrim(number_format((float) $covered, 2), '0'), '.');
                 $item->add_meta_data(
-                    __('Prepaid pass', 'mobooking'),
+                    MCLB_Terms::fill(__('Prepaid {pass}', 'mobooking')),
                     sprintf('%1$s: %2$sh (−%3$s)', $pass ? $pass->code : '', $hh, $amt),
                     true
                 );

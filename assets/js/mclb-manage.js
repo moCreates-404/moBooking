@@ -31,6 +31,10 @@
   var ROS_GUT = 150;   // coach-label column width
   var ROS_MINHR = 64;  // minimum px per hour; the timeline otherwise stretches to fill the width
 
+  // Site terminology (Coach / Instructor / Trainer…) for the few strings built here.
+  function staffWord() { return ((CFG.labels && CFG.labels.staffSingular) || 'staff').toLowerCase(); }
+  function noStaffLabel() { return I18N.noStaff || ('— No ' + staffWord() + ' —'); }
+
   var state = {
     date: root.getAttribute('data-today') || CFG.today,
     showCancelled: false,
@@ -332,9 +336,11 @@
     }
 
     // Prepaid passes (v1.5.0): issue / look up / void from the counter.
-    var passesBtn = el('button', 'button mclb-cal__btn', I18N.passes || 'Passes');
-    passesBtn.onclick = function () { openPasses(); };
-    filters.appendChild(passesBtn);
+    if (CFG.isPro !== false) { // Pro feature
+      var passesBtn = el('button', 'button mclb-cal__btn', I18N.passes || 'Passes');
+      passesBtn.onclick = function () { openPasses(); };
+      filters.appendChild(passesBtn);
+    }
 
     var labelText = (state.data && state.data.date_label) || '';
     if (state.view === 'roster' && state.rosterWeek && state.week) { labelText = (I18N.weekOf || 'Week of') + ' ' + (state.week.start_label || state.week.start); }
@@ -828,7 +834,7 @@
       var email = field(bookBody, I18N.email || 'Email', mkInput('email'));
       var phone = field(bookBody, (I18N.phone || 'Phone') + ' *', mkInput('tel'));
       var note = field(bookBody, I18N.notes || 'Note', mkInput('text'));
-      var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
+      var coach = el('select'); coach.appendChild(opt('0', noStaffLabel()));
       field(bookBody, CFG.labels.staffSingular || 'Coach', coach);
       // Coach time is always shown (it bounds which coaches are free): narrowing it
       // re-fetches the free-coach list for that window, so a coach busy for the
@@ -879,7 +885,7 @@
         api(qs).then(function (res) {
           if (seq !== coachSeq) { return; } // a newer fetch superseded this one
           coachRates = {};
-          while (coach.options.length > 1) { coach.remove(1); } // keep "— No coach —"
+          while (coach.options.length > 1) { coach.remove(1); } // keep noStaffLabel()
           if (res.ok && res.body.coaches) {
             res.body.coaches.forEach(function (c) { coachRates[String(c.id)] = c.rate; coach.appendChild(opt(String(c.id), c.name + ' — ' + money(c.rate) + '/hr')); });
           }
@@ -953,7 +959,8 @@
       // -- recurring (series) --
       var repeat = el('select');
       [['', I18N.repeatNone || 'Does not repeat'], ['weekly', I18N.repeatWeekly || 'Weekly'], ['fortnightly', I18N.repeatFortnightly || 'Fortnightly']].forEach(function (o) { repeat.appendChild(opt(o[0], o[1])); });
-      field(bookBody, I18N.repeat || 'Repeat', repeat);
+      var repeatField = field(bookBody, I18N.repeat || 'Repeat', repeat);
+      if (CFG.isPro === false && repeatField && repeatField.parentNode) { repeatField.parentNode.style.display = 'none'; } // recurring is Pro
       var sOpts = el('div', 'mclb-series-opts'); sOpts.style.display = 'none'; bookBody.appendChild(sOpts);
       var endMode = el('select'); endMode.appendChild(opt('count', I18N.forN || 'For a number of times')); endMode.appendChild(opt('until', I18N.untilDate || 'Until a date'));
       field(sOpts, I18N.ends || 'Ends', endMode);
@@ -1161,7 +1168,7 @@
             runWrite(retBtn, err, api('/booking/' + b.id + '/pass', { method: 'POST', body: { op: 'return', actor: ini.value.trim() } }));
           };
         }
-      } else if (b.source === 'manual' && !b.counter_paid) {
+      } else if (b.source === 'manual' && !b.counter_paid && CFG.isPro !== false) {
         var dpToggle = el('button', 'button mclb-panel__act', I18N.drawFromPass || 'Draw from pass');
         panel.appendChild(dpToggle);
         var dpForm = el('div', 'mclb-panel__edit'); dpForm.style.display = 'none'; panel.appendChild(dpForm);
@@ -1243,7 +1250,7 @@
       coachRow.appendChild(el('span', 'mclb-panel__rlabel', (CFG.labels.staffSingular || 'Coach') + ': ' + (b.coach_label || '—')));
       panel.appendChild(coachRow);
       var coachSaveBtn = null; // set when the actions are built; enabled once coaches load
-      var coach = el('select'); coach.appendChild(opt('0', '— No coach —'));
+      var coach = el('select'); coach.appendChild(opt('0', noStaffLabel()));
       field(panel, 'Change ' + (CFG.labels.staffSingular || 'coach'), coach);
 
       // Partial coach time (v1.4.1): always shown. Narrowing it re-fetches the
@@ -1275,7 +1282,7 @@
         api(qs).then(function (res) {
           if (seq !== dSeq) { return; }
           var list = (res.ok && res.body.coaches) ? res.body.coaches : [];
-          while (coach.options.length > 1) { coach.remove(1); } // keep "— No coach —"
+          while (coach.options.length > 1) { coach.remove(1); } // keep noStaffLabel()
           // Keep the booking's current coach selectable even if busy elsewhere now.
           if (b.coach_id && !list.some(function (c) { return c.id === b.coach_id; })) {
             coach.appendChild(opt(String(b.coach_id), b.coach_label));

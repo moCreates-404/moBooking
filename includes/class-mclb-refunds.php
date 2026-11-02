@@ -107,7 +107,7 @@ class MCLB_Refunds {
 
         $refund = wc_create_refund([
             'amount'         => $amount,
-            'reason'         => $reason !== '' ? $reason : __('Lane booking moved to a lower-priced slot', 'mobooking'),
+            'reason'         => $reason !== '' ? $reason : MCLB_Terms::fill(__('{Resource} booking moved to a lower-priced slot', 'mobooking')),
             'order_id'       => (int) $b->order_id,
             'line_items'     => [(int) $b->order_item_id => ['qty' => 0, 'refund_total' => $amount]],
             'refund_payment' => true,
@@ -157,7 +157,7 @@ class MCLB_Refunds {
 
         $refund = wc_create_refund([
             'amount'         => $amount,
-            'reason'         => $reason !== '' ? $reason : __('Lane booking cancelled', 'mobooking'),
+            'reason'         => $reason !== '' ? $reason : MCLB_Terms::fill(__('{Resource} booking cancelled', 'mobooking')),
             'order_id'       => (int) $b->order_id,
             'line_items'     => $line_items,
             'refund_payment' => true,  // trigger the gateway (Square) refund

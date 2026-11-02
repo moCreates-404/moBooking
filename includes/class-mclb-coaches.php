@@ -23,6 +23,9 @@ class MCLB_Coaches {
 
     /** [coach_id => name] for bookable coaches (filter decides who's bookable). */
     public static function options() {
+        if (!MCLB_Plan::is_pro()) {
+            return []; // staff features are Pro
+        }
         $opts = apply_filters('mclb_coach_options', []);
         return is_array($opts) ? $opts : [];
     }
@@ -59,7 +62,7 @@ class MCLB_Coaches {
             return sprintf(__('%s (unlisted)', 'mobooking'), $title);
         }
         /* translators: %d: coach id. */
-        return sprintf(__('Coach #%d', 'mobooking'), $coach_id);
+        return sprintf(MCLB_Terms::fill(__('{Staff} #%d', 'mobooking')), $coach_id);
     }
 
     // ── Fee math ─────────────────────────────────────────────────────────────
@@ -129,11 +132,11 @@ class MCLB_Coaches {
     // ── Labels ────────────────────────────────────────────────────────────────
 
     public static function label_singular() {
-        return MCLB_Settings::get('staff_label_singular') ?: 'Coach';
+        return MCLB_Terms::staff();
     }
 
     public static function label_plural() {
-        return MCLB_Settings::get('staff_label_plural') ?: 'Coaches';
+        return MCLB_Terms::staff(true);
     }
 
     /** Amount formatted with the store currency symbol, for notes/UI (plain text). */

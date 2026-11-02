@@ -79,7 +79,7 @@ class MCLB_Account {
         echo '<table class="woocommerce-orders-table shop_table"><thead><tr>';
         printf(
             '<th>%s</th><th>%s</th><th>%s</th><th></th>',
-            esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mobooking')),
+            esc_html(MCLB_Terms::resource()),
             esc_html__('When', 'mobooking'),
             esc_html__('Status', 'mobooking')
         );

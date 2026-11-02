@@ -106,11 +106,13 @@ class MCLB_Admin {
         $l  = $this->tab_page('license');
 
         // General → wording
-        add_settings_section('mclb_labels', __('Resource wording', 'mobooking'), function () {
-            echo '<p>' . esc_html__('What one bookable unit is called on this site — shown to customers and in admin copy. The database keeps the technical term “lane” regardless.', 'mobooking') . '</p>';
+        add_settings_section('mclb_labels', __('Wording', 'mobooking'), function () {
+            echo '<p>' . esc_html__('What your business calls things. These words are used everywhere customers and staff see them — the booking grid, emails, the calendar and these settings.', 'mobooking') . '</p>';
         }, $g);
-        $this->text_field($g, 'mclb_labels', 'resource_label_singular', __('Unit label (singular)', 'mobooking'), __('e.g. Lane, Bay, Hoist', 'mobooking'));
-        $this->text_field($g, 'mclb_labels', 'resource_label_plural', __('Unit label (plural)', 'mobooking'), __('e.g. Lanes, Bays, Hoists', 'mobooking'));
+        $this->text_field($g, 'mclb_labels', 'resource_label_singular', __('Bookable unit (singular)', 'mobooking'), __('e.g. Court, Lane, Bay, Room, Studio', 'mobooking'));
+        $this->text_field($g, 'mclb_labels', 'resource_label_plural', __('Bookable unit (plural)', 'mobooking'), __('e.g. Courts, Lanes, Bays, Rooms, Studios', 'mobooking'));
+        $this->text_field($g, 'mclb_labels', 'pass_label_singular', __('Prepaid credit (singular)', 'mobooking'), __('e.g. Pass, Pack, Bundle', 'mobooking'));
+        $this->text_field($g, 'mclb_labels', 'pass_label_plural', __('Prepaid credit (plural)', 'mobooking'), __('e.g. Passes, Packs, Bundles', 'mobooking'));
 
         // General → booking rules
         add_settings_section('mclb_booking', __('Booking rules', 'mobooking'), '__return_false', $g);
@@ -122,10 +124,11 @@ class MCLB_Admin {
         $this->text_field($g, 'mclb_booking', 'booking_window_note', __('Later-dates message', 'mobooking'), __('Shown after “Online bookings open N days in advance.” — e.g. Call 08 9393 1000 for later dates.', 'mobooking'));
 
         // General → coach requests
-        add_settings_section('mclb_coach', __('Coach requests', 'mobooking'), function () {
-            echo '<p>' . esc_html__('Cricketers-Club-specific add-on. When on, the booking flow offers a “Request a coach” option (admin assigns the coach later). Leave off for installs that don’t do coaching.', 'mobooking') . '</p>';
+        add_settings_section('mclb_coach', MCLB_Terms::fill(__('{Staff} requests', 'mobooking')), function () {
+            echo '<p>' . esc_html(MCLB_Terms::fill(__('Optional add-on. When on, customers can tick “Request a {staff}” when booking; staff assign the actual {staff} afterwards. Leave off if you don’t offer {staff_plural}.', 'mobooking'))) . '</p>';
+            MCLB_Admin::pro_note();
         }, $g);
-        $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', __('Enable coach requests', 'mobooking'), __('Show the “Request a coach” option on lane bookings', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_coach', 'enable_coach_requests', MCLB_Terms::fill(__('Enable {staff} requests', 'mobooking')), MCLB_Terms::fill(__('Show the “Request a {staff}” option on {resource} bookings', 'mobooking')));
         $this->text_field($g, 'mclb_coach', 'staff_label_singular', __('Staff label (singular)', 'mobooking'), __('e.g. Coach, Pro, Instructor', 'mobooking'));
         $this->text_field($g, 'mclb_coach', 'staff_label_plural', __('Staff label (plural)', 'mobooking'), __('e.g. Coaches, Pros, Instructors', 'mobooking'));
 
@@ -145,12 +148,12 @@ class MCLB_Admin {
         $this->number_field($g, 'mclb_wc', 'credit_expiry_days', __('Store-credit expiry', 'mobooking'), __('days a cancellation credit coupon lasts (0 = never); set when the coupon is issued', 'mobooking'), 0, 3650);
         $this->checkbox_field($g, 'mclb_wc', 'guest_self_cancel', __('Guest self-cancel', 'mobooking'), __('Let customers cancel from a secure link in their confirmation email (no login)', 'mobooking'));
         $this->text_field($g, 'mclb_wc', 'club_phone', __('Club phone', 'mobooking'), __('shown when a booking is too close to its start time to cancel online (the theme can supply this via the mclb_club_phone filter)', 'mobooking'));
-        $this->number_field($g, 'mclb_wc', 'pass_expiry_months', __('Prepaid pass expiry', 'mobooking'), __('months a new pass lasts (0 = never); per-pass override at issue. A pass is valid if unexpired when the booking is made.', 'mobooking'), 0, 120);
+        $this->number_field($g, 'mclb_wc', 'pass_expiry_months', MCLB_Terms::fill(__('Prepaid {pass} expiry', 'mobooking')), MCLB_Terms::fill(__('months a new {pass} lasts (0 = never); per-{pass} override at issue. A {pass} is valid if unexpired when the booking is made.', 'mobooking')), 0, 120);
         add_settings_field('terms_page_id', __('Terms & Conditions page', 'mobooking'), [$this, 'render_terms_page'], $g, 'mclb_wc');
 
         // General → Emails
         add_settings_section('mclb_emails', __('Emails', 'mobooking'), function () {
-            echo '<p>' . esc_html__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: lane bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mobooking') . '</p>';
+            echo '<p>' . esc_html(MCLB_Terms::fill(__('WooCommerce admin order emails (New / Cancelled / Failed) are routed by order type: {resource} bookings → Bookings email, shop orders → Reception email, mixed → both. Leave an address blank to keep WooCommerce’s own recipient for that type. Customer emails are never changed here.', 'mobooking'))) . '</p>';
             // Warn when the Bookings address is blank: staff alerts fall back to
             // WooCommerce's New Order recipient / the admin email (v1.4.3).
             if (sanitize_email((string) MCLB_Settings::get('email_bookings')) === '') {
@@ -161,15 +164,15 @@ class MCLB_Admin {
                     . '</p></div>';
             }
         }, $g);
-        $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mobooking'), __('e.g. bookings@yourclub.com — lane-booking admin emails + staff alerts', 'mobooking'));
+        $this->text_field($g, 'mclb_emails', 'email_bookings', __('Bookings email', 'mobooking'), MCLB_Terms::fill(__('e.g. bookings@yourclub.com — {resource}-booking admin emails + staff alerts', 'mobooking')));
         $this->text_field($g, 'mclb_emails', 'email_reception', __('Reception / shop email', 'mobooking'), __('e.g. reception@yourclub.com — shop-order admin emails', 'mobooking'));
         $this->checkbox_field($g, 'mclb_emails', 'email_manual_confirmation', __('Manual booking confirmation', 'mobooking'), __('Email the customer a confirmation when staff create a manual booking (if an address is on file)', 'mobooking'));
         $this->checkbox_field($g, 'mclb_emails', 'email_customer_on_cancel', __('Customer cancellation email', 'mobooking'), __('Email the customer whenever a booking is cancelled, with the refund/credit outcome (if an address is on file)', 'mobooking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_cancel', __('Alert: cancellation', 'mobooking'), __('Email the Bookings address whenever a booking is cancelled (staff, customer or order)', 'mobooking'));
-        $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', __('Alert: online coach request', 'mobooking'), __('Email the Bookings address when an online booking asks for a coach', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'alert_coach_request', MCLB_Terms::fill(__('Alert: online {staff} request', 'mobooking')), MCLB_Terms::fill(__('Email the Bookings address when an online booking asks for a {staff}', 'mobooking')));
         $this->checkbox_field($g, 'mclb_emails', 'alert_manual_created', __('Alert: manual booking created', 'mobooking'), __('Email the Bookings address when staff create a manual booking', 'mobooking'));
         $this->checkbox_field($g, 'mclb_emails', 'alert_move', __('Alert: booking moved', 'mobooking'), __('Email the Bookings address when staff move a booking', 'mobooking'));
-        $this->checkbox_field($g, 'mclb_emails', 'pass_holder_email', __('Prepaid pass balance emails', 'mobooking'), __('Email the pass holder when hours are used or returned (if an email is on the pass)', 'mobooking'));
+        $this->checkbox_field($g, 'mclb_emails', 'pass_holder_email', MCLB_Terms::fill(__('Prepaid {pass} balance emails', 'mobooking')), MCLB_Terms::fill(__('Email the {pass} holder when hours are used or returned (if an email is on the {pass})', 'mobooking')));
         $this->text_field($g, 'mclb_emails', 'email_test_recipient', __('Email test recipient', 'mobooking'), __('Dev safety: when set, EVERY plugin email (incl. day sheets) is rerouted here. On a non-production site nothing is sent unless this is set.', 'mobooking'));
 
         // General → hours
@@ -199,11 +202,11 @@ class MCLB_Admin {
         add_settings_field('mclb_event_types_rows', __('Types', 'mobooking'), [$this, 'render_event_types'], $e, 'mclb_event_types');
 
         // Day sheets
-        add_settings_section('mclb_ds', __('Coach day sheets', 'mobooking'), [$this, 'ds_intro'], $ds);
+        add_settings_section('mclb_ds', MCLB_Terms::fill(__('{Staff} day sheets', 'mobooking')), [$this, 'ds_intro'], $ds);
         add_settings_field('daysheet_enabled', __('Automatic send', 'mobooking'), function () {
             printf('<input type="hidden" name="%s" value="1">', esc_attr($this->name('daysheet_submitted')));
             printf('<input type="hidden" name="%s" value="0">', esc_attr($this->name('daysheet_enabled')));
-            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html__('Email each coach their sessions automatically on a schedule', 'mobooking'));
+            printf('<label><input type="checkbox" name="%s" value="1" %s> %s</label>', esc_attr($this->name('daysheet_enabled')), checked((int) $this->val('daysheet_enabled'), 1, false), esc_html(MCLB_Terms::fill(__('Email each {staff} their sessions automatically on a schedule', 'mobooking'))));
             printf('<p class="description">%s</p>', esc_html__('Turn this off to send only by hand — the “Send” / “Send to all” buttons on the Roster keep working either way.', 'mobooking'));
         }, $ds, 'mclb_ds');
         add_settings_field('daysheet_send_time', __('Send time', 'mobooking'), function () {
@@ -253,6 +256,15 @@ class MCLB_Admin {
                 esc_html($labels[$st['status']] ?? $st['status']),
                 esc_html($st['message'])
             );
+            printf('<p><strong>%s</strong> %s</p>', esc_html__('Plan:', 'mobooking'), esc_html(MCLB_Plan::name()));
+            if (!MCLB_Plan::is_pro()) {
+                printf(
+                    '<p>%s <a href="%s">%s</a></p>',
+                    esc_html(MCLB_Terms::fill(__('Pro adds {staff} requests and roster, day sheets, prepaid {passes}, recurring bookings and reports.', 'mobooking'))),
+                    esc_url(MCLB_Plan::upgrade_url()),
+                    esc_html__('Upgrade to Pro', 'mobooking')
+                );
+            }
             if (defined('MCLB_LICENSE_UNLOCK') && MCLB_LICENSE_UNLOCK) {
                 printf('<p><em>%s</em></p>', esc_html__('MCLB_LICENSE_UNLOCK is defined in wp-config.php, so bookings are allowed regardless of licence status.', 'mobooking'));
             }
@@ -267,9 +279,22 @@ class MCLB_Admin {
 
         // Data retention (lives on the License tab — rarely touched).
         add_settings_section('mclb_data', __('Data', 'mobooking'), function () {
-            echo '<p>' . esc_html__('By default, deleting the plugin keeps all bookings, passes and settings so a reinstall picks up where it left off.', 'mobooking') . '</p>';
+            echo '<p>' . esc_html(MCLB_Terms::fill(__('By default, deleting the plugin keeps all bookings, {passes} and settings so a reinstall picks up where it left off.', 'mobooking'))) . '</p>';
         }, $l);
-        $this->checkbox_field($l, 'mclb_data', 'delete_data_on_uninstall', __('Delete data on uninstall', 'mobooking'), __('Permanently remove ALL moBooking bookings, passes, closures and settings when the plugin is deleted', 'mobooking'));
+        $this->checkbox_field($l, 'mclb_data', 'delete_data_on_uninstall', __('Delete data on uninstall', 'mobooking'), MCLB_Terms::fill(__('Permanently remove ALL moBooking bookings, {passes}, closures and settings when the plugin is deleted', 'mobooking')));
+    }
+
+    /** "Pro feature" line for settings sections that do nothing on Essentials. */
+    public static function pro_note() {
+        if (MCLB_Plan::is_pro()) {
+            return;
+        }
+        printf(
+            '<p><span class="dashicons dashicons-lock" style="color:#996800"></span> <strong>%s</strong> <a href="%s">%s</a></p>',
+            esc_html__('Pro feature — these settings have no effect on your current plan.', 'mobooking'),
+            esc_url(MCLB_Plan::upgrade_url()),
+            esc_html__('Upgrade', 'mobooking')
+        );
     }
 
     // ── Field renderers ──────────────────────────────────────────────────────
@@ -384,20 +409,21 @@ class MCLB_Admin {
     }
 
     public function ds_intro() {
+        self::pro_note();
         if (!empty($_GET['mclb_rotated'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag after a nonced action.
             printf('<div class="notice notice-success inline" style="margin:8px 0"><p>%s</p></div>', esc_html__('Link secret regenerated — previous “View my day” links no longer work.', 'mobooking'));
         }
-        echo '<p>' . esc_html__('A daily email to each coach with the sessions assigned to them, plus a signed “View my day” link.', 'mobooking') . '</p>';
+        echo '<p>' . esc_html(MCLB_Terms::fill(__('A daily email to each {staff} with the sessions assigned to them, plus a signed “View my day” link.', 'mobooking'))) . '</p>';
         $test = sanitize_email((string) MCLB_Settings::get('daysheet_test_recipient'));
         if ($test !== '') {
             printf('<div class="notice notice-warning inline" style="margin:8px 0"><p><strong>%s</strong> %s</p></div>',
                 esc_html__('Test mode:', 'mobooking'),
-                sprintf(esc_html__('every day sheet is being sent to %s (not to coaches).', 'mobooking'), '<code>' . esc_html($test) . '</code>'));
+                sprintf(esc_html(MCLB_Terms::fill(__('every day sheet is being sent to %s (not to {staff_plural}).', 'mobooking'))), '<code>' . esc_html($test) . '</code>'));
         }
         $env = function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production';
         if ($env !== 'production' && $test === '') {
             printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
-                sprintf(esc_html__('This site’s environment is “%s”, so real coach emails are blocked. Set a test recipient to send, or set WP_ENVIRONMENT_TYPE to production on live.', 'mobooking'), esc_html($env)));
+                sprintf(esc_html(MCLB_Terms::fill(__('This site’s environment is “%s”, so real {staff} emails are blocked. Set a test recipient to send, or set WP_ENVIRONMENT_TYPE to production on live.', 'mobooking'))), esc_html($env)));
         }
         if (!MCLB_Daysheets::as_available()) {
             printf('<div class="notice notice-error inline" style="margin:8px 0"><p>%s</p></div>',
@@ -419,7 +445,7 @@ class MCLB_Admin {
         }
         echo '<table class="widefat striped" style="max-width:820px"><thead><tr>';
         printf('<th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th>',
-            esc_html__('When', 'mobooking'), esc_html__('Coach', 'mobooking'), esc_html__('For date', 'mobooking'),
+            esc_html__('When', 'mobooking'), esc_html(MCLB_Terms::fill(__('{Staff}', 'mobooking'))), esc_html__('For date', 'mobooking'),
             esc_html__('Recipient', 'mobooking'), esc_html__('Trigger', 'mobooking'), esc_html__('Result', 'mobooking'));
         echo '</tr></thead><tbody>';
         foreach (array_slice($log, 0, 60) as $e) {
@@ -446,7 +472,7 @@ class MCLB_Admin {
         printf('<p style="max-width:640px;margin:0 auto 16px;color:#333">%s <strong>%s</strong> — %s</p>',
             esc_html__('Preview for', 'mobooking'), esc_html($date), esc_html__('nothing is sent.', 'mobooking'));
         if (empty($built)) {
-            echo '<p style="max-width:640px;margin:0 auto">' . esc_html__('No coaches have sessions that day.', 'mobooking') . '</p>';
+            echo '<p style="max-width:640px;margin:0 auto">' . esc_html(MCLB_Terms::fill(__('No {staff_plural} have sessions that day.', 'mobooking'))) . '</p>';
         }
         foreach ($built as $b) {
             $meta = $b['name'] . ' → ' . ($b['recipient'] ?: '(no recipient)') . ($b['skip'] ? '  [WOULD SKIP: ' . $b['skip'] . ']' : '') . '  |  ' . $b['subject'];
@@ -589,7 +615,11 @@ class MCLB_Admin {
         }
         $current = $this->current_tab();
 
-        echo '<div class="wrap"><h1>moBooking</h1>';
+        printf(
+            '<div class="wrap"><h1 class="wp-heading-inline">moBooking</h1> <a href="%s" class="page-title-action">%s</a><hr class="wp-header-end">',
+            esc_url(MCLB_Setup::url()),
+            esc_html__('Run setup wizard', 'mobooking')
+        );
         echo '<h2 class="nav-tab-wrapper">';
         foreach ($this->tabs() as $slug => $label) {
             printf(

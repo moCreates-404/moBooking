@@ -15,7 +15,10 @@ class MCLB_Activator {
 
     public static function activate() {
         if (!is_array(get_option(MCLB_OPTION, null))) {
+            // Brand-new install: neutral defaults, nothing to migrate, and the
+            // setup wizard will run (setup_complete stays 0).
             add_option(MCLB_OPTION, MCLB_Settings::defaults());
+            update_option('mclb_terms_migrated', 1);
         }
 
         self::install();

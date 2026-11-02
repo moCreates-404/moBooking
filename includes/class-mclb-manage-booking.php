@@ -276,7 +276,7 @@ class MCLB_Manage_Booking {
     }
 
     private static function detail_html($b) {
-        $res  = MCLB_Settings::get('resource_label_singular') ?: 'Lane';
+        $res  = MCLB_Terms::resource();
         $out  = '<div class="mclb-mb-detail">';
         $out .= '<div class="mclb-mb-when">' . esc_html(self::when_label($b)) . '</div>';
         $out .= '<div class="mclb-mb-lane">' . esc_html($res . ': ' . $b->lane_name) . '</div>';

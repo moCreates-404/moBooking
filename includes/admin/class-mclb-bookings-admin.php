@@ -247,7 +247,7 @@ class MCLB_Bookings_Admin {
         wp_nonce_field('mclb_add_booking');
         echo '<table class="form-table" role="presentation"><tbody>';
 
-        echo '<tr><th scope="row">' . esc_html(MCLB_Settings::get('resource_label_singular') ?: __('Lane', 'mobooking')) . '</th><td><select name="lane_id" required>';
+        echo '<tr><th scope="row">' . esc_html(MCLB_Terms::resource()) . '</th><td><select name="lane_id" required>';
         foreach (MCLB_Lane::all_bookable() as $lane) {
             printf('<option value="%d">%s</option>', (int) $lane->ID, esc_html(get_the_title($lane)));
         }
@@ -260,14 +260,14 @@ class MCLB_Bookings_Admin {
 
         $coach_opts = MCLB_Coaches::options();
         if (!empty($coach_opts)) {
-            echo '<tr><th scope="row">' . esc_html(MCLB_Coaches::label_singular()) . '</th><td><select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mobooking') . '</option>';
+            echo '<tr><th scope="row">' . esc_html(MCLB_Coaches::label_singular()) . '</th><td><select name="coach_id"><option value="0">' . esc_html(MCLB_Terms::fill(__('— No {staff} —', 'mobooking'))) . '</option>';
             foreach ($coach_opts as $cid => $clabel) {
                 $rate   = MCLB_Coaches::rate((int) $cid);
                 $rlabel = ($rate === null) ? __('no rate set', 'mobooking') : MCLB_Coaches::money($rate) . __('/hr', 'mobooking');
                 printf('<option value="%d">%s — %s</option>', (int) $cid, esc_html($clabel), esc_html($rlabel));
             }
             echo '</select>';
-            printf('<p class="description">%s</p>', esc_html__('The counter total is the lane price plus the coach fee (coach rate × booking length). A coach already booked for an overlapping time is blocked.', 'mobooking'));
+            printf('<p class="description">%s</p>', esc_html(MCLB_Terms::fill(__('The counter total is the {resource} price plus the {staff} fee ({staff} rate × booking length). A {staff} already booked for an overlapping time is blocked.', 'mobooking'))));
             echo '</td></tr>';
         }
 
@@ -310,7 +310,7 @@ class MCLB_Bookings_Admin {
         $coach_opts  = MCLB_Coaches::options();
         $has_coaches = !empty($coach_opts);
         $staff_label = MCLB_Coaches::label_singular();
-        $res_label   = MCLB_Settings::get('resource_label_singular') ?: __('Resource', 'mobooking');
+        $res_label   = MCLB_Terms::resource();
 
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th>#</th>';
@@ -423,7 +423,7 @@ class MCLB_Bookings_Admin {
         echo '<input type="hidden" name="page" value="' . esc_attr(self::SLUG) . '">';
         printf('<label>%s<br><input type="date" name="date_from" value="%s"></label>', esc_html__('From', 'mobooking'), esc_attr($f['date_from']));
         printf('<label>%s<br><input type="date" name="date_to" value="%s"></label>', esc_html__('To', 'mobooking'), esc_attr($f['date_to']));
-        echo '<label>' . esc_html(MCLB_Settings::get('resource_label_singular') ?: 'Lane') . '<br><select name="lane_id"><option value="0">' . esc_html__('All', 'mobooking') . '</option>';
+        echo '<label>' . esc_html(MCLB_Terms::resource()) . '<br><select name="lane_id"><option value="0">' . esc_html__('All', 'mobooking') . '</option>';
         foreach ($lanes as $lane) {
             printf('<option value="%d" %s>%s</option>', (int) $lane->ID, selected($f['lane_id'], (int) $lane->ID, false), esc_html(get_the_title($lane)));
         }
@@ -463,7 +463,7 @@ class MCLB_Bookings_Admin {
         echo '<input type="hidden" name="action" value="mclb_assign_coach">';
         printf('<input type="hidden" name="booking_id" value="%d">', (int) $b->id);
         wp_nonce_field('mclb_assign_coach');
-        echo '<select name="coach_id"><option value="0">' . esc_html__('— No coach —', 'mobooking') . '</option>';
+        echo '<select name="coach_id"><option value="0">' . esc_html(MCLB_Terms::fill(__('— No {staff} —', 'mobooking'))) . '</option>';
         foreach ($coach_opts as $cid => $label) {
             $rate   = MCLB_Coaches::rate((int) $cid);
             $rlabel = ($rate === null) ? __('no rate set', 'mobooking') : MCLB_Coaches::money($rate) . __('/hr', 'mobooking');
@@ -493,25 +493,25 @@ class MCLB_Bookings_Admin {
             'refunded'           => ['success', __('Booking cancelled and refunded.', 'mobooking')],
             'cancelled'          => ['success', __('Booking cancelled.', 'mobooking')],
             'cancelled_norefund' => ['warning', __('Booking cancelled — but the refund did not go through; refund manually (see the order note).', 'mobooking')],
-            'coach'              => ['success', __('Coach assigned.', 'mobooking')],
-            'coach_removed'      => ['success', __('Coach removed.', 'mobooking')],
-            'coach_conflict'     => ['error', __('That coach is already booked for an overlapping time — not assigned.', 'mobooking')],
-            'coach_no_rate'      => ['error', __('That coach has no hourly rate set — assign a rate before booking them.', 'mobooking')],
-            'coach_not_bookable' => ['error', __('That coach isn’t available for bookings.', 'mobooking')],
-            'coach_locked'       => ['error', __('Counter payment already taken — add a note to change or remove the coach.', 'mobooking')],
-            'coach_busy'         => ['error', __('Could not update the coach — please try again.', 'mobooking')],
+            'coach'              => ['success', MCLB_Terms::fill(__('{Staff} assigned.', 'mobooking'))],
+            'coach_removed'      => ['success', MCLB_Terms::fill(__('{Staff} removed.', 'mobooking'))],
+            'coach_conflict'     => ['error', MCLB_Terms::fill(__('That {staff} is already booked for an overlapping time — not assigned.', 'mobooking'))],
+            'coach_no_rate'      => ['error', MCLB_Terms::fill(__('That {staff} has no hourly rate set — assign a rate before booking them.', 'mobooking'))],
+            'coach_not_bookable' => ['error', MCLB_Terms::fill(__('That {staff} isn’t available for bookings.', 'mobooking'))],
+            'coach_locked'       => ['error', MCLB_Terms::fill(__('Counter payment already taken — add a note to change or remove the {staff}.', 'mobooking'))],
+            'coach_busy'         => ['error', MCLB_Terms::fill(__('Could not update the {staff} — please try again.', 'mobooking'))],
             'counter_paid'       => ['success', __('Counter payment recorded.', 'mobooking')],
             'counter_nochange'   => ['warning', __('No change — nothing was due, or it was already recorded.', 'mobooking')],
             'nochange'           => ['warning', __('No change — the booking was not in a cancellable state.', 'mobooking')],
             'add_ok'             => ['success', __('Booking added.', 'mobooking')],
-            'add_conflict'       => ['error', __('That lane is already booked for part of that time — not added.', 'mobooking')],
+            'add_conflict'       => ['error', MCLB_Terms::fill(__('That {resource} is already booked for part of that time — not added.', 'mobooking'))],
             'add_unavailable'    => ['error', __('That time is outside opening hours or during a closure. Tick “override” to book it anyway.', 'mobooking')],
             'add_busy'           => ['error', __('The system was busy — please try again.', 'mobooking')],
-            'add_invalid'        => ['error', __('Please check the lane, date and times.', 'mobooking')],
+            'add_invalid'        => ['error', MCLB_Terms::fill(__('Please check the {resource}, date and times.', 'mobooking'))],
             'add_phone'          => ['error', __('A valid phone number is required for a manual booking.', 'mobooking')],
-            'add_coach_conflict' => ['error', __('That coach is already booked for an overlapping time — booking not added.', 'mobooking')],
-            'add_coach_no_rate'  => ['error', __('That coach has no hourly rate set — booking not added.', 'mobooking')],
-            'add_coach_invalid'  => ['error', __('That coach isn’t available for bookings — booking not added.', 'mobooking')],
+            'add_coach_conflict' => ['error', MCLB_Terms::fill(__('That {staff} is already booked for an overlapping time — booking not added.', 'mobooking'))],
+            'add_coach_no_rate'  => ['error', MCLB_Terms::fill(__('That {staff} has no hourly rate set — booking not added.', 'mobooking'))],
+            'add_coach_invalid'  => ['error', MCLB_Terms::fill(__('That {staff} isn’t available for bookings — booking not added.', 'mobooking'))],
             'demo'               => ['error', MCLB_License::demo_message()],
         ];
         $key = sanitize_key(wp_unslash($_GET['mclb_msg'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
