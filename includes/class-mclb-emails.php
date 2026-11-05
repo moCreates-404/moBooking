@@ -84,7 +84,7 @@ class MCLB_Emails {
     // ── 2. Customer emails (branded, Reply-To Bookings) ────────────────────────
 
     /** Confirmation for a MANUAL booking (online bookings use WooCommerce's own). */
-    public static function send_manual_confirmation($booking_id, $force = false) {
+    public static function send_manual_confirmation($booking_id, $force = false, array $extra_ids = []) {
         $b = MCLB_Bookings::get((int) $booking_id);
         if (!$b || (string) $b->source !== 'manual' || (string) $b->status !== MCLB_Bookings::STATUS_CONFIRMED) {
             return ['ok' => false, 'result' => 'not-applicable'];
@@ -104,6 +104,12 @@ class MCLB_Emails {
         ) . '</p>';
         $html .= '<p>' . esc_html__('Your booking is confirmed:', 'mobooking') . '</p>';
         $html .= self::booking_table($b);
+        foreach ($extra_ids as $xid) { // WEB-24: other lanes booked at the same time
+            $xb = MCLB_Bookings::get((int) $xid);
+            if ($xb && (string) $xb->status === MCLB_Bookings::STATUS_CONFIRMED) {
+                $html .= self::booking_table($xb);
+            }
+        }
         $html .= '<p>' . esc_html__('Payment is taken at the counter. See you then!', 'mobooking') . '</p>';
         $html .= self::manage_link_html($b);
 

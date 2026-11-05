@@ -223,7 +223,8 @@ class MCLB_Manage {
             'eventTypes' => array_map(static function ($t) {
                 return ['slug' => $t['slug'], 'label' => $t['label']];
             }, MCLB_Event_Types::all()),
-            'increment' => (int) MCLB_Settings::get('booking_increment') ?: 60,
+            'increment' => (int) MCLB_Settings::get('booking_increment') ?: 60, // row height
+            'snap'      => MCLB_Settings::staff_increment(),                    // staff booking step (WEB-22)
             'currency'  => $symbol,
             'today'     => wp_date('Y-m-d'),
             'loginUrl'  => esc_url_raw(wp_login_url(self::page_url() ?: home_url('/'))),

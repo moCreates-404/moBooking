@@ -227,6 +227,12 @@ class MCLB_Grid {
             return new WP_Error('mclb_bad_date', __('Invalid date.', 'mobooking'), ['status' => 400]);
         }
         $win    = self::booking_window();
+        // A page served from cache (WP Rocket) can carry yesterday's date in its
+        // HTML until the cache rebuilds - and the grid's first fresh fetch asks for
+        // that stale day. The customer grid never shows the past, so snap to today.
+        if ($date < $win['today']) {
+            $date = $win['today'];
+        }
         $beyond = self::is_beyond_window($date, $win['max_date']);
         $response = rest_ensure_response([
             'date'        => $date,

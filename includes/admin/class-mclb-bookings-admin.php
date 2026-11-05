@@ -253,7 +253,8 @@ class MCLB_Bookings_Admin {
         }
         echo '</select></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Date', 'mobooking') . '</th><td><input type="date" name="date" required></td></tr>';
-        echo '<tr><th scope="row">' . esc_html__('Time', 'mobooking') . '</th><td><input type="time" name="start_time" required> &ndash; <input type="time" name="end_time" required></td></tr>';
+        $step = (int) MCLB_Settings::staff_increment() * 60; // WEB-22: staff can book in the staff increment
+        echo '<tr><th scope="row">' . esc_html__('Time', 'mobooking') . '</th><td><input type="time" name="start_time" step="' . (int) $step . '" required> &ndash; <input type="time" name="end_time" step="' . (int) $step . '" required></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Customer', 'mobooking') . '</th><td><input type="text" class="regular-text" name="customer_name" placeholder="' . esc_attr__('Name (optional)', 'mobooking') . '"> <input type="email" name="customer_email" placeholder="' . esc_attr__('Email (optional)', 'mobooking') . '"> <input type="tel" name="customer_phone" required placeholder="' . esc_attr__('Phone (required)', 'mobooking') . '"></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Staff note', 'mobooking') . '</th><td><textarea name="staff_note" rows="2" class="large-text"></textarea></td></tr>';
         echo '<tr><th scope="row">' . esc_html__('Override', 'mobooking') . '</th><td><label><input type="checkbox" name="override" value="1"> ' . esc_html__('Allow outside opening hours / closures (double-books are still blocked)', 'mobooking') . '</label></td></tr>';

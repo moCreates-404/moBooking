@@ -634,6 +634,22 @@ class MCLB_REST_Admin {
             return new WP_Error('mclb_unavailable', __('That time is outside opening hours or during a blockout. Use override to book it anyway.', 'mobooking'), ['status' => 409]);
         }
 
+        // WEB-24: book extra lanes for the same customer at the same time (e.g. a
+        // net and a bowling machine together). All are checked up front so nothing
+        // is created if any extra lane is unavailable.
+        $extra_ids = self::extra_lanes_param($request, $lane_id);
+        foreach ($extra_ids as $xid) {
+            $xname = get_the_title($xid);
+            if (!$override && !MCLB_Availability::is_range_bookable_time($xid, $starts_at, $ends_at)) {
+                /* translators: %s: resource name, e.g. "Bowling Machine 3". */
+                return new WP_Error('mclb_unavailable', sprintf(__('%s is outside opening hours or blocked out at that time. Use override to book it anyway.', 'mobooking'), $xname), ['status' => 409]);
+            }
+            if (self::lane_has_overlap($xid, $starts_at, $ends_at)) {
+                /* translators: %s: resource name. */
+                return new WP_Error('mclb_slot_taken', sprintf(__('%s is already booked for part of that time.', 'mobooking'), $xname), ['status' => 409]);
+            }
+        }
+
         $lane_price = MCLB_Bookings::lane_price($lane_id, $starts_at, $ends_at); // ONE pricing seam
 
         // Optional lane-price override at creation (reason required when it changes
@@ -706,14 +722,58 @@ class MCLB_REST_Admin {
                 self::log($id, $actor, sprintf(MCLB_Terms::fill(__('drew %1$sh from {pass} %2$s', 'mobooking')), rtrim(rtrim(number_format((float) $pd['hours'], 2), '0'), '.'), $pd['code']));
             }
         }
+        // WEB-24: the extra lanes (standard lane price each, no coach or pass).
+        $extra_made = [];
+        $extra_failed = [];
+        foreach ($extra_ids as $xid) {
+            $xres = MCLB_Bookings::insert_confirmed_locked([
+                'lane_id'        => $xid,
+                'lane_name'      => get_the_title($xid),
+                'starts_at'      => $starts_at,
+                'ends_at'        => $ends_at,
+                'price'          => MCLB_Bookings::lane_price($xid, $starts_at, $ends_at),
+                'price_original' => null,
+                'customer_name'  => $name,
+                'customer_email' => $email,
+                'customer_phone' => $phone,
+                'staff_note'     => $note,
+                'coach_id'       => 0,
+                'created_by'     => $actor,
+            ]);
+            if (empty($xres['ok'])) {
+                $extra_failed[] = get_the_title($xid); // lost a race since the pre-check
+                continue;
+            }
+            $xbid = (int) $xres['id'];
+            $extra_made[] = $xbid;
+            /* translators: %s: the other resource booked at the same time. */
+            self::log($xbid, $actor, sprintf(__('created booking (same time as %s)', 'mobooking'), get_the_title($lane_id)));
+        }
+        if ($extra_made) {
+            $names = array_map(function ($bid) { $b = MCLB_Bookings::get($bid); return $b ? (string) $b->lane_name : ''; }, $extra_made);
+            /* translators: %s: comma-separated resource names. */
+            self::log($id, $actor, sprintf(__('also booked at the same time: %s', 'mobooking'), implode(', ', array_filter($names))));
+        }
+
         // Customer confirmation (if enabled + an email is on file) + optional staff alert (8a-2).
+        // One customer email covers every lane booked together.
         $emailed = false;
         if (class_exists('MCLB_Emails')) {
-            $r = MCLB_Emails::send_manual_confirmation($id);
+            $r = MCLB_Emails::send_manual_confirmation($id, false, $extra_made);
             $emailed = !empty($r['ok']);
             MCLB_Emails::alert_manual_created($id);
+            foreach ($extra_made as $xbid) {
+                MCLB_Emails::alert_manual_created($xbid);
+            }
         }
-        return rest_ensure_response(['ok' => true, 'id' => $id, 'emailed' => $emailed, 'has_email' => $email !== '']);
+        return rest_ensure_response([
+            'ok'           => true,
+            'id'           => $id,
+            'extra_ids'    => $extra_made,
+            'extra_failed' => $extra_failed,
+            'emailed'      => $emailed,
+            'has_email'    => $email !== '',
+        ]);
     }
 
     // ── Recurring series (Phase 1.4.0) ──────────────────────────────────────────
@@ -1817,13 +1877,32 @@ class MCLB_REST_Admin {
             MCLB_Closures::delete($id);
             return rest_ensure_response(['ok' => true, 'deleted' => true]);
         }
+        // WEB-23: one-off blockouts can be re-timed / re-scoped from the calendar.
+        // Each of date/start/end/lane_id is optional; anything not sent is kept.
+        $re        = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        $cur_date  = substr((string) $c->starts_at, 0, 10);
+        $cur_start = substr((string) $c->starts_at, 11, 5);
+        $cur_end   = substr((string) $c->ends_at, 11, 5);
+        $date      = $request->get_param('date') !== null ? self::sanitize_date((string) $request->get_param('date')) : $cur_date;
+        $start     = $request->get_param('start') !== null ? (string) $request->get_param('start') : $cur_start;
+        $end       = $request->get_param('end') !== null ? (string) $request->get_param('end') : $cur_end;
+        $lane_id   = $request->get_param('lane_id') !== null ? (int) $request->get_param('lane_id') : (int) $c->lane_id;
+        if ($date === '' || !preg_match($re, $start) || !preg_match($re, $end) || $end <= $start) {
+            return new WP_Error('mclb_invalid', __('Please check the date and times.', 'mobooking'), ['status' => 400]);
+        }
+        if ($lane_id > 0) {
+            $lp = get_post($lane_id);
+            if (!$lp || $lp->post_type !== MCLB_Lane::CPT) {
+                return new WP_Error('mclb_invalid', MCLB_Terms::fill(__('Please check the {resource}, date and times.', 'mobooking')), ['status' => 400]);
+            }
+        }
         MCLB_Closures::update($id, [
-            'lane_id'    => (int) $c->lane_id,
+            'lane_id'    => max(0, $lane_id),
             'kind'       => 'oneoff',
             'event_type' => sanitize_title((string) $request->get_param('event_type')),
             'label'      => sanitize_text_field((string) $request->get_param('note')),
-            'starts_at'  => $c->starts_at,
-            'ends_at'    => $c->ends_at,
+            'starts_at'  => "$date $start",
+            'ends_at'    => "$date $end",
         ]);
         return rest_ensure_response(['ok' => true]);
     }
@@ -1854,6 +1933,37 @@ class MCLB_REST_Admin {
         $err = $res['error'] ?? 'error';
         $msg = $map[$err] ?? __('Could not complete that action.', 'mobooking');
         return new WP_Error('mclb_' . $err, $msg, ['status' => ($err === 'not_found' ? 404 : 409)]);
+    }
+
+    /** WEB-24: validated, de-duplicated extra lane ids (primary excluded). @return int[] */
+    private static function extra_lanes_param($request, $primary_id) {
+        $raw = $request->get_param('extra_lane_ids');
+        if (!is_array($raw)) {
+            $raw = ($raw === null || $raw === '') ? [] : explode(',', (string) $raw);
+        }
+        $out = [];
+        foreach ($raw as $v) {
+            $v = (int) $v;
+            if ($v <= 0 || $v === (int) $primary_id || isset($out[$v])) { continue; }
+            $p = get_post($v);
+            if ($p && $p->post_type === MCLB_Lane::CPT && $p->post_status === 'publish') {
+                $out[$v] = $v;
+            }
+            if (count($out) >= 20) { break; }
+        }
+        return array_values($out);
+    }
+
+    /** Non-locking clash pre-check (the FOR-UPDATE insert stays authoritative). */
+    private static function lane_has_overlap($lane_id, $starts_at, $ends_at) {
+        foreach (MCLB_Bookings::active_for_lane((int) $lane_id, substr($starts_at, 0, 10) . ' 00:00:00', substr($starts_at, 0, 10) . ' 23:59:59') as $b) {
+            $bs = is_object($b) ? $b->starts_at : $b['starts_at'];
+            $be = is_object($b) ? $b->ends_at : $b['ends_at'];
+            if ($bs < $ends_at && $starts_at < $be) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function sanitize_date($date) {

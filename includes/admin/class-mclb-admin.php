@@ -119,6 +119,15 @@ class MCLB_Admin {
         $this->textarea_field($g, 'mclb_booking', 'resource_types', __('Resource types', 'mobooking'), __('One per line (e.g. Net, Bowling Machine). Admin-defined — not a fixed list.', 'mobooking'));
         $this->price_field($g, 'mclb_booking', 'price_per_hour', __('Price per hour', 'mobooking'));
         $this->increment_field($g, 'mclb_booking', 'booking_increment', __('Booking increment', 'mobooking'));
+        add_settings_field('staff_increment', __('Staff booking increment', 'mobooking'), function () {
+            $val  = (int) $this->val('staff_increment');
+            $opts = [0 => __('Same as customers', 'mobooking'), 15 => __('15 minutes', 'mobooking'), 30 => __('30 minutes', 'mobooking'), 60 => __('1 hour', 'mobooking')];
+            echo '<select name="' . esc_attr($this->name('staff_increment')) . '">';
+            foreach ($opts as $v => $lbl) {
+                printf('<option value="%d" %s>%s</option>', (int) $v, selected($val, $v, false), esc_html($lbl));
+            }
+            echo '</select> <span class="description">' . esc_html__('Lets staff book shorter slots from the calendar and wp-admin (e.g. 30 minutes) while customers keep the booking increment above. Must divide the booking increment evenly.', 'mobooking') . '</span>';
+        }, $g, 'mclb_booking');
         $this->number_field($g, 'mclb_booking', 'hold_minutes', __('Hold window', 'mobooking'), __('minutes', 'mobooking'), 1, 240);
         $this->number_field($g, 'mclb_booking', 'booking_window_days', __('Customer booking window', 'mobooking'), __('days ahead customers can book (0 = no limit). Staff are never limited.', 'mobooking'), 0, 3650);
         $this->text_field($g, 'mclb_booking', 'booking_window_note', __('Later-dates message', 'mobooking'), __('Shown after “Online bookings open N days in advance.” — e.g. Call 08 9393 1000 for later dates.', 'mobooking'));

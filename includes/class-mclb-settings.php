@@ -60,7 +60,8 @@ class MCLB_Settings {
             'resource_label_plural'   => MCLB_Terms::DEFAULTS['resource_label_plural'],
             'resource_types'          => "Standard",
             'price_per_hour'          => '35',
-            'booking_increment'       => 60, // minutes
+            'booking_increment'       => 60, // minutes - the CUSTOMER grid slot length
+            'staff_increment'         => 0,  // minutes staff can book in (calendar/wp-admin); 0 = same as booking_increment (WEB-22)
             'hold_minutes'            => 15, // mid-checkout hold window before a slot releases
             'booking_window_days'     => 14, // how many days ahead CUSTOMERS can book (0 = no limit); staff never limited
             'booking_window_note'     => '', // appended to the "open N days ahead" message (e.g. a phone number for later dates)
@@ -258,6 +259,10 @@ class MCLB_Settings {
         if (isset($in['price_per_hour'])) {
             $out['price_per_hour'] = self::sanitize_price($in['price_per_hour']);
         }
+        if (isset($in['staff_increment'])) {
+            $si = absint($in['staff_increment']);
+            $out['staff_increment'] = in_array($si, [0, 15, 30, 60, 120], true) ? $si : 0;
+        }
         if (isset($in['booking_increment'])) {
             $out['booking_increment'] = self::sanitize_increment($in['booking_increment']);
         }
@@ -433,6 +438,21 @@ class MCLB_Settings {
     public static function sanitize_price($v) {
         $v = preg_replace('/[^0-9.]/', '', (string) $v);
         return $v === '' ? '0' : (string) round((float) $v, 2);
+    }
+
+    /**
+     * Slot length for STAFF bookings (WEB-22): the calendar, wp-admin Add booking,
+     * moves, series and coach sub-ranges. Falls back to the customer increment when
+     * unset or when it doesn't divide it evenly (so staff slots always line up with
+     * the customer grid's slots).
+     */
+    public static function staff_increment() {
+        $cust  = (int) self::get('booking_increment') ?: 60;
+        $staff = (int) self::get('staff_increment');
+        if ($staff < 1 || $staff > $cust || $cust % $staff !== 0) {
+            return $cust;
+        }
+        return $staff;
     }
 
     private static function sanitize_increment($v) {

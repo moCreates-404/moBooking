@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -39,6 +39,21 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.6.1 =
+* WEB-22: Staff booking increment (Settings -> General -> Booking rules). Staff
+  can book 30-minute (or 15-minute) slots from the calendar and wp-admin while
+  customers keep the normal booking increment. In the calendar a click still
+  books one full slot; drag to choose 30-minute steps.
+* WEB-23: One-off blockouts can be edited from the calendar - date, start and
+  end time, and which lane (or all lanes) - not just the note and type.
+* WEB-24: New booking panel has "Also book at the same time": tick other free
+  lanes (e.g. Lane 5 + Machine 3) to book them for the same customer in one go.
+  Everything is checked first, so nothing is booked if one lane isn't free.
+  One confirmation email lists every lane.
+* Fix: the customer grid could show yesterday after midnight when the page came
+  from cache (WP Rocket) - it now always opens on today. The staff calendar also
+  rolls over to the new day by itself if left open overnight.
 
 = 1.6.0 =
 * Renamed: the plugin now installs as "mobooking/" (main file mobooking.php,

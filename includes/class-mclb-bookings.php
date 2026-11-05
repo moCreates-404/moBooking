@@ -1451,8 +1451,7 @@ class MCLB_Bookings {
         $ced = new DateTimeImmutable($ce, $tz);
         if ($csd >= $ced) { return false; }
         if ($csd < $bs || $ced > $be) { return false; }
-        $inc = (int) MCLB_Settings::get('booking_increment');
-        if ($inc < 1) { $inc = 60; }
+        $inc = MCLB_Settings::staff_increment(); // staff-set coach time (WEB-22)
         $o1 = (int) (($csd->getTimestamp() - $bs->getTimestamp()) / 60);
         $o2 = (int) (($ced->getTimestamp() - $bs->getTimestamp()) / 60);
         return ($o1 % $inc === 0) && ($o2 % $inc === 0);

@@ -231,7 +231,7 @@ class MCLB_Availability {
      */
     public static function is_range_available($lane_id, $starts_at, $ends_at) {
         $date = substr((string) $starts_at, 0, 10);
-        $av   = self::for_lane((int) $lane_id, $date);
+        $av   = self::for_lane((int) $lane_id, $date, ['increment' => MCLB_Settings::staff_increment()]); // staff paths (WEB-22)
         if (empty($av['is_open'])) {
             return false;
         }
@@ -242,7 +242,7 @@ class MCLB_Availability {
         $cursor = (string) $starts_at;
         $guard  = 0;
         while ($cursor !== (string) $ends_at) {
-            if (++$guard > 48 || !isset($by[$cursor])) {
+            if (++$guard > 200 || !isset($by[$cursor])) {
                 return false;
             }
             $slot = $by[$cursor];
@@ -264,7 +264,7 @@ class MCLB_Availability {
      */
     public static function is_range_bookable_time($lane_id, $starts_at, $ends_at) {
         $date = substr((string) $starts_at, 0, 10);
-        $av   = self::for_lane((int) $lane_id, $date);
+        $av   = self::for_lane((int) $lane_id, $date, ['increment' => MCLB_Settings::staff_increment()]); // staff paths (WEB-22)
         if (empty($av['is_open'])) {
             return false;
         }
@@ -275,7 +275,7 @@ class MCLB_Availability {
         $cursor = (string) $starts_at;
         $guard  = 0;
         while ($cursor !== (string) $ends_at) {
-            if (++$guard > 48 || !isset($by[$cursor])) {
+            if (++$guard > 200 || !isset($by[$cursor])) {
                 return false;
             }
             $slot = $by[$cursor];

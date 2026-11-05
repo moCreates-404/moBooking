@@ -18,6 +18,10 @@
 
   var ROW_H = 72;                                     // px per increment row (taller so 30-min blocks stay readable)
   var INC = parseInt(CFG.increment, 10) || 60;        // coerce: config may arrive as a string
+  // Staff booking step (WEB-22): rows stay one per customer slot (INC); dragging,
+  // time pickers and durations snap to SNAP (e.g. 30 min) when it's set finer.
+  var SNAP = parseInt(CFG.snap, 10) || INC;
+  if (SNAP > INC || INC % SNAP !== 0) { SNAP = INC; }
   var PPM = ROW_H / INC;                              // px per minute
   var TOP_PAD = 10;                                   // top inset so the first hour label clears the sticky header
   var GAP = 2;                                        // vertical gap so back-to-back blocks read as separate
@@ -138,15 +142,15 @@
     var row = el('div', 'mclb-coachtime__row');
     var cStart = el('select'), cEnd = el('select');
     var m;
-    for (m = startMin; m < endMin; m += INC) { cStart.appendChild(opt(String(m), minToLabel(m))); }
-    for (m = startMin + INC; m <= endMin; m += INC) { cEnd.appendChild(opt(String(m), minToLabel(m))); }
+    for (m = startMin; m < endMin; m += SNAP) { cStart.appendChild(opt(String(m), minToLabel(m))); }
+    for (m = startMin + SNAP; m <= endMin; m += SNAP) { cEnd.appendChild(opt(String(m), minToLabel(m))); }
     cStart.value = String(startMin); cEnd.value = String(endMin);
     row.appendChild(cStart); row.appendChild(el('span', 'mclb-coachtime__dash', '–')); row.appendChild(cEnd);
     wrap.appendChild(row);
     // Keep end strictly after start (nudge end forward when needed).
     function guard() {
       if (parseInt(cEnd.value, 10) <= parseInt(cStart.value, 10)) {
-        cEnd.value = String(Math.min(endMin, parseInt(cStart.value, 10) + INC));
+        cEnd.value = String(Math.min(endMin, parseInt(cStart.value, 10) + SNAP));
       }
     }
     cStart.addEventListener('change', guard);
@@ -212,6 +216,15 @@
         if (seq !== state.loadSeq) { return; } // a newer load started — ignore this stale response
         if (res.session || res.status === 401) { root.innerHTML = sessionHtml(); return; }
         if (!res.ok) { root.innerHTML = '<p class="mclb-manage__err">' + esc(errText(res)) + '</p>'; return; }
+        // Midnight rollover: a calendar left open overnight (or a cached page) has a
+        // stale "today". The server's clock is the truth - if its date has moved on
+        // and staff were looking at "today", follow it to the new day.
+        var srvToday = (res.body && res.body.now) ? String(res.body.now).slice(0, 10) : '';
+        if (srvToday && srvToday !== CFG.today) {
+          var wasToday = (state.date === CFG.today);
+          CFG.today = srvToday;
+          if (wasToday && state.date !== srvToday) { state.date = srvToday; return load(silent); }
+        }
         state.data = res.body;
         render();
       })
@@ -628,37 +641,52 @@
 
   // ── drag / tap range select on empty cells ───────────────────────────────────
   function wireDrag(body, lane, open, close) {
-    var startMin = null, marker = null, tapStart = null;
+    var startMin = null, marker = null, tapStart = null, moved = false;
     function yToMin(clientY) {
       var rect = body.getBoundingClientRect();
-      var min = open + Math.floor(((clientY - rect.top - TOP_PAD) / PPM) / INC) * INC;
-      return Math.max(open, Math.min(close - INC, min));
+      var min = open + Math.floor(((clientY - rect.top - TOP_PAD) / PPM) / SNAP) * SNAP;
+      return Math.max(open, Math.min(close - SNAP, min));
     }
+    // A plain click/tap books one customer slot (INC) from where you pressed;
+    // dragging selects in SNAP steps, so staff can make 30-minute bookings.
+    function clickEnd(s) { return Math.min(close, s + INC); }
     body.addEventListener('pointerdown', function (e) {
       if (e.target !== body && !e.target.classList.contains('mclb-cal__line') && !e.target.classList.contains('mclb-cal__shade')) { return; }
       startMin = yToMin(e.clientY);
+      moved = false;
       state.dragging = true;
       marker = el('div', 'mclb-cal__sel'); body.appendChild(marker);
-      drawSel(marker, startMin, startMin + INC, open);
+      drawSel(marker, startMin, clickEnd(startMin), open);
       body.setPointerCapture(e.pointerId);
     });
     body.addEventListener('pointermove', function (e) {
       if (startMin == null) { return; }
-      var cur = yToMin(e.clientY) + INC;
-      drawSel(marker, Math.min(startMin, cur - INC), Math.max(startMin + INC, cur), open);
+      var curStart = yToMin(e.clientY);
+      if (curStart !== startMin) { moved = true; }
+      if (!moved) { return; }
+      var cur = curStart + SNAP;
+      drawSel(marker, Math.min(startMin, cur - SNAP), Math.max(startMin + SNAP, cur), open);
     });
     body.addEventListener('pointerup', function (e) {
       if (startMin == null) { return; }
-      var endMin = yToMin(e.clientY) + INC;
-      var s = Math.min(startMin, endMin - INC), en = Math.max(startMin + INC, endMin);
+      var s, en;
+      if (moved) {
+        var endMin = yToMin(e.clientY) + SNAP;
+        s = Math.min(startMin, endMin - SNAP); en = Math.max(startMin + SNAP, endMin);
+      } else {
+        s = startMin; en = clickEnd(startMin);
+      }
       if (marker) { body.removeChild(marker); marker = null; }
       state.dragging = false;
       startMin = null;
       // a plain tap (no move) on touch: first tap sets start, second completes
-      if (e.pointerType === 'touch' && s + INC === en && tapStart == null) {
+      if (e.pointerType === 'touch' && !moved && tapStart == null) {
         tapStart = s; return;
       }
-      if (tapStart != null) { s = Math.min(tapStart, s); en = Math.max(tapStart + INC, en); tapStart = null; }
+      if (tapStart != null) {
+        var a = tapStart; tapStart = null;
+        if (a !== s) { var lo = Math.min(a, s), hi = Math.max(a, s) + SNAP; s = lo; en = Math.max(hi, s + SNAP); }
+      }
       openNewBooking(lane, s, en);
     });
   }
@@ -736,7 +764,7 @@
     var lane = laneById(laneId);
     var rect = body.getBoundingClientRect();
     var open = moveDrag.openMin, close = moveDrag.close, dur = moveDrag.dur;
-    var raw = open + Math.round(((y - rect.top - TOP_PAD) / PPM) / INC) * INC;
+    var raw = open + Math.round(((y - rect.top - TOP_PAD) / PPM) / SNAP) * SNAP;
     var start = Math.max(open, Math.min(close - dur, raw));
     var valid = !!lane && !rangeOutside(lane, start, start + dur) && !laneClash(laneId, start, start + dur, moveDrag.b.id);
     moveDrag.target = { lane_id: laneId, laneName: lane ? lane.name : '', start: start, valid: valid };
@@ -850,6 +878,28 @@
       reasonWrap.appendChild(el('span', null, I18N.overrideReason || 'Reason for price change'));
       var reason = mkInput('text'); reasonWrap.appendChild(reason); bookBody.appendChild(reasonWrap);
 
+      // WEB-24: also book other lanes for this customer at the same time.
+      var extraBox = el('div', 'mclb-panel__release mclb-extra');
+      extraBox.appendChild(el('strong', null, I18N.alsoBook || ('Also book at the same time')));
+      var extraChecks = [];
+      allLanes().forEach(function (l) {
+        if (l.id === lane.id) { return; }
+        var full = laneById(l.id) || {};
+        var busy = laneClash(l.id, startMin, endMin, 0);
+        var lbl = el('label', 'mclb-panel__override');
+        var cb = el('input'); cb.type = 'checkbox'; cb.value = String(l.id); cb.disabled = busy;
+        cb._rate = full.price_per_hour || 0; cb._outside = rangeOutside(full, startMin, endMin);
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(' ' + l.name + (busy ? ' (' + (I18N.booked || 'booked') + ')' : (cb._outside ? ' (' + (I18N.outsideShort || 'outside hours / blocked') + ')' : ''))));
+        if (busy) { lbl.style.opacity = '0.5'; }
+        cb.onchange = function () { updatePreview(); };
+        extraBox.appendChild(lbl);
+        extraChecks.push(cb);
+      });
+      if (extraChecks.length) { bookBody.appendChild(extraBox); }
+      function extraSelected() { return extraChecks.filter(function (c) { return c.checked; }); }
+      function extraTotal() { return extraSelected().reduce(function (t, c) { return t + Math.round(c._rate * hours * 100) / 100; }, 0); }
+
       var preview = el('p', 'mclb-panel__preview');
       bookBody.appendChild(preview);
       var coachRates = {};
@@ -869,7 +919,10 @@
         var laneNet = Math.max(0, Math.round((l - passAmt) * 100) / 100);
         var passStr = cov > 0 ? (' − ' + (I18N.pass || 'Pass') + ' ' + cov + 'h (' + money(passAmt) + ')') : '';
         var coachStr = isCoach ? (' + ' + (I18N.perSessionCoach || 'Coach') + ' ' + money(cfee) + ' (' + fmtHrs(chrs) + ' × ' + money(rate) + ')') : '';
-        preview.textContent = (I18N.perSessionLane || 'Lane') + ' ' + money(l) + passStr + coachStr + ' = ' + (I18N.due || 'Due') + ' ' + money(laneNet + (isCoach ? cfee : 0));
+        var xs = (typeof extraSelected === 'function') ? extraSelected() : [];
+        var xAmt = xs.length ? extraTotal() : 0;
+        var xStr = xs.length ? (' + ' + xs.length + ' ' + (xs.length === 1 ? (CFG.labels.resourceSingular || 'lane') : (CFG.labels.resourcePlural || 'lanes')).toLowerCase() + ' ' + money(xAmt)) : '';
+        preview.textContent = (I18N.perSessionLane || 'Lane') + ' ' + money(l) + passStr + coachStr + xStr + ' = ' + (I18N.due || 'Due') + ' ' + money(laneNet + (isCoach ? cfee : 0) + xAmt);
         reasonWrap.style.display = (Math.abs(l - baseLane) > 0.001) ? '' : 'none';
       }
       // Debounced free-coach fetch for the current coach window; keeps the chosen
@@ -981,6 +1034,8 @@
 
       repeat.onchange = function () {
         sOpts.style.display = repeat.value ? '' : 'none';
+        extraBox.style.display = repeat.value ? 'none' : ''; // WEB-24: extra lanes are single-booking only
+        if (repeat.value) { extraChecks.forEach(function (c) { c.checked = false; }); updatePreview(); }
         save.textContent = repeat.value ? (I18N.previewSeries || 'Preview series') : 'Create booking';
         seriesBox.style.display = 'none';
       };
@@ -1013,6 +1068,24 @@
           if (coach.value !== '0' && ct.partial()) { cbody.coach_start = ct.startHHMM(); cbody.coach_end = ct.endHHMM(); }
           if (blocking && ov.checked) { cbody.book_over_reason = boReason.value.trim(); }
           if (passCode.value.trim()) { cbody.pass_code = passCode.value.trim(); }
+          var xs = extraSelected();
+          if (xs.length) {
+            if (!ov.checked && xs.some(function (c) { return c._outside; })) { showErr(err, I18N.extraOutside || 'One of the extra lanes is outside hours or blocked out. Tick override to book it anyway.'); return; }
+            cbody.extra_lane_ids = xs.map(function (c) { return parseInt(c.value, 10); });
+            setBusy(save, true); err.style.display = 'none';
+            api('/booking', { method: 'POST', body: cbody }).then(function (res) {
+              if (!res.ok) { setBusy(save, false); showErr(err, errText(res)); return; }
+              var failed = (res.body && res.body.extra_failed) || [];
+              if (failed.length) {
+                setBusy(save, false);
+                showErr(err, (I18N.extraFailed || 'Booked, except these were just taken:') + ' ' + failed.join(', '));
+                save.disabled = true; load(true);
+                return;
+              }
+              closePanel(); load(true);
+            });
+            return;
+          }
           runWrite(save, err, api('/booking', { method: 'POST', body: cbody }));
           return;
         }
@@ -1492,11 +1565,11 @@
       });
       field(panel, I18N.moveResource || 'Resource', laneSel);
 
-      var startIn = mkInput('time'); startIn.step = INC * 60; startIn.value = timeInput(prefill.start_min);
+      var startIn = mkInput('time'); startIn.step = SNAP * 60; startIn.value = timeInput(prefill.start_min);
       field(panel, I18N.moveStart || 'Start time', startIn);
 
       var durSel = el('select');
-      for (var d = INC; d <= 8 * 60; d += INC) { var o = opt(String(d), durLabel(d)); if (d === prefill.dur) { o.selected = true; } durSel.appendChild(o); }
+      for (var d = SNAP; d <= 8 * 60; d += SNAP) { var o = opt(String(d), durLabel(d)); if (d === prefill.dur) { o.selected = true; } durSel.appendChild(o); }
       field(panel, I18N.moveDuration || 'Duration', durSel);
 
       var ovWrap = el('label', 'mclb-panel__override');
@@ -1534,7 +1607,7 @@
       var save = el('button', 'button button-primary mclb-panel__save', I18N.moveSave || 'Move booking');
       panel.appendChild(save);
 
-      function endTime() { return timeInput(hmToMin(startIn.value) + (parseInt(durSel.value, 10) || INC)); }
+      function endTime() { return timeInput(hmToMin(startIn.value) + (parseInt(durSel.value, 10) || SNAP)); }
       var pvTimer = null;
       function schedule() { if (pvTimer) { clearTimeout(pvTimer); } pvTimer = setTimeout(doPreview, 180); }
       function doPreview() {
@@ -1649,7 +1722,7 @@
         rel.appendChild(el('strong', null, (I18N.releaseThisDate || 'Release this date') + ' · ' + ((state.data && state.data.date_label) || state.date)));
         var endEarly = el('select');
         endEarly.appendChild(opt('', I18N.releaseWholeDay || 'Free the whole day'));
-        for (var m = bo.start_min + INC; m < bo.end_min; m += INC) { endEarly.appendChild(opt(timeInput(m), (I18N.endedEarlyAt || 'Ended early at') + ' ' + minToLabel(m))); }
+        for (var m = bo.start_min + SNAP; m < bo.end_min; m += SNAP) { endEarly.appendChild(opt(timeInput(m), (I18N.endedEarlyAt || 'Ended early at') + ' ' + minToLabel(m))); }
         field(rel, I18N.howMuch || 'How much', endEarly);
         var relBtn = actionBtn(I18N.release || 'Release', function (btn) {
           if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
@@ -1665,16 +1738,34 @@
 
       if (recurring) { return; } // no edit/delete for recurring here
 
-      // ── Edit / delete the one-off blockout ──
+      // ── Edit / delete the one-off blockout (WEB-23: times + scope editable) ──
+      var edit = el('div', 'mclb-panel__release');
+      edit.appendChild(el('strong', null, I18N.editBlockout || 'Edit blockout'));
+      var boDate = mkInput('date'); boDate.value = state.date;
+      field(edit, I18N.date || 'Date', boDate);
+      var boStart = mkInput('time'); boStart.step = SNAP * 60; boStart.value = timeInput(bo.start_min);
+      var boEnd = mkInput('time'); boEnd.step = SNAP * 60; boEnd.value = timeInput(bo.end_min);
+      field(edit, I18N.from || 'From', boStart);
+      field(edit, I18N.to || 'To', boEnd);
+      var boScope = el('select');
+      boScope.appendChild(opt('0', (I18N.allLanes || ('All ' + ((CFG.labels && CFG.labels.resourcePlural) || 'lanes').toLowerCase()))));
+      allLanes().forEach(function (l) { boScope.appendChild(opt(String(l.id), l.name)); });
+      boScope.value = String(bo.lane_id || 0);
+      field(edit, I18N.appliesTo || 'Applies to', boScope);
       var etype = el('select'); etype.appendChild(opt('', '— Event type —'));
       (CFG.eventTypes || []).forEach(function (t) { var o = opt(t.slug, t.label); if (t.slug === bo.event_type) { o.selected = true; } etype.appendChild(o); });
-      field(panel, 'Event type', etype);
-      var note = field(panel, 'Note', mkInput('text')); note.value = bo.note || '';
+      field(edit, 'Event type', etype);
+      var note = field(edit, 'Note', mkInput('text')); note.value = bo.note || '';
+      panel.appendChild(edit);
       var actions = el('div', 'mclb-panel__actions');
       actions.appendChild(actionBtn(I18N.save || 'Save', function (btn) {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        if (!boDate.value || !boStart.value || !boEnd.value || boEnd.value <= boStart.value) { showErr(err, I18N.checkTimes || 'Please check the date and times.'); return; }
         initialsSet(ini.value.trim());
-        runWrite(btn, err, api('/blockout/' + bo.id, { method: 'POST', body: { event_type: etype.value, note: note.value, actor: ini.value.trim() } }));
+        runWrite(btn, err, api('/blockout/' + bo.id, { method: 'POST', body: {
+          event_type: etype.value, note: note.value, actor: ini.value.trim(),
+          date: boDate.value, start: boStart.value, end: boEnd.value, lane_id: parseInt(boScope.value, 10) || 0
+        } }));
       }));
       actions.appendChild(actionBtn((I18N.deleteWholeBlockout || 'Delete whole blockout'), function () {
         if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
