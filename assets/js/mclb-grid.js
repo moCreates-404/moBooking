@@ -493,7 +493,8 @@
     this.setLoading(true);
     this.clearNotice();
     var prev = (mode === 'refresh') ? this.selections.slice() : [];
-    var url = CFG.restUrl + '?date=' + encodeURIComponent(date) + '&type=' + encodeURIComponent(this.type) + '&_=' + Date.now();
+    // CFG.restUrl already holds "?rest_route=…" when permalinks are plain.
+    var url = CFG.restUrl + (CFG.restUrl.indexOf('?') === -1 ? '?' : '&') + 'date=' + encodeURIComponent(date) + '&type=' + encodeURIComponent(this.type) + '&_=' + Date.now();
     fetch(url, { cache: 'no-store', headers: { 'X-WP-Nonce': CFG.nonce || '' } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
       .then(function (data) {

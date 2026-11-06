@@ -6,6 +6,7 @@
  * Version:           1.7.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
+ * Requires Plugins:  woocommerce
  * Author:            moCreates
  * Author URI:        https://mocreates.com.au/
  * License:           GPL-2.0-or-later
@@ -90,6 +91,17 @@ add_action('before_woocommerce_init', function () {
     if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
         \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', MCLB_FILE, true);
     }
+});
+
+// Payments run through WooCommerce. WordPress 6.5+ enforces the "Requires
+// Plugins" header; this notice covers older versions and a later deactivation.
+add_action('admin_notices', function () {
+    if (class_exists('WooCommerce') || !current_user_can('activate_plugins')) {
+        return;
+    }
+    echo '<div class="notice notice-error"><p><strong>moBooking:</strong> '
+        . esc_html__('WooCommerce needs to be installed and active. Customers can see the booking grid, but can\'t check out until it is.', 'mobooking')
+        . '</p></div>';
 });
 
 // Boot once all plugins are loaded.

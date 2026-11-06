@@ -99,7 +99,9 @@ class MCLB_Manage {
         $id = self::page_id();
         if ($id) {
             $path = wp_parse_url(get_permalink($id), PHP_URL_PATH);
-            if ($path) {
+            // Plain permalinks give "/?page_id=N" → path "/", which would
+            // exclude the home page from caching instead. Skip that case.
+            if ($path && $path !== '/') {
                 $uris[] = $path;
             }
         }

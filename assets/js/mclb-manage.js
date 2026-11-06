@@ -182,11 +182,21 @@
         return txt;
       });
   }
+  // Join the REST base and a "/route?query" path. With plain permalinks the base
+  // is "…/?rest_route=/mclb/v1/admin", so the path's own "?" must become "&".
+  function restUrl(base, path) {
+    var q = path.indexOf('?');
+    var route = q === -1 ? path : path.slice(0, q);
+    var query = q === -1 ? '' : path.slice(q + 1);
+    var url = base + route;
+    if (query) { url += (url.indexOf('?') === -1 ? '?' : '&') + query; }
+    return url;
+  }
   function api(path, opts, isRetry) {
     opts = opts || {};
     var headers = { 'X-WP-Nonce': state.nonce };
     if (opts.body) { headers['Content-Type'] = 'application/json'; }
-    return fetch(CFG.rest + path, {
+    return fetch(restUrl(CFG.rest, path), {
       method: opts.method || 'GET',
       credentials: 'same-origin',
       headers: headers,
