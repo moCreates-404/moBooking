@@ -295,9 +295,8 @@ class MCLB_Availability {
         foreach ($closures as $c) {
             $m = self::closure_minutes($c, $date, $midnight, $tz);
             if (!$m) { continue; }
-            $m = self::apply_exceptions($m, $c, (int) $lane_id, $exceptions);
-            if ($m) {
-                $out[] = ['start' => $m['start'], 'end' => $m['end'], 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
+            foreach (self::release_pieces($m, $c, (int) $lane_id, $exceptions) as $pc) {
+                $out[] = ['start' => $pc['start'], 'end' => $pc['end'], 'label' => MCLB_Event_Types::public_label($c->event_type ?? '')];
             }
         }
         return $out;
@@ -305,26 +304,43 @@ class MCLB_Availability {
 
     /**
      * Apply a closure's per-date release exceptions to its minute window for one
-     * lane (v1.4.1): a whole-day release (release_from NULL) removes it entirely;
-     * a "released from <time>" shortens the end to that time. An exception with
-     * lane_id 0 applies to every lane the closure covers; otherwise only its lane.
+     * lane, returning whatever is still blocked (0, 1 or 2+ pieces):
+     *   • whole-day release (release_from NULL)     → nothing left
+     *   • release_from only ("ended early", v1.4.1) → blocked until that time
+     *   • release_from + release_to (v1.6.2)        → that window is freed, so the
+     *     blockout can split into a before and an after piece
+     * An exception with lane_id 0 applies to every lane the closure covers;
+     * otherwise only its lane. Shared by the availability engine and the admin
+     * calendar (MCLB_Closures::for_day_detail) so they can never drift.
      *
      * @param array $m {start,end}
-     * @return array{start:int,end:int}|null
+     * @return array<int,array{start:int,end:int}>
      */
-    private static function apply_exceptions(array $m, $c, $lane_id, array $exceptions) {
+    public static function release_pieces(array $m, $c, $lane_id, array $exceptions) {
+        $pieces = [['start' => (int) $m['start'], 'end' => (int) $m['end']]];
         foreach ($exceptions as $ex) {
             if ((int) $ex->closure_id !== (int) $c->id) { continue; }
             if ((int) $ex->lane_id !== 0 && (int) $ex->lane_id !== (int) $lane_id) { continue; }
             if ($ex->release_from === null || $ex->release_from === '') {
-                return null; // whole-day release
+                return []; // whole-day release
             }
-            $cut = self::hm_to_min((string) $ex->release_from);
-            if ($cut !== null && $cut < $m['end']) {
-                $m['end'] = max($m['start'], $cut);
+            $from = self::hm_to_min((string) $ex->release_from);
+            if ($from === null) { continue; }
+            $to = (isset($ex->release_to) && $ex->release_to !== null && $ex->release_to !== '')
+                ? self::hm_to_min((string) $ex->release_to)
+                : null;
+            if ($to === null) { $to = PHP_INT_MAX; } // released to the end
+            if ($to <= $from) { continue; }
+            $next = [];
+            foreach ($pieces as $p) {
+                if ($to <= $p['start'] || $from >= $p['end']) { $next[] = $p; continue; } // no overlap
+                if ($from > $p['start']) { $next[] = ['start' => $p['start'], 'end' => $from]; }
+                if ($to < $p['end'])     { $next[] = ['start' => $to, 'end' => $p['end']]; }
             }
+            $pieces = $next;
+            if (!$pieces) { return []; }
         }
-        return ($m['end'] > $m['start']) ? $m : null;
+        return $pieces;
     }
 
     /**

@@ -1521,6 +1521,7 @@ class MCLB_REST_Admin {
     // Free up a blockout for a single date without touching the recurring rule:
     //   • whole day  — no release_from → the blockout is lifted for that date
     //   • ended early — release_from "HH:MM" → the blockout ends at that time
+    //   • window      — release_from + release_to → only that window is freed (v1.6.2)
     // Either writes ONE row to the exceptions table; the availability engine and
     // the admin calendar read it back (see MCLB_Closures::exceptions_for_day /
     // apply_exceptions). "Release the whole blockout" is the existing delete, not
@@ -1552,22 +1553,41 @@ class MCLB_REST_Admin {
             return new WP_Error('mclb_bad_lane', MCLB_Terms::fill(__('That {resource} is not covered by this blockout.', 'mobooking')), ['status' => 400]);
         }
 
-        // "Ended early": release from a time inside the blockout window.
+        // Partial release. release_from alone = "ended early" (free from that time
+        // to the end, v1.4.1). release_from + release_to = free just that window
+        // (v1.6.2), e.g. 2–3pm out of a 10am–9pm block. Both must sit inside the
+        // blockout; a window covering the whole blockout is stored as whole-day,
+        // and one running to the end is stored as "ended early".
         $release_from = trim((string) $request->get_param('release_from'));
+        $release_to   = trim((string) $request->get_param('release_to'));
+        $hm = '/^([01]\d|2[0-3]):[0-5]\d$/';
+        if ($release_to !== '' && $release_from === '') {
+            return new WP_Error('mclb_bad_time', __('Choose a start time for the release.', 'mobooking'), ['status' => 400]);
+        }
         if ($release_from !== '') {
-            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $release_from)) {
-                return new WP_Error('mclb_bad_time', __('Enter a valid end time (HH:MM).', 'mobooking'), ['status' => 400]);
+            if (!preg_match($hm, $release_from) || ($release_to !== '' && !preg_match($hm, $release_to))) {
+                return new WP_Error('mclb_bad_time', __('Enter valid times (HH:MM).', 'mobooking'), ['status' => 400]);
             }
-            $tz   = wp_timezone();
-            $cut  = (new DateTimeImmutable("$date $release_from:00", $tz))->getTimestamp();
-            $ws   = (new DateTimeImmutable($w['starts_at'], $tz))->getTimestamp();
-            $we   = (new DateTimeImmutable($w['ends_at'], $tz))->getTimestamp();
-            if ($cut <= $ws || $cut >= $we) {
-                return new WP_Error('mclb_time_range', __('The end time must fall inside the blockout.', 'mobooking'), ['status' => 400]);
+            $tz  = wp_timezone();
+            $ws  = (new DateTimeImmutable($w['starts_at'], $tz))->getTimestamp();
+            $we  = (new DateTimeImmutable($w['ends_at'], $tz))->getTimestamp();
+            $from_ts = (new DateTimeImmutable("$date $release_from:00", $tz))->getTimestamp();
+            $to_ts   = ($release_to !== '') ? (new DateTimeImmutable("$date $release_to:00", $tz))->getTimestamp() : $we;
+            if ($from_ts < $ws || $to_ts > $we || $to_ts <= $from_ts) {
+                return new WP_Error('mclb_time_range', __('The released time must fall inside the blockout.', 'mobooking'), ['status' => 400]);
             }
+            if ($to_ts >= $we) { $release_to = ''; }           // runs to the end → "ended early"
+            if ($from_ts <= $ws && $release_to === '') { $release_from = ''; } // the whole thing → whole day
+        } else {
+            $release_to = '';
         }
 
-        $ex_id = MCLB_Closures::add_exception($id, $date, $lane_id, ($release_from !== '' ? $release_from : null), $actor);
+        $ex_id = MCLB_Closures::add_exception(
+            $id, $date, $lane_id,
+            ($release_from !== '' ? $release_from : null),
+            $actor,
+            ($release_to !== '' ? $release_to : null)
+        );
         if (!$ex_id) {
             return new WP_Error('mclb_write', __('Could not release the blockout.', 'mobooking'), ['status' => 500]);
         }
@@ -1606,6 +1626,11 @@ class MCLB_REST_Admin {
                 ? (new DateTimeImmutable("$date " . substr((string) $ex->release_from, 0, 8), $tz))
                 : (new DateTimeImmutable($w['starts_at'], $tz));
             $winE  = new DateTimeImmutable($w['ends_at'], $tz);
+            // A window release (v1.6.2) only re-closes up to its own end.
+            if ($ex->release_from !== null && $ex->release_from !== '' && !empty($ex->release_to)) {
+                $rt = new DateTimeImmutable("$date " . substr((string) $ex->release_to, 0, 8), $tz);
+                if ($rt < $winE) { $winE = $rt; }
+            }
             // Clamp the released window start into the blockout window.
             $wsDt = new DateTimeImmutable($w['starts_at'], $tz);
             if ($winS < $wsDt) { $winS = $wsDt; }

@@ -363,6 +363,17 @@
   }
   function opt(v, t) { var o = el('option', null, t); o.value = v; return o; }
 
+  // "from 2:00 pm" / "2:00 pm–3:00 pm" / "whole day" for a release marker.
+  function releaseWhen(m) {
+    if (m.from && m.to) { return hmLabel(m.from) + '–' + hmLabel(m.to); }
+    if (m.from) { return (I18N.releasedFrom || 'from') + ' ' + hmLabel(m.from); }
+    return I18N.wholeDay || 'whole day';
+  }
+  function hmLabel(hm) {
+    var p = String(hm).split(':');
+    return minToLabel(parseInt(p[0], 10) * 60 + parseInt(p[1], 10));
+  }
+
   // Released-blockout markers (v1.4.1). A whole-day release removes the blockout
   // block entirely, so the only sign it is free is this strip; clicking a marker
   // offers "Undo release" (which refuses if a booking now sits in the window).
@@ -373,8 +384,7 @@
     strip.appendChild(el('strong', null, (I18N.released || 'Released') + ': '));
     marks.forEach(function (m) {
       var scope = (m.lane_id === 0) ? '' : (' · ' + (laneName(m.lane_id) || ('#' + m.lane_id)));
-      var when = m.from ? (' ' + (I18N.releasedFrom || 'from') + ' ' + m.from) : (' · ' + (I18N.wholeDay || 'whole day'));
-      var label = (m.type_label || 'Blockout') + when + scope + (m.actor ? ' (' + m.actor + ')' : '');
+      var label = (m.type_label || 'Blockout') + ' · ' + releaseWhen(m) + scope + (m.actor ? ' (' + m.actor + ')' : '');
       var chip = el('button', 'mclb-chip mclb-chip--released', label);
       chip.onclick = function () { openReleaseUndo(m); };
       strip.appendChild(chip);
@@ -1703,8 +1713,7 @@
         relDone.appendChild(el('strong', null, (I18N.alreadyReleased || 'Already released') + ' · ' + ((state.data && state.data.date_label) || state.date)));
         myReleases.forEach(function (mk) {
           var row = el('div', 'mclb-panel__relrow');
-          var when = mk.from ? ((I18N.releasedFrom || 'from') + ' ' + mk.from) : (I18N.wholeDay || 'whole day');
-          row.appendChild(el('span', null, when + (mk.actor ? ' (' + mk.actor + ')' : '')));
+          row.appendChild(el('span', null, releaseWhen(mk) + (mk.actor ? ' (' + mk.actor + ')' : '')));
           var undo = el('button', 'button mclb-panel__act', I18N.undoRelease || 'Undo release');
           undo.onclick = function () { closePanel(); openReleaseUndo(mk); };
           row.appendChild(undo);
@@ -1713,28 +1722,54 @@
         panel.appendChild(relDone);
       }
 
-      // ── Release this date (v1.4.1) — frees the slot without touching the rule.
-      //    Works for one-off and recurring blockouts alike. "Release the whole
-      //    blockout" is the Delete button below (one-off only). Hidden once a
-      //    release already exists for this date (undo it first). ──
-      if (!myReleases.length) {
-        var rel = el('div', 'mclb-panel__release');
-        rel.appendChild(el('strong', null, (I18N.releaseThisDate || 'Release this date') + ' · ' + ((state.data && state.data.date_label) || state.date)));
-        var endEarly = el('select');
-        endEarly.appendChild(opt('', I18N.releaseWholeDay || 'Free the whole day'));
-        for (var m = bo.start_min + SNAP; m < bo.end_min; m += SNAP) { endEarly.appendChild(opt(timeInput(m), (I18N.endedEarlyAt || 'Ended early at') + ' ' + minToLabel(m))); }
-        field(rel, I18N.howMuch || 'How much', endEarly);
-        var relBtn = actionBtn(I18N.release || 'Release', function (btn) {
-          if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
-          initialsSet(ini.value.trim());
-          var body = { date: state.date, actor: ini.value.trim() };
-          if (endEarly.value) { body.release_from = endEarly.value; }
-          if (bo.lane_id) { body.lane_id = bo.lane_id; }
-          runWrite(btn, err, api('/closure/' + bo.id + '/release', { method: 'POST', body: body }));
-        });
-        var relActions = el('div', 'mclb-panel__actions'); relActions.appendChild(relBtn); rel.appendChild(relActions);
-        panel.appendChild(rel);
+      // ── Release time on this date — frees slots without touching the rule.
+      //    Works for one-off and recurring blockouts alike. Pick From/To: the
+      //    whole block = free the day; to the end = ended early; anything in
+      //    between = just that window (v1.6.2, e.g. 2–3pm). More than one window
+      //    can be released on the same date. ──
+      var rel = el('div', 'mclb-panel__release');
+      rel.appendChild(el('strong', null, (myReleases.length ? (I18N.releaseMore || 'Release more time') : (I18N.releaseThisDate || 'Release this date')) + ' · ' + ((state.data && state.data.date_label) || state.date)));
+      var relFrom = el('select');
+      var relTo = el('select');
+      for (var m = bo.start_min; m < bo.end_min; m += SNAP) { relFrom.appendChild(opt(timeInput(m), minToLabel(m))); }
+      for (var m2 = bo.start_min + SNAP; m2 <= bo.end_min; m2 += SNAP) { relTo.appendChild(opt(timeInput(m2), minToLabel(m2))); }
+      if (bo.end_min - bo.start_min < SNAP || (bo.end_min - bo.start_min) % SNAP) { // odd-length block: make sure its real end is offered
+        if (!relTo.querySelector('option[value="' + timeInput(bo.end_min) + '"]')) { relTo.appendChild(opt(timeInput(bo.end_min), minToLabel(bo.end_min))); }
       }
+      relFrom.value = timeInput(bo.start_min);
+      relTo.value = timeInput(bo.end_min);
+      field(rel, I18N.releaseFrom || 'Free from', relFrom);
+      field(rel, I18N.releaseTo || 'Until', relTo);
+      // "Whole day" / "to the end" are judged against the blockout's FULL window:
+      // after an earlier window release this block may only be one piece of it.
+      var oS = timeInput((bo.orig_start_min !== undefined) ? bo.orig_start_min : bo.start_min);
+      var oE = timeInput((bo.orig_end_min !== undefined) ? bo.orig_end_min : bo.end_min);
+      var relHint = el('p', 'mclb-panel__ctx');
+      function relDescribe() {
+        var f = relFrom.value, t = relTo.value;
+        if (t <= f) { relHint.textContent = I18N.checkTimes || 'Please check the date and times.'; return; }
+        var whole = (f <= oS && t >= oE);
+        relHint.textContent = whole
+          ? (I18N.releaseHintWhole || 'Frees this whole block for this date only.')
+          : ((I18N.releaseHintWindow || 'Frees') + ' ' + hmLabel(f) + '–' + hmLabel(t) + ' ' + (I18N.releaseHintRest || 'for this date only. The rest stays blocked.'));
+      }
+      relFrom.onchange = relDescribe; relTo.onchange = relDescribe; relDescribe();
+      rel.appendChild(relHint);
+      var relBtn = actionBtn(I18N.release || 'Release', function (btn) {
+        if (!ini.value.trim()) { showErr(err, I18N.needInitials); return; }
+        if (relTo.value <= relFrom.value) { showErr(err, I18N.checkTimes || 'Please check the date and times.'); return; }
+        initialsSet(ini.value.trim());
+        var body = { date: state.date, actor: ini.value.trim() };
+        var whole = (relFrom.value <= oS && relTo.value >= oE);
+        if (!whole) {
+          body.release_from = relFrom.value;
+          if (relTo.value < oE) { body.release_to = relTo.value; }
+        }
+        if (bo.lane_id) { body.lane_id = bo.lane_id; }
+        runWrite(btn, err, api('/closure/' + bo.id + '/release', { method: 'POST', body: body }));
+      });
+      var relActions = el('div', 'mclb-panel__actions'); relActions.appendChild(relBtn); rel.appendChild(relActions);
+      panel.appendChild(rel);
 
       if (recurring) { return; } // no edit/delete for recurring here
 
@@ -1743,8 +1778,12 @@
       edit.appendChild(el('strong', null, I18N.editBlockout || 'Edit blockout'));
       var boDate = mkInput('date'); boDate.value = state.date;
       field(edit, I18N.date || 'Date', boDate);
-      var boStart = mkInput('time'); boStart.step = SNAP * 60; boStart.value = timeInput(bo.start_min);
-      var boEnd = mkInput('time'); boEnd.step = SNAP * 60; boEnd.value = timeInput(bo.end_min);
+      // Prefill with the blockout's full window, not the piece left after any
+      // releases, so saving an edit never bakes a release into the blockout.
+      var boS = (bo.orig_start_min !== undefined) ? bo.orig_start_min : bo.start_min;
+      var boE = (bo.orig_end_min !== undefined) ? bo.orig_end_min : bo.end_min;
+      var boStart = mkInput('time'); boStart.step = SNAP * 60; boStart.value = timeInput(boS);
+      var boEnd = mkInput('time'); boEnd.step = SNAP * 60; boEnd.value = timeInput(boE);
       field(edit, I18N.from || 'From', boStart);
       field(edit, I18N.to || 'To', boEnd);
       var boScope = el('select');
@@ -1783,8 +1822,7 @@
     openPanel(function (panel) {
       panelHead(panel, (I18N.undoRelease || 'Undo release'));
       var scope = (m.lane_id === 0) ? '' : (' · ' + (laneName(m.lane_id) || ('#' + m.lane_id)));
-      var when = m.from ? (' ' + (I18N.releasedFrom || 'from') + ' ' + m.from) : (' · ' + (I18N.wholeDay || 'whole day'));
-      panel.appendChild(el('p', 'mclb-panel__ctx', (m.type_label || 'Blockout') + when + scope + ' · ' + ((state.data && state.data.date_label) || state.date) + (m.actor ? ' (' + m.actor + ')' : '')));
+      panel.appendChild(el('p', 'mclb-panel__ctx', (m.type_label || 'Blockout') + ' · ' + releaseWhen(m) + scope + ' · ' + ((state.data && state.data.date_label) || state.date) + (m.actor ? ' (' + m.actor + ')' : '')));
       panel.appendChild(el('p', 'mclb-panel__ctx', I18N.undoReleaseHint || 'This re-applies the blockout for this date. It will refuse if a booking now sits in the released window.'));
       var ini = initialsField(panel);
       var err = errBox(panel);

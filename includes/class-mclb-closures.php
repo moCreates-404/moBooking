@@ -89,6 +89,7 @@ class MCLB_Closures {
   exception_date date NOT NULL,
   lane_id bigint(20) unsigned NOT NULL DEFAULT 0,
   release_from time DEFAULT NULL,
+  release_to time DEFAULT NULL,
   actor varchar(20) DEFAULT NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
@@ -97,15 +98,22 @@ class MCLB_Closures {
 ) ENGINE=InnoDB {$charset_collate};";
     }
 
-    /** Add a release exception. $release_from = null (whole day) or 'HH:MM[:SS]'. */
-    public static function add_exception($closure_id, $exception_date, $lane_id, $release_from, $actor) {
+    /**
+     * Add a release exception.
+     *   $release_from null              → whole day
+     *   $release_from set, $release_to null → released from that time to the end
+     *   both set                        → only that window is released (v1.6.2)
+     */
+    public static function add_exception($closure_id, $exception_date, $lane_id, $release_from, $actor, $release_to = null) {
         global $wpdb;
         $rf = ($release_from === null || $release_from === '') ? null : substr((string) $release_from, 0, 8);
+        $rt = ($rf === null || $release_to === null || $release_to === '') ? null : substr((string) $release_to, 0, 8);
         $ok = $wpdb->insert(self::exceptions_table(), [
             'closure_id'     => (int) $closure_id,
             'exception_date' => (string) $exception_date,
             'lane_id'        => (int) $lane_id,
             'release_from'   => $rf,
+            'release_to'     => $rt,
             'actor'          => mb_substr((string) $actor, 0, 20),
             'created_at'     => current_time('mysql'),
         ]);
@@ -159,35 +167,36 @@ class MCLB_Closures {
                 continue;
             }
             // Apply release exceptions so the admin calendar shows the effective
-            // (shortened/removed) blockout. An exception with lane_id 0 applies to
-            // the whole closure; one with lane_id = the closure's own lane applies
-            // to this lane-specific closure. (A per-lane release of a SITE-WIDE
-            // closure can't be shown as one entry, so it surfaces as a marker only.)
-            $start_min = (int) $w['start_min'];
-            $end_min   = (int) $w['end_min'];
-            $dropped   = false;
-            foreach ($exes as $ex) {
-                if ((int) $ex->closure_id !== (int) $c->id) { continue; }
-                if ((int) $ex->lane_id !== 0 && (int) $ex->lane_id !== (int) $c->lane_id) { continue; }
-                if ($ex->release_from === null || $ex->release_from === '') { $dropped = true; break; }
-                $cut = self::time_to_min((string) $ex->release_from);
-                if ($cut !== null && $cut < $end_min) { $end_min = max($start_min, $cut); }
+            // blockout. Uses the same helper as the public availability engine, so
+            // a window release (v1.6.2) can split one blockout into two pieces;
+            // each piece is its own entry sharing the closure id. Passing the
+            // closure's own lane matches lane-0 exceptions plus ones for that lane
+            // (a per-lane release of a SITE-WIDE closure surfaces as a marker only).
+            $orig_start = (int) $w['start_min'];
+            $orig_end   = (int) $w['end_min'];
+            $pieces = MCLB_Availability::release_pieces(['start' => $orig_start, 'end' => $orig_end], $c, (int) $c->lane_id, $exes);
+            foreach ($pieces as $pc) {
+                $start_min = (int) $pc['start'];
+                $end_min   = (int) $pc['end'];
+                $out[] = [
+                    'id'         => (int) $c->id,
+                    'lane_id'    => (int) $c->lane_id,
+                    'kind'       => $c->kind,
+                    'event_type' => (string) $c->event_type,
+                    'note'       => (string) $c->label,
+                    'colour'     => MCLB_Event_Types::color($c->event_type),
+                    'type_label' => MCLB_Event_Types::admin_label($c->event_type),
+                    'editable'   => ($c->kind === 'oneoff'),
+                    'starts_at'  => $midnight->modify('+' . $start_min . ' minutes')->format('Y-m-d H:i:s'),
+                    'ends_at'    => $midnight->modify('+' . $end_min . ' minutes')->format('Y-m-d H:i:s'),
+                    'start_min'  => $start_min,
+                    'end_min'    => $end_min,
+                    // The blockout's full window before releases, so editing it
+                    // never bakes a release into the blockout itself.
+                    'orig_start_min' => $orig_start,
+                    'orig_end_min'   => $orig_end,
+                ];
             }
-            if ($dropped || $end_min <= $start_min) { continue; }
-            $out[] = [
-                'id'         => (int) $c->id,
-                'lane_id'    => (int) $c->lane_id,
-                'kind'       => $c->kind,
-                'event_type' => (string) $c->event_type,
-                'note'       => (string) $c->label,
-                'colour'     => MCLB_Event_Types::color($c->event_type),
-                'type_label' => MCLB_Event_Types::admin_label($c->event_type),
-                'editable'   => ($c->kind === 'oneoff'),
-                'starts_at'  => $midnight->modify('+' . $start_min . ' minutes')->format('Y-m-d H:i:s'),
-                'ends_at'    => $midnight->modify('+' . $end_min . ' minutes')->format('Y-m-d H:i:s'),
-                'start_min'  => $start_min,
-                'end_min'    => $end_min,
-            ];
         }
         return $out;
     }
@@ -207,6 +216,7 @@ class MCLB_Closures {
                 'closure_id' => (int) $ex->closure_id,
                 'lane_id'    => (int) $ex->lane_id,
                 'from'       => $ex->release_from ? substr((string) $ex->release_from, 0, 5) : '',
+                'to'         => (!empty($ex->release_to) && $ex->release_from) ? substr((string) $ex->release_to, 0, 5) : '',
                 'actor'      => (string) $ex->actor,
                 'type_label' => $c ? MCLB_Event_Types::admin_label($c->event_type) : __('Blockout', 'mobooking'),
             ];

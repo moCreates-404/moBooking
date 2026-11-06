@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.6.1
+Stable tag: 1.6.2
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -39,6 +39,17 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.6.2 =
+* Release part of a blockout: in the calendar, click a blockout and choose
+  "Free from" / "Until" to release just a window on that date (e.g. 2-3pm out
+  of a 10am-9pm block). The rest stays blocked, and you can release more than
+  one window on the same date. Whole-day and "ended early" releases work as
+  before, and every release can still be undone.
+* Fix: editing a blockout that had part of it released now starts from the
+  blockout's full times, so saving doesn't shorten it by mistake.
+* Database: adds one column (release_to) to the release table. Existing data
+  is untouched.
 
 = 1.6.1 =
 * WEB-22: Staff booking increment (Settings -> General -> Booking rules). Staff
