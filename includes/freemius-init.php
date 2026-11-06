@@ -75,3 +75,13 @@ if (!function_exists('mobooking_fs')) {
     mobooking_fs();
     do_action('mobooking_fs_loaded');
 }
+
+// Uninstall cleanup (opt-in data removal). Freemius forbids uninstall.php and
+// fires `after_uninstall` from its own uninstall hook; without Freemius
+// (MCLB_FS_ID = '') use the normal WordPress uninstall hook.
+require_once MCLB_DIR . 'includes/mclb-uninstall.php';
+if (mobooking_fs()) {
+    mobooking_fs()->add_action('after_uninstall', 'mclb_uninstall_cleanup');
+} else {
+    register_uninstall_hook(MCLB_FILE, 'mclb_uninstall_cleanup');
+}

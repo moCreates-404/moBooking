@@ -10,7 +10,7 @@
  *       and shop_manager ONLY — never counter staff.
  *
  * Granted on activation and self-healed on admin_init via a version option
- * (activation doesn't run on a plugin update). Removed in uninstall.php.
+ * (activation doesn't run on a plugin update). Removed in includes/mclb-uninstall.php.
  *
  * @package moBooking
  */
@@ -60,7 +60,7 @@ class MCLB_Caps {
         }
     }
 
-    /** Remove everything this adds (uninstall.php). */
+    /** Remove everything this adds (includes/mclb-uninstall.php). */
     public static function uninstall() {
         remove_role(self::ROLE);
         foreach (['administrator', 'shop_manager'] as $r) {
