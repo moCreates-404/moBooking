@@ -87,7 +87,10 @@
 
 /* Groups + columns grow to fill the calendar width when there's room; the
  * min-width floors mean many lanes still overflow into the horizontal scroll. */
-.mclb-cal__group { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+/* min-width: auto (not 0) so a group is never narrower than its columns: when
+ * the calendar is narrower than all columns it scrolls sideways instead of
+ * letting the next group's columns overlap this one's. */
+.mclb-cal__group { display: flex; flex-direction: column; flex: 1 1 auto; min-width: auto; }
 .mclb-cal__grouphead { box-sizing: border-box; height: 24px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--mclb-muted); padding: 2px 8px; border-bottom: 1px dashed var(--mclb-line); background: #fafafa; position: sticky; top: 0; z-index: 4; }
 .mclb-cal__cols { display: flex; flex: 1 1 auto; }
 
