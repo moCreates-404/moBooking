@@ -92,6 +92,7 @@ class MCLB_Plan {
         }
         remove_submenu_page(MCLB_Admin::PAGE, MCLB_Passes_Admin::SLUG);
         remove_submenu_page(MCLB_Admin::PAGE, MCLB_Report::SLUG);
+        remove_submenu_page(MCLB_Admin::PAGE, 'edit.php?post_type=' . MCLB_Coach_Manager::CPT);
     }
 
     // ── Internals ────────────────────────────────────────────────────────────

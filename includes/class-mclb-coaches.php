@@ -1,8 +1,9 @@
 <?php
 /**
  * Coach add-on (Phase 7b) — the generic layer between moBooking and whatever
- * supplies coaches on a given install. The plugin ships only the filter
- * contract; the theme (CCWA) returns real coaches/rates/emails:
+ * supplies coaches on a given install. Coaches come through three filters,
+ * answered by the built-in manager (MCLB_Coach_Manager, v1.7.0) or, when a
+ * theme already hooks them, by the theme (e.g. Cricketers Club's `coach` CPT):
  *
  *   mclb_coach_options            → [ coach_id => display name ]  (bookable only)
  *   mclb_coach_rate  ($rate,$id)  → float hourly rate, or null when unset

@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.6.2
+Stable tag: 1.7.0
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -39,6 +39,16 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.7.0 =
+* New: built-in Coaches manager (Pro). Add coaches/instructors under
+  moBooking > Coaches with an hourly fee, an email for their daily schedule,
+  and a Bookable switch. The menu name follows your wording setting
+  (Instructors, Trainers...). Customers can request them, staff assign them
+  from the calendar, and they appear in the roster and day sheets.
+* Sites whose theme already supplies coaches (through the mclb_coach_options
+  filter) keep using the theme's coaches; the built-in manager stays off.
+  Force it either way with the mclb_builtin_coaches filter.
 
 = 1.6.2 =
 * Release part of a blockout: in the calendar, click a blockout and choose

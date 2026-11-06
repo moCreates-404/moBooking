@@ -38,6 +38,7 @@ class MCLB_Plugin {
 
         // Data subsystems.
         MCLB_Lane::init();
+        MCLB_Coach_Manager::init(); // built-in coaches unless the theme supplies them (v1.7.0)
         MCLB_Bookings::init();
 
         // Front-end grid (shortcode + REST + assets).

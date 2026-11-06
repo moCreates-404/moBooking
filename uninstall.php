@@ -28,9 +28,9 @@ foreach (['mclb_bookings', 'mclb_closures', 'mclb_closure_exceptions', 'mclb_pas
     $wpdb->query("DROP TABLE IF EXISTS `{$wpdb->prefix}{$mclb_table}`"); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- fixed table names.
 }
 
-// Lane CPT posts (and their meta, via wp_delete_post).
+// Lane and coach CPT posts (and their meta, via wp_delete_post).
 $mclb_lanes = get_posts([
-    'post_type'      => 'mclb_lane',
+    'post_type'      => ['mclb_lane', 'mclb_coach'],
     'post_status'    => 'any',
     'posts_per_page' => -1,
     'fields'         => 'ids',
