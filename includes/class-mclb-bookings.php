@@ -1278,8 +1278,8 @@ class MCLB_Bookings {
         // the new whole-duration, then price net of the (adjusted) cover.
         $pass_ctx = [];
         if (class_exists('MCLB_Passes') && MCLB_Passes::redeemed_hours_for_booking($id) > 0) {
-            MCLB_Passes::adjust_for_move($id, $starts_at, $ends_at);
-            $pass_ctx = ['booking_id' => $id];
+            MCLB_Passes::adjust_for_move($id, $starts_at, $ends_at, (int) $new_lane_id);
+            $pass_ctx = MCLB_Passes::redeemed_hours_for_booking($id) > 0 ? ['booking_id' => $id] : [];
         }
         $new_lane_name  = get_the_title($new_lane_id);
         $new_lane_price = self::lane_price($new_lane_id, $starts_at, $ends_at, $pass_ctx);

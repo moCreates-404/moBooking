@@ -46,6 +46,7 @@ class MCLB_Passes_Admin {
             'holder_email' => sanitize_email(wp_unslash($_POST['holder_email'] ?? '')),
             'holder_phone' => sanitize_text_field(wp_unslash($_POST['holder_phone'] ?? '')),
             'hours'        => (float) ($_POST['hours'] ?? 0),
+            'pass_group'   => isset($_POST['pass_group']) ? sanitize_text_field(wp_unslash($_POST['pass_group'])) : '',
             'expires_at'   => $expires,
             'note'         => sanitize_textarea_field(wp_unslash($_POST['note'] ?? '')),
             'pos_ref'      => sanitize_text_field(wp_unslash($_POST['pos_ref'] ?? '')),
@@ -84,9 +85,9 @@ class MCLB_Passes_Admin {
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename=mclb-passes-' . gmdate('Ymd') . '.csv');
         $out = fopen('php://output', 'w');
-        fputcsv($out, ['Code', 'Holder', 'Email', 'Phone', 'Issued hours', 'Balance', 'Status', 'Expires', 'POS ref', 'Created by', 'Created']);
+        fputcsv($out, ['Code', 'Type', 'Holder', 'Email', 'Phone', 'Issued hours', 'Balance', 'Status', 'Expires', 'POS ref', 'Created by', 'Created']);
         foreach ($rows as $r) {
-            fputcsv($out, [$r->code, $r->holder_name, $r->holder_email, $r->holder_phone, $r->hours_total, MCLB_Passes::balance((int) $r->id), $r->status, $r->expires_at, $r->pos_ref, $r->created_by, $r->created_at]);
+            fputcsv($out, [$r->code, MCLB_Passes::group_label($r), $r->holder_name, $r->holder_email, $r->holder_phone, $r->hours_total, MCLB_Passes::balance((int) $r->id), $r->status, $r->expires_at, $r->pos_ref, $r->created_by, $r->created_at]);
         }
         fclose($out);
         exit;
@@ -104,6 +105,10 @@ class MCLB_Passes_Admin {
         $heading = MCLB_Terms::fill(__('Your prepaid {pass}', 'mobooking'));
         $body  = '<p>' . sprintf(esc_html(MCLB_Terms::fill(__('Your prepaid {pass} code is %s.', 'mobooking'))), '<strong>' . esc_html($pass->code) . '</strong>') . '</p>';
         $body .= '<p>' . sprintf(esc_html__('Balance: %sh.', 'mobooking'), esc_html(rtrim(rtrim(number_format((float) MCLB_Passes::balance((int) $pass->id), 2), '0'), '.'))) . '</p>';
+        if (isset($pass->pass_group) && (string) $pass->pass_group !== '') {
+            /* translators: %1$s: pass type, e.g. "Truman". */
+            $body .= '<p>' . esc_html(sprintf(MCLB_Terms::fill(__('This is a %1$s {pass}: it can only be used on %1$s bookings.', 'mobooking')), $pass->pass_group)) . '</p>';
+        }
         if ($pass->expires_at) {
             $body .= '<p style="color:#666;">' . sprintf(esc_html__('Use it to BOOK before %s — your sessions can be later.', 'mobooking'), esc_html(wp_date('j M Y', strtotime((string) $pass->expires_at)))) . '</p>';
         }
@@ -133,6 +138,12 @@ class MCLB_Passes_Admin {
         echo '<table class="form-table"><tbody>';
         printf('<tr><th>%s</th><td><input type="text" name="holder_name" class="regular-text"></td></tr>', esc_html__('Holder name', 'mobooking'));
         printf('<tr><th>%s</th><td><input type="email" name="holder_email" class="regular-text"> <input type="tel" name="holder_phone" placeholder="%s"></td></tr>', esc_html__('Email / phone', 'mobooking'), esc_attr__('Phone', 'mobooking'));
+        $groups = MCLB_Lane::pass_groups();
+        if (count($groups) > 1) {
+            echo '<tr><th>' . esc_html__('Valid on', 'mobooking') . '</th><td><select name="pass_group">';
+            foreach ($groups as $g) { printf('<option value="%s">%s</option>', esc_attr($g), esc_html(MCLB_Lane::pass_group_label($g))); }
+            echo '</select> <span class="description">' . esc_html(MCLB_Terms::fill(__('Only works on {resources} with this {pass} type.', 'mobooking'))) . '</span></td></tr>';
+        }
         printf('<tr><th>%s</th><td><input type="number" name="hours" min="1" step="1" required style="width:90px"> %s</td></tr>', esc_html__('Hours', 'mobooking'), esc_html(MCLB_Terms::fill(__('whole {resource} hours', 'mobooking'))));
         printf('<tr><th>%s</th><td><input type="number" name="expiry_months" min="0" step="1" value="%d" style="width:90px"> %s</td></tr>', esc_html__('Expiry', 'mobooking'), (int) MCLB_Passes::default_expiry_months(), esc_html__('months (0 = never)', 'mobooking'));
         printf('<tr><th>%s</th><td><input type="text" name="pos_ref" class="regular-text" required placeholder="%s"></td></tr>', esc_html__('POS receipt / reference', 'mobooking'), esc_attr__('POS sale ID / receipt #', 'mobooking'));
@@ -157,16 +168,17 @@ class MCLB_Passes_Admin {
         $sql  = 'SELECT * FROM ' . MCLB_Passes::table() . " WHERE $where ORDER BY created_at DESC LIMIT 200";
         $rows = $params ? $wpdb->get_results($wpdb->prepare($sql, $params)) : $wpdb->get_results($sql);
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Code', 'Holder', 'Balance', 'Issued', 'Status', 'Expires', 'POS ref', ''] as $h) { printf('<th>%s</th>', esc_html($h)); }
+        foreach (['Code', 'Holder', 'Type', 'Balance', 'Issued', 'Status', 'Expires', 'POS ref', ''] as $h) { printf('<th>%s</th>', esc_html($h)); }
         echo '</tr></thead><tbody>';
-        if (!$rows) { echo '<tr><td colspan="8">' . esc_html(MCLB_Terms::fill(__('No {passes}.', 'mobooking'))) . '</td></tr>'; }
+        if (!$rows) { echo '<tr><td colspan="9">' . esc_html(MCLB_Terms::fill(__('No {passes}.', 'mobooking'))) . '</td></tr>'; }
         foreach ((array) $rows as $r) {
             $bal = MCLB_Passes::balance((int) $r->id);
             printf(
-                '<tr><td><code>%s</code></td><td>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a href="%s">%s</a></td></tr>',
+                '<tr><td><code>%s</code></td><td>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a href="%s">%s</a></td></tr>',
                 esc_html($r->code),
                 esc_html($r->holder_name ?: '—'),
                 $r->holder_email ? '<br><small>' . esc_html($r->holder_email) . '</small>' : '',
+                esc_html(MCLB_Passes::group_label($r)),
                 esc_html($this->hrs($bal)),
                 esc_html($this->hrs($r->hours_total)),
                 esc_html($r->status),

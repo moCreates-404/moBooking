@@ -30,6 +30,8 @@
       if (balance !== '') { extra += (extra ? ' · ' : ' — ') + (L.left || '%h left on this pass').replace('%h', balance); }
       if (extra) { p.appendChild(document.createTextNode(extra)); }
       box.appendChild(p);
+      var note = box.getAttribute('data-note') || '';
+      if (note) { var n = document.createElement('p'); n.style.margin = '0 0 6px'; n.style.color = '#8a6100'; n.textContent = note; box.appendChild(n); }
       var rm = document.createElement('button'); rm.type = 'button'; rm.className = 'button'; rm.textContent = L.remove || 'Remove pass';
       rm.addEventListener('click', function () { post('remove', ''); });
       box.appendChild(rm);

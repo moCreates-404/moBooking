@@ -3,7 +3,7 @@ Contributors: mocreates
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 1.7.0
+Stable tag: 1.7.1
 License: GPL-2.0-or-later
 
 Book out time-slotted resources (lanes, nets, bays, hoists…) on a live grid,
@@ -39,6 +39,15 @@ current with uploaded". Do NOT use GitHub's "Download ZIP" — its folder is nam
 after the repo/ref and installs as a second, duplicate copy of the plugin.
 
 == Changelog ==
+
+= 1.7.1 =
+* New: pass types. Give a resource its own pass type (e.g. a premium bowling
+  machine) and only passes issued for that type work on it, while standard
+  passes keep working everywhere else. Choose the type when issuing a pass;
+  staff are warned before booking with the wrong type, customers see a note in
+  the cart, and moving a pass booking onto a different type returns its hours.
+* Database: adds one column (pass_group) to the passes table. Existing passes
+  and resources stay Standard, so nothing changes until a type is set.
 
 = 1.7.0 =
 * New: built-in Coaches manager (Pro). Add coaches/instructors under

@@ -227,6 +227,9 @@ class MCLB_Manage {
             }, MCLB_Event_Types::all()),
             'increment' => (int) MCLB_Settings::get('booking_increment') ?: 60, // row height
             'snap'      => MCLB_Settings::staff_increment(),                    // staff booking step (WEB-22)
+            'passGroups' => array_map(function ($g) {                      // pass types (v1.7.1)
+                return ['value' => $g, 'label' => MCLB_Lane::pass_group_label($g)];
+            }, MCLB_Lane::pass_groups()),
             'currency'  => $symbol,
             'today'     => wp_date('Y-m-d'),
             'loginUrl'  => esc_url_raw(wp_login_url(self::page_url() ?: home_url('/'))),

@@ -983,8 +983,12 @@
         var code = passCode.value.trim();
         if (code === '') { passState = { valid: false, balance: 0, code: '' }; passNote.textContent = ''; updatePreview(); return; }
         if (save) { save.disabled = true; } // hold Save while the check runs (fix 2)
-        api('/pass/lookup?code=' + encodeURIComponent(code) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
-          if (res.ok && res.body && res.body.usable) {
+        api('/pass/lookup?code=' + encodeURIComponent(code) + '&lane_id=' + encodeURIComponent(lane.id) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
+          if (res.ok && res.body && res.body.type_error) {
+            passState = { valid: false, balance: 0, code: '' };
+            passNote.style.color = '#b32d2e';
+            passNote.textContent = res.body.type_error;
+          } else if (res.ok && res.body && res.body.usable) {
             passState = { valid: true, balance: res.body.balance, code: res.body.code };
             var cov = passCoveredHrs(), after = Math.max(0, passState.balance - cov);
             passNote.style.color = '#1a7f37';
@@ -1140,7 +1144,7 @@
           headText = p.available + ' / ' + p.count + ' ' + (I18N.datesAvailable || 'dates available') + ' · ' + money(p.total) + ' ' + (I18N.total || 'total');
         }
         seriesBox.appendChild(el('p', 'mclb-series-result__head', headText));
-        if (p.pass && p.pass.error) { seriesBox.appendChild(el('p', 'mclb-panel__warn', I18N.passInvalid || 'That pass code is invalid or expired.')); }
+        if (p.pass && p.pass.error) { seriesBox.appendChild(el('p', 'mclb-panel__warn', p.pass.message || I18N.passInvalid || 'That pass code is invalid or expired.')); }
         var list = el('div', 'mclb-series-list');
         p.dates.forEach(function (d) {
           var row = el('div', 'mclb-series-row ' + (d.available ? 'is-ok' : 'is-bad'));
@@ -1276,9 +1280,13 @@
             var c = dpCode.value.trim();
             if (c === '') { dpNote.textContent = ''; return; }
             dpSave.disabled = true;
-            api('/pass/lookup?code=' + encodeURIComponent(c) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
+            api('/pass/lookup?code=' + encodeURIComponent(c) + '&lane_id=' + encodeURIComponent(b.lane_id) + '&actor=' + encodeURIComponent((ini && ini.value.trim()) || 'x')).then(function (res) {
               dpSave.disabled = false;
-              if (res.ok && res.body && res.body.usable) {
+              if (res.ok && res.body && res.body.type_error) {
+                dpSave.disabled = true;
+                dpNote.style.color = '#b32d2e';
+                dpNote.textContent = res.body.type_error;
+              } else if (res.ok && res.body && res.body.usable) {
                 var cov = Math.min(Math.floor(res.body.balance), dpDur), after = Math.max(0, res.body.balance - cov);
                 dpNote.style.color = '#1a7f37';
                 dpNote.textContent = (I18N.pass || 'Pass') + ' ' + res.body.code + ' · ' + (I18N.covers || 'covers') + ' ' + cov + 'h · ' + after + 'h ' + (I18N.leftAfter || 'left after');
@@ -1910,7 +1918,7 @@
           setBusy(lkBtn, false);
           if (!res.ok) { showErr(err, errText(res)); return; }
           var p = res.body;
-          lkOut.appendChild(el('p', 'mclb-panel__ctx', p.code + ' · ' + (p.holder || '—') + ' · ' + p.balance + 'h · ' + p.status + (p.expires_at ? ' · ' + (I18N.expires || 'expires') + ' ' + p.expires_at.substr(0, 10) : '')));
+          lkOut.appendChild(el('p', 'mclb-panel__ctx', p.code + ' · ' + (p.holder || '—') + ' · ' + p.balance + 'h' + ((CFG.passGroups || []).length > 1 && p.pass_type ? ' · ' + p.pass_type : '') + ' · ' + p.status + (p.expires_at ? ' · ' + (I18N.expires || 'expires') + ' ' + p.expires_at.substr(0, 10) : '')));
           if (p.status === 'active') {
             var acts = el('div', 'mclb-panel__actions');
             acts.appendChild(actionBtn(I18N.voidPass || 'Void', function (btn) {
@@ -1938,6 +1946,13 @@
       var iName = field(panel, I18N.name || 'Holder name', mkInput('text'));
       var iEmail = field(panel, I18N.email || 'Email', mkInput('email'));
       var iPhone = field(panel, I18N.phone || 'Phone', mkInput('tel'));
+      // Pass type (v1.7.1): only shown once a resource has its own type.
+      var iGroup = null;
+      if ((CFG.passGroups || []).length > 1) {
+        iGroup = el('select');
+        CFG.passGroups.forEach(function (g) { iGroup.appendChild(opt(g.value, g.label)); });
+        field(panel, I18N.passType || 'Valid on', iGroup);
+      }
       var iHours = field(panel, I18N.hours || 'Hours', mkInput('number')); iHours.min = '1'; iHours.step = '1';
       var iExp = field(panel, I18N.expiryMonths || 'Expiry (months, blank = default)', mkInput('number')); iExp.min = '0'; iExp.step = '1';
       var iPos = field(panel, I18N.posRef || 'POS receipt / reference', mkInput('text'));
@@ -1953,12 +1968,13 @@
         setBusy(iBtn, true); err.style.display = 'none';
         api('/pass/issue', { method: 'POST', body: {
           holder_name: iName.value, holder_email: iEmail.value, holder_phone: iPhone.value,
-          hours: iHours.value, expiry_months: iExp.value, pos_ref: iPos.value, note: iNote.value, actor: ini.value.trim()
+          hours: iHours.value, expiry_months: iExp.value, pos_ref: iPos.value, note: iNote.value, actor: ini.value.trim(),
+          pass_group: iGroup ? iGroup.value : ''
         } }).then(function (res) {
           setBusy(iBtn, false);
           if (!res.ok) { showErr(err, errText(res)); return; }
           issueOut.innerHTML = '';
-          issueOut.appendChild(el('p', 'mclb-panel__ok', (I18N.passIssued || 'Pass issued:') + ' ' + res.body.code + ' · ' + res.body.balance + 'h'));
+          issueOut.appendChild(el('p', 'mclb-panel__ok', (I18N.passIssued || 'Pass issued:') + ' ' + res.body.code + ' · ' + res.body.balance + 'h' + (res.body.pass_type && (CFG.passGroups || []).length > 1 ? ' · ' + res.body.pass_type : '')));
           var copy = el('button', 'button', I18N.copy || 'Copy code');
           copy.onclick = function () { try { navigator.clipboard.writeText(res.body.code); copy.textContent = I18N.copied || 'Copied'; } catch (e) {} };
           issueOut.appendChild(copy);

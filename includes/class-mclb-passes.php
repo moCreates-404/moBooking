@@ -50,6 +50,7 @@ class MCLB_Passes {
   holder_email varchar(191) DEFAULT NULL,
   holder_phone varchar(32) DEFAULT NULL,
   hours_total decimal(6,2) NOT NULL DEFAULT 0,
+  pass_group varchar(40) NOT NULL DEFAULT '',
   expires_at datetime DEFAULT NULL,
   status varchar(10) NOT NULL DEFAULT 'active',
   note text,
@@ -110,6 +111,32 @@ class MCLB_Passes {
         if (!$pass || (string) $pass->status !== 'active') { return false; }
         if ($pass->expires_at !== null && strtotime((string) $pass->expires_at) < time()) { return false; }
         return self::balance((int) $pass->id) > 0;
+    }
+
+    /**
+     * Pass types (v1.7.1): a pass only covers resources with the same pass type
+     * ('' = Standard on both sides, so existing passes and lanes behave exactly
+     * as before). Checked in reserve(), redeem_booking() and allocate(), which
+     * every route (cart, staff booking, series, draw-after, move) goes through.
+     */
+    public static function covers_lane($pass, $lane_id) {
+        if (!$pass) { return false; }
+        $pg = MCLB_Lane::clean_pass_group(isset($pass->pass_group) ? (string) $pass->pass_group : '');
+        return strcasecmp($pg, MCLB_Lane::get_pass_group((int) $lane_id)) === 0;
+    }
+
+    /** Match a typed pass type to the spelling a resource uses ("truman" → "Truman"). */
+    public static function canonical_group($raw) {
+        $g = MCLB_Lane::clean_pass_group($raw);
+        foreach (MCLB_Lane::pass_groups() as $known) {
+            if (strcasecmp($known, $g) === 0) { return $known; }
+        }
+        return $g;
+    }
+
+    /** Human label for the pass's type, e.g. "Standard" or "Truman". */
+    public static function group_label($pass) {
+        return MCLB_Lane::pass_group_label(($pass && isset($pass->pass_group)) ? (string) $pass->pass_group : '');
     }
 
     /** Live reserved (not yet redeemed/released) whole-hours against one hold. */
@@ -230,6 +257,7 @@ class MCLB_Passes {
             'holder_email'  => sanitize_email((string) ($data['holder_email'] ?? '')),
             'holder_phone'  => isset($data['holder_phone']) ? MCLB_Phone::clean((string) $data['holder_phone']) : '',
             'hours_total'   => $hours,
+            'pass_group'    => self::canonical_group((string) ($data['pass_group'] ?? '')),
             'expires_at'    => !empty($data['expires_at']) ? (string) $data['expires_at'] : null,
             'status'        => 'active',
             'note'          => sanitize_textarea_field((string) ($data['note'] ?? '')),
@@ -321,6 +349,8 @@ class MCLB_Passes {
         if (!$locked && !self::lock($code)) { return ['ok' => false, 'error' => 'busy']; }
         try {
             if (!self::is_usable($pass)) { return ['ok' => false, 'error' => 'unusable']; }
+            $hold = MCLB_Bookings::get((int) $hold_id);
+            if ($hold && !self::covers_lane($pass, (int) $hold->lane_id)) { return ['ok' => false, 'error' => 'wrong_type']; }
             $want = (float) floor((float) $hours);
             $avail = (float) floor(self::balance((int) $pass_id));
             $take  = min($want, $avail);
@@ -370,6 +400,8 @@ class MCLB_Passes {
         if (!$locked && !self::lock($code)) { return ['ok' => false, 'error' => 'busy']; }
         try {
             if (!self::is_usable($pass)) { return ['ok' => false, 'error' => 'unusable']; }
+            $bk = MCLB_Bookings::get((int) $booking_id);
+            if ($bk && !self::covers_lane($pass, (int) $bk->lane_id)) { return ['ok' => false, 'error' => 'wrong_type']; }
             $want  = (float) floor((float) $hours);
             $avail = (float) floor(self::balance((int) $pass_id));
             $take  = min($want, $avail);
@@ -401,12 +433,18 @@ class MCLB_Passes {
      * shorter session returns the excess, a longer one draws the difference if the
      * pass still has it (else the remainder is priced normally). (v1.5.0)
      */
-    public static function adjust_for_move($booking_id, $starts, $ends) {
+    public static function adjust_for_move($booking_id, $starts, $ends, $new_lane_id = 0) {
         $covered = self::redeemed_hours_for_booking((int) $booking_id);
         if ($covered <= 0) { return; }
         $pid  = self::pass_for_booking((int) $booking_id);
         $pass = $pid ? self::get($pid) : null;
         if (!$pass) { return; }
+        // Moved onto a resource this pass doesn't cover (v1.7.1): give the hours
+        // back to the pass and let the booking be priced normally.
+        if ($new_lane_id && !self::covers_lane($pass, (int) $new_lane_id)) {
+            self::return_booking((int) $booking_id, 'move: ' . self::group_label($pass) . ' pass not valid on new resource');
+            return;
+        }
         $new_dur = (float) floor(MCLB_Bookings::hours_between($starts, $ends));
         if ($new_dur == $covered) { return; }
         if (!self::lock($pass->code)) { return; }
@@ -491,9 +529,11 @@ class MCLB_Passes {
     public static function allocate($pass_id, array $holds) {
         usort($holds, function ($a, $b) { return strcmp((string) $a->starts_at, (string) $b->starts_at); });
         $left = (float) floor(self::balance((int) $pass_id));
+        $pass = self::get((int) $pass_id);
         $out  = [];
         foreach ($holds as $h) {
             if ($left <= 0) { break; }
+            if (!self::covers_lane($pass, (int) $h->lane_id)) { continue; } // other pass type: paid normally
             $dur = (float) floor(MCLB_Bookings::hours_between($h->starts_at, $h->ends_at));
             $take = min($dur, $left);
             if ($take > 0) { $out[(int) $h->id] = $take; $left -= $take; }

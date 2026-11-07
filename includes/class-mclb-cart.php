@@ -59,10 +59,19 @@ class MCLB_Cart {
         $code    = self::pass_code();
         $covered = 0.0;
         $balance = '';
+        $note    = '';
         if ($code !== '') {
             $pass = MCLB_Passes::get_by_code($code);
             if ($pass) { $balance = rtrim(rtrim(number_format((float) MCLB_Passes::balance((int) $pass->id), 2), '0'), '.'); }
-            foreach (self::cart_holds() as $b) { $covered += MCLB_Passes::reserved_hours_for_hold((int) $b->id); }
+            $skipped = [];
+            foreach (self::cart_holds() as $b) {
+                $covered += MCLB_Passes::reserved_hours_for_hold((int) $b->id);
+                if ($pass && !MCLB_Passes::covers_lane($pass, (int) $b->lane_id)) { $skipped[(int) $b->lane_id] = get_the_title((int) $b->lane_id); }
+            }
+            if ($skipped) {
+                /* translators: 1: pass type, e.g. "Standard", 2: resource names. */
+                $note = sprintf(MCLB_Terms::fill(__('This is a %1$s {pass}, so it can\'t be used on %2$s. Those bookings are charged at the normal price.', 'mobooking')), MCLB_Passes::group_label($pass), implode(', ', $skipped));
+            }
         }
         wp_enqueue_script('mclb-passbox');
         $i18n = wp_json_encode([
@@ -77,12 +86,13 @@ class MCLB_Cart {
             'apply'   => __('Apply', 'mobooking'),
         ]);
         printf(
-            '<div class="mclb-passbox" style="margin:12px 0;padding:12px;border:1px solid #e5e5e5;border-radius:8px;" data-url="%s" data-nonce="%s" data-code="%s" data-covered="%s" data-balance="%s" data-i18n="%s"></div>',
+            '<div class="mclb-passbox" style="margin:12px 0;padding:12px;border:1px solid #e5e5e5;border-radius:8px;" data-url="%s" data-nonce="%s" data-code="%s" data-covered="%s" data-balance="%s" data-note="%s" data-i18n="%s"></div>',
             esc_url(rest_url(self::REST_NS . '/cart/pass')),
             esc_attr(wp_create_nonce('wp_rest')),
             esc_attr($code),
             esc_attr(rtrim(rtrim(number_format((float) $covered, 2), '0'), '.')),
             esc_attr($balance),
+            esc_attr($note),
             esc_attr($i18n)
         );
     }

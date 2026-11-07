@@ -28,6 +28,7 @@ class MCLB_Lane {
     const META_PRICE         = '_mclb_price_override';
     const META_HOURS_ENABLED = '_mclb_hours_override';
     const META_HOURS         = '_mclb_hours';
+    const META_PASS_GROUP    = '_mclb_pass_group'; // v1.7.1: which passes this resource accepts
 
     public static function init() {
         add_action('init', [__CLASS__, 'register']);
@@ -132,6 +133,18 @@ class MCLB_Lane {
         );
         echo '</td></tr>';
 
+        // Pass type (v1.7.1): passes only work on resources with the same pass
+        // type, so a premium resource can sit outside the standard pass.
+        $pass_group = self::get_pass_group($post->ID);
+        $groups     = self::pass_groups();
+        echo '<tr><th scope="row"><label for="mclb_pass_group">' . esc_html(MCLB_Terms::fill(__('{Pass} type', 'mobooking'))) . '</label></th><td>';
+        printf('<input type="text" id="mclb_pass_group" name="mclb_pass_group" value="%s" list="mclb_pass_groups" class="regular-text" placeholder="%s">', esc_attr($pass_group), esc_attr__('Standard', 'mobooking'));
+        echo '<datalist id="mclb_pass_groups">';
+        foreach ($groups as $g) { if ($g !== '') { printf('<option value="%s">', esc_attr($g)); } }
+        echo '</datalist>';
+        printf('<p class="description">%s</p>', esc_html(MCLB_Terms::fill(__('Leave blank for Standard. Give a resource its own type (e.g. "Truman") and only {passes} issued for that type can be used on it, and those {passes} can\'t be used anywhere else.', 'mobooking'))));
+        echo '</td></tr>';
+
         // Hours override toggle
         echo '<tr><th scope="row">' . esc_html__('Opening hours', 'mobooking') . '</th><td>';
         printf(
@@ -210,6 +223,11 @@ class MCLB_Lane {
             update_post_meta($post_id, self::META_PRICE, MCLB_Settings::sanitize_price($raw_price));
         }
 
+        // Pass type (blank = Standard).
+        if (isset($_POST['mclb_pass_group'])) {
+            update_post_meta($post_id, self::META_PASS_GROUP, self::clean_pass_group(wp_unslash($_POST['mclb_pass_group'])));
+        }
+
         // Hours override.
         $hours_enabled = !empty($_POST['mclb_hours_override']) ? 1 : 0;
         update_post_meta($post_id, self::META_HOURS_ENABLED, $hours_enabled);
@@ -236,6 +254,33 @@ class MCLB_Lane {
 
     public static function get_type($lane_id) {
         return (string) get_post_meta($lane_id, self::META_TYPE, true);
+    }
+
+    /** Normalise a pass type label: trimmed, single-spaced, max 40 chars. '' = Standard. */
+    public static function clean_pass_group($raw) {
+        $g = trim(preg_replace('/\s+/', ' ', sanitize_text_field((string) $raw)));
+        if (strcasecmp($g, 'standard') === 0) { $g = ''; }
+        return mb_substr($g, 0, 40);
+    }
+
+    /** The pass type a resource accepts ('' = Standard). */
+    public static function get_pass_group($lane_id) {
+        return self::clean_pass_group((string) get_post_meta((int) $lane_id, self::META_PASS_GROUP, true));
+    }
+
+    /** Pass types in use across resources, Standard ('') first. */
+    public static function pass_groups() {
+        $out = [''];
+        foreach (get_posts(['post_type' => self::CPT, 'post_status' => ['publish', 'draft', 'private'], 'numberposts' => -1, 'fields' => 'ids']) as $id) {
+            $g = self::get_pass_group($id);
+            if ($g !== '' && !in_array($g, $out, true)) { $out[] = $g; }
+        }
+        return $out;
+    }
+
+    /** Display label for a pass type. */
+    public static function pass_group_label($g) {
+        return ((string) $g === '') ? __('Standard', 'mobooking') : (string) $g;
     }
 
     /** Resolved hourly price: per-lane override if set, else the site default. */

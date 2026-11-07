@@ -637,6 +637,8 @@ class MCLB_REST_Admin {
         // WEB-24: book extra lanes for the same customer at the same time (e.g. a
         // net and a bowling machine together). All are checked up front so nothing
         // is created if any extra lane is unavailable.
+        $wt = self::pass_type_error(MCLB_Pass_Code::normalise((string) $request->get_param('pass_code')), $lane_id);
+        if ($wt) { return $wt; }
         $extra_ids = self::extra_lanes_param($request, $lane_id);
         foreach ($extra_ids as $xid) {
             $xname = get_the_title($xid);
@@ -898,7 +900,10 @@ class MCLB_REST_Admin {
         $pass_info = null;
         if ($pass_code !== '' && class_exists('MCLB_Passes')) {
             $pass = MCLB_Pass_Code::looks_valid($pass_code) ? MCLB_Passes::get_by_code($pass_code) : null;
-            if ($pass && MCLB_Passes::is_usable($pass)) {
+            $wt = $pass ? self::pass_type_error((string) $pass->code, (int) $p['lane_id']) : null;
+            if ($wt) {
+                $pass_info = ['error' => true, 'message' => $wt->get_error_message()];
+            } elseif ($pass && MCLB_Passes::is_usable($pass)) {
                 $left = (float) floor(MCLB_Passes::balance((int) $pass->id));
                 $dur  = (int) floor(MCLB_Bookings::hours_between($s0['starts_at'], $s0['ends_at']));
                 foreach ($dates as &$d) {
@@ -936,6 +941,8 @@ class MCLB_REST_Admin {
 
         $p = self::parse_series($request);
         if (is_wp_error($p)) { return $p; }
+        $wt = self::pass_type_error(MCLB_Pass_Code::normalise((string) $request->get_param('pass_code')), (int) $p['lane_id']);
+        if ($wt) { return $wt; }
 
         $name  = sanitize_text_field((string) $request->get_param('name'));
         $email = sanitize_email((string) $request->get_param('email'));
@@ -1741,6 +1748,22 @@ class MCLB_REST_Admin {
 
     // ── Prepaid passes (v1.5.0) ──────────────────────────────────────────────
 
+    /**
+     * Pass types (v1.7.1): a WP_Error when the code is a real pass of a different
+     * type from the resource, so staff are told before anything is created.
+     * Invalid/expired codes are left to the existing handling.
+     */
+    private static function pass_type_error($code, $lane_id) {
+        if ($code === '' || !class_exists('MCLB_Passes') || !MCLB_Pass_Code::looks_valid($code)) { return null; }
+        $pass = MCLB_Passes::get_by_code($code);
+        if (!$pass || MCLB_Passes::covers_lane($pass, (int) $lane_id)) { return null; }
+        return new WP_Error('mclb_pass_wrong_type', sprintf(
+            /* translators: 1: pass code, 2: pass type, 3: resource name, 4: resource's pass type. */
+            MCLB_Terms::fill(__('{Pass} %1$s is a %2$s {pass}, so it can\'t be used on %3$s (%4$s {passes} only).', 'mobooking')),
+            $pass->code, MCLB_Passes::group_label($pass), get_the_title((int) $lane_id), MCLB_Lane::pass_group_label(MCLB_Lane::get_pass_group((int) $lane_id))
+        ), ['status' => 409]);
+    }
+
     /** Draw a pass onto an already-confirmed MANUAL booking (whole lane hours). */
     public static function apply_pass_draw($booking_id, $code, $actor) {
         $b = MCLB_Bookings::get((int) $booking_id);
@@ -1752,6 +1775,8 @@ class MCLB_REST_Admin {
         if (!$pass || !MCLB_Passes::is_usable($pass)) {
             return new WP_Error('mclb_pass_invalid', __('That code is invalid or expired.', 'mobooking'), ['status' => 400]);
         }
+        $wt = self::pass_type_error((string) $pass->code, (int) $b->lane_id);
+        if ($wt) { return $wt; }
         $want = (int) floor(MCLB_Bookings::hours_between($b->starts_at, $b->ends_at));
         if (!MCLB_Passes::lock($pass->code)) {
             return new WP_Error('mclb_pass_busy', MCLB_Terms::fill(__('That {pass} is busy — try again.', 'mobooking')), ['status' => 409]);
@@ -1799,6 +1824,7 @@ class MCLB_REST_Admin {
             'holder_email' => sanitize_email((string) $request->get_param('holder_email')),
             'holder_phone' => sanitize_text_field((string) $request->get_param('holder_phone')),
             'hours'        => (float) $request->get_param('hours'),
+            'pass_group'   => (string) $request->get_param('pass_group'),
             'expires_at'   => $expires,
             'note'         => sanitize_textarea_field((string) $request->get_param('note')),
             'pos_ref'      => $pos,
@@ -1807,7 +1833,7 @@ class MCLB_REST_Admin {
         if (is_wp_error($res)) { return $res; }
         return rest_ensure_response([
             'ok' => true, 'code' => $res->code, 'balance' => MCLB_Passes::balance((int) $res->id),
-            'expires_at' => $res->expires_at, 'id' => (int) $res->id,
+            'expires_at' => $res->expires_at, 'id' => (int) $res->id, 'pass_type' => MCLB_Passes::group_label($res),
         ]);
     }
 
@@ -1820,6 +1846,9 @@ class MCLB_REST_Admin {
             'ok' => true, 'id' => (int) $pass->id, 'code' => $pass->code, 'holder' => (string) $pass->holder_name,
             'balance' => MCLB_Passes::balance((int) $pass->id), 'status' => (string) $pass->status,
             'expires_at' => $pass->expires_at, 'usable' => MCLB_Passes::is_usable($pass),
+            'pass_type' => MCLB_Passes::group_label($pass),
+            // With ?lane_id: does this pass work on that resource? (v1.7.1)
+            'type_error' => ($lid = absint($request->get_param('lane_id'))) && ($wt = self::pass_type_error((string) $pass->code, $lid)) ? $wt->get_error_message() : '',
         ]);
     }
 
